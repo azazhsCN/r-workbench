@@ -70,21 +70,36 @@ const SYSTEM_PROMPT = `你是 R Workbench 的 AI 数据分析助手。你的任�
 export class AIService {
   private config: AIConfig | null = null
 
-  /** 加载配置（从 localStorage） */
-  loadConfig(): AIConfig | null {
+  /** 加载配置 — 优先从主进程安全存储读取，回退到 localStorage */
+  async loadConfig(): Promise<AIConfig | null> {
     const saved = localStorage.getItem('rworkbench_settings')
     if (saved) {
       try {
         const settings = JSON.parse(saved)
-        if (settings.aiApiKey && settings.aiBaseUrl && settings.aiModel) {
-          this.config = {
-            provider: settings.aiProvider || 'openai',
-            apiKey: settings.aiApiKey,
-            baseUrl: settings.aiBaseUrl,
-            model: settings.aiModel
-          }
-          return this.config
+        const provider = settings.aiProvider || 'openai'
+        const baseUrl = settings.aiBaseUrl
+        const model = settings.aiModel
+
+        if (!baseUrl || !model) return null
+
+        // 优先从主进程安全存储读取 API Key（修复 #7）
+        let apiKey = ''
+        if (window.api?.config) {
+          apiKey = (await window.api.config.loadApiKey(provider)) || ''
         }
+        // 回退：从 localStorage 读取（兼容旧版）
+        if (!apiKey && settings.aiApiKey) {
+          apiKey = settings.aiApiKey
+          // 迁移到安全存储
+          if (window.api?.config) {
+            await window.api.config.saveApiKey(provider, apiKey)
+          }
+        }
+
+        if (!apiKey) return null
+
+        this.config = { provider, apiKey, baseUrl, model }
+        return this.config
       } catch {
         // ignore
       }
@@ -92,9 +107,8 @@ export class AIService {
     return null
   }
 
-  /** 检查是否已配置 */
+  /** 检查是否已配置（同步检查缓存） */
   isConfigured(): boolean {
-    if (!this.config) this.loadConfig()
     return this.config !== null && this.config.apiKey !== ''
   }
 

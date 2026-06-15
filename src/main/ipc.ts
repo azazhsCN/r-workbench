@@ -1,19 +1,69 @@
-import { ipcMain, dialog, app } from 'electron'
-import { readFile, writeFile } from 'fs/promises'
+import { ipcMain, dialog, app, safeStorage } from 'electron'
+import { readFile, writeFile, rm } from 'fs/promises'
+import { existsSync } from 'fs'
+import { join, resolve, normalize } from 'path'
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import { SavBufferReader } from 'sav-reader'
 
 const execAsync = promisify(exec)
 
+// ── 安全工具 ──────────────────────────────────────
+
+/** 验证文件路径是否在允许的目录内（防路径遍历） */
+function validateFilePath(filePath: string, allowedDirs: string[]): string {
+  if (typeof filePath !== 'string' || filePath.length === 0) {
+    throw new Error('无效的文件路径')
+  }
+  if (filePath.length > 1024) {
+    throw new Error('文件路径过长')
+  }
+  const normalized = normalize(resolve(filePath))
+  const allowed = allowedDirs.some(
+    (dir) => normalized.startsWith(normalize(dir) + '\\') || normalized === normalize(dir)
+  )
+  if (!allowed) {
+    throw new Error(`路径不在允许范围内: ${filePath}`)
+  }
+  return normalized
+}
+
+/** 验证 IPC 参数类型 */
+function validateString(value: unknown, name: string, maxLen = 100_000_000): string {
+  if (typeof value !== 'string') throw new Error(`${name} 必须是字符串`)
+  if (value.length > maxLen) throw new Error(`${name} 长度超限`)
+  return value
+}
+
+/** API Key 安全存储路径 */
+function getSecureConfigPath(): string {
+  return join(app.getPath('userData'), 'config.enc.json')
+}
+
+// ── 主窗口引用 ──────────────────────────────────────
+
+let _mainWindow: import('electron').BrowserWindow | null = null
+export function getMainWindow() {
+  return _mainWindow
+}
+export function setMainWindow(win: import('electron').BrowserWindow) {
+  _mainWindow = win
+}
+
 /**
  * 注册所有 IPC 处理器
- * 负责：文件操作、R环境检测、R脚本执行、SPSS解析
  */
 export function registerIpcHandlers(): void {
-  // ── 文件操作 ──────────────────────────────
+  // 可信目录列表
+  const trustedDirs = [
+    app.getPath('userData'),
+    app.getPath('documents'),
+    app.getPath('temp'),
+    app.getPath('desktop')
+  ]
 
-  // 打开文件对话框
+  // ── 文件操作（路径受限） ──────────────────────────────
+
   ipcMain.handle('dialog:openFile', async (_event, options) => {
     const result = await dialog.showOpenDialog({
       properties: ['openFile'],
@@ -26,28 +76,25 @@ export function registerIpcHandlers(): void {
     return result.filePaths[0]
   })
 
-  // 读取文件（二进制）
-  ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
-    const buffer = await readFile(filePath)
-    return buffer
+  ipcMain.handle('fs:readFile', async (_event, filePath: unknown) => {
+    const safePath = validateFilePath(validateString(filePath, 'filePath'), trustedDirs)
+    return await readFile(safePath)
   })
 
-  // 读取文件（文本）
-  ipcMain.handle('fs:readFileText', async (_event, filePath: string) => {
-    const content = await readFile(filePath, 'utf-8')
-    return content
+  ipcMain.handle('fs:readFileText', async (_event, filePath: unknown) => {
+    const safePath = validateFilePath(validateString(filePath, 'filePath'), trustedDirs)
+    return await readFile(safePath, 'utf-8')
   })
 
-  // 写入文件
   ipcMain.handle(
     'fs:writeFile',
-    async (_event, filePath: string, content: string) => {
-      await writeFile(filePath, content, 'utf-8')
+    async (_event, filePath: unknown, content: unknown) => {
+      const safePath = validateFilePath(validateString(filePath, 'filePath'), trustedDirs)
+      await writeFile(safePath, validateString(content, 'content'), 'utf-8')
       return true
     }
   )
 
-  // 获取应用路径
   ipcMain.handle('app:getPath', async () => {
     return {
       userData: app.getPath('userData'),
@@ -58,128 +105,96 @@ export function registerIpcHandlers(): void {
 
   // ── R 环境 ──────────────────────────────
 
-  // 检测 R 环境
   ipcMain.handle('r:detect', async () => {
-    try {
-      // Windows: 尝试常见路径和 PATH
-      const paths = [
-        'Rscript',
-        'C:\\Program Files\\R\\R-4.4.1\\bin\\Rscript.exe',
-        'C:\\Program Files\\R\\R-4.3.3\\bin\\Rscript.exe',
-        'C:\\Program Files\\R\\R-4.3.2\\bin\\Rscript.exe',
-        'C:\\Program Files\\R\\R-4.2.3\\bin\\Rscript.exe'
-      ]
+    const paths = [
+      'Rscript',
+      'C:\\Program Files\\R\\R-4.4.1\\bin\\Rscript.exe',
+      'C:\\Program Files\\R\\R-4.3.3\\bin\\Rscript.exe',
+      'C:\\Program Files\\R\\R-4.3.2\\bin\\Rscript.exe',
+      'C:\\Program Files\\R\\R-4.2.3\\bin\\Rscript.exe'
+    ]
 
-      for (const rPath of paths) {
-        try {
-          const { stdout } = await execAsync(
-            `"${rPath}" --version 2>&1 || "${rPath}" -e "cat(R.version.string)"`,
-            { timeout: 10000 }
-          )
-          const versionMatch = stdout.match(/R version (\d+\.\d+\.\d+)/)
-          if (versionMatch) {
-            return {
-              found: true,
-              path: rPath,
-              version: versionMatch[1]
-            }
-          }
-        } catch {
-          continue
+    for (const rPath of paths) {
+      try {
+        const { stdout } = await execAsync(
+          `"${rPath}" --version 2>&1 || "${rPath}" -e "cat(R.version.string)"`,
+          { timeout: 10000 }
+        )
+        const versionMatch = stdout.match(/R version (\d+\.\d+\.\d+)/)
+        if (versionMatch) {
+          return { found: true, path: rPath, version: versionMatch[1] }
         }
+      } catch {
+        continue
       }
-
-      return { found: false, path: '', version: '' }
-    } catch {
-      return { found: false, path: '', version: '' }
     }
+    return { found: false, path: '', version: '' }
   })
 
-  // 执行 R 脚本
+  // ── R 执行（统一包装 + 自动清理） ──────────────────────
+
   ipcMain.handle(
     'r:execute',
-    async (_event, code: string, dataFiles?: Record<string, string>) => {
+    async (_event, code: unknown, dataCsv?: unknown) => {
+      let workDir = ''
       try {
-        const { join: pathJoin } = await import('path')
-        const { mkdtemp, writeFile: fsWriteFile } = await import(
-          'fs/promises'
-        )
+        const safeCode = validateString(code, 'code', 5_000_000)
+
         const os = await import('os')
+        const { mkdtemp, writeFile: fsWriteFile } = await import('fs/promises')
 
-        // 创建临时工作目录
-        const workDir = await mkdtemp(pathJoin(os.tmpdir(), 'rworkbench-'))
+        workDir = await mkdtemp(join(os.tmpdir(), 'rworkbench-'))
 
-        // 写入数据文件
-        if (dataFiles) {
-          for (const [name, content] of Object.entries(dataFiles)) {
-            await fsWriteFile(pathJoin(workDir, name), content, 'utf-8')
-          }
+        // 写入数据 CSV（如果提供）
+        if (dataCsv && typeof dataCsv === 'string') {
+          await fsWriteFile(join(workDir, 'data.csv'), dataCsv, 'utf-8')
         }
 
-        // 生成 R 脚本，添加 JSON 输出包装
-        const scriptContent = `
-# R Workbench 自动执行脚本
-options(warn = 1)
+        // 统一包装：主进程负责错误捕获和结果输出
+        const scriptContent = `options(warn = 1)
 options(digits = 6)
-
-# 设置工作目录
 setwd("${workDir.replace(/\\/g, '\\\\')}")
-
-# 捕获输出
-output <- list(success = TRUE, results = list(), errors = list(), plots = list())
-
 tryCatch({
-  # 用户代码开始
-  ${code}
-  # 用户代码结束
+${safeCode}
 }, error = function(e) {
-  output$success <<- FALSE
-  output$errors <<- list(conditionMessage(e))
+  cat("__RWB_ERROR__:", conditionMessage(e), "\\n")
 })
-
-# 输出结果
-cat("__RWORKBENCH_RESULT_START__\\n")
-cat(jsonlite::toJSON(output, auto_unbox = TRUE, force = TRUE))
-cat("\\n__RWORKBENCH_RESULT_END__\\n")
+cat("\\n__RWB_DONE__\\n")
 `
 
-        const scriptPath = pathJoin(workDir, 'script.R')
+        const scriptPath = join(workDir, 'script.R')
         await fsWriteFile(scriptPath, scriptContent, 'utf-8')
 
-        // 执行 R 脚本
-        const { stdout, stderr } = await execAsync(
-          `Rscript "${scriptPath}"`,
-          {
-            timeout: 60000,
-            maxBuffer: 10 * 1024 * 1024,
-            cwd: workDir
-          }
-        )
+        const { stdout, stderr } = await execAsync(`Rscript "${scriptPath}"`, {
+          timeout: 60000,
+          maxBuffer: 10 * 1024 * 1024,
+          cwd: workDir
+        })
 
-        // 解析结果
-        const resultMatch = stdout.match(
-          /__RWORKBENCH_RESULT_START__\n([\s\S]*?)\n__RWORKBENCH_RESULT_END__/
-        )
+        // 解析错误
+        const errorMatch = stdout.match(/__RWB_ERROR__:(.*)/)
+        const errors = errorMatch ? [errorMatch[1].trim()] : []
 
-        if (resultMatch) {
-          return {
-            success: true,
-            data: resultMatch[1],
-            stdout,
-            stderr,
-            workDir
-          }
+        return {
+          success: errors.length === 0,
+          output: stdout.replace(/__RWB_ERROR__:.*\n?/g, '').replace(/__RWB_DONE__\n?$/, '').trim(),
+          errors,
+          stderr,
+          workDir
         }
-
-        return { success: true, data: stdout, stdout, stderr, workDir }
       } catch (error: unknown) {
         const err = error as { stdout?: string; stderr?: string; message?: string }
         return {
           success: false,
-          data: null,
-          stdout: err.stdout || '',
-          stderr: err.stderr || err.message || 'Unknown error',
+          output: '',
+          errors: [err.stderr || err.message || '执行失败'],
+          stderr: err.stderr || '',
           workDir: ''
+        }
+      } finally {
+        // 清理临时目录
+        if (workDir) {
+          rm(workDir, { recursive: true, force: true }).catch(() => {})
         }
       }
     }
@@ -187,39 +202,32 @@ cat("\\n__RWORKBENCH_RESULT_END__\\n")
 
   // ── SPSS 解析 ──────────────────────────────
 
-  ipcMain.handle('data:parseSav', async (_event, filePath: string) => {
+  ipcMain.handle('data:parseSav', async (_event, filePath: unknown) => {
     try {
-      const buffer = await readFile(filePath)
+      const safePath = validateFilePath(validateString(filePath, 'filePath'), trustedDirs)
+      const buffer = await readFile(safePath)
       const sav = new SavBufferReader(buffer)
       await sav.open()
 
       const headers = sav.meta.sysvars.map((v) => v.name)
       const allRows = await sav.readAllRows()
 
-      // 将 SPSS 数据转换为标准格式
       const rows = allRows.map((row: Record<string, unknown>) => {
         const normalized: Record<string, unknown> = {}
         for (const h of headers) {
           const val = row[h]
-          if (val === null || val === undefined) {
-            normalized[h] = ''
-          } else {
-            normalized[h] = val
-          }
+          normalized[h] = val === null || val === undefined ? '' : val
         }
         return normalized
       })
 
-      // 列信息
       const columnInfo = sav.meta.sysvars.map((v) => {
         let missing = 0
         const missingValues = v.missing
         for (const row of rows) {
           const val = row[v.name]
           if (
-            val === '' ||
-            val === null ||
-            val === undefined ||
+            val === '' || val === null || val === undefined ||
             (typeof missingValues === 'number' && val === missingValues) ||
             (Array.isArray(missingValues) && missingValues.includes(val as number))
           ) {
@@ -228,7 +236,7 @@ cat("\\n__RWORKBENCH_RESULT_END__\\n")
         }
         return {
           name: v.name,
-          type: v.type === 'numeric' ? 'numeric' as const : 'string' as const,
+          type: v.type === 'numeric' ? ('numeric' as const) : ('string' as const),
           missing,
           total: rows.length
         }
@@ -240,7 +248,7 @@ cat("\\n__RWORKBENCH_RESULT_END__\\n")
         rows,
         columnInfo,
         meta: {
-          name: filePath.split(/[/\\]/).pop(),
+          name: safePath.split(/[/\\]/).pop(),
           rowCount: rows.length,
           columnCount: headers.length,
           product: sav.meta.header.product
@@ -248,10 +256,70 @@ cat("\\n__RWORKBENCH_RESULT_END__\\n")
       }
     } catch (error: unknown) {
       const err = error as { message?: string }
-      return {
-        success: false,
-        error: err.message || 'SPSS 文件解析失败'
+      return { success: false, error: err.message || 'SPSS 文件解析失败' }
+    }
+  })
+
+  // ── 安全配置存储（API Key 加密） ──────────────────────
+
+  ipcMain.handle('config:saveApiKey', async (_event, provider: unknown, apiKey: unknown) => {
+    try {
+      const safeProvider = validateString(provider, 'provider', 100)
+      const safeKey = validateString(apiKey, 'apiKey', 500)
+
+      const configPath = getSecureConfigPath()
+      let config: Record<string, string> = {}
+
+      if (existsSync(configPath)) {
+        try {
+          const encrypted = await readFile(configPath)
+          if (safeStorage.isEncryptionAvailable()) {
+            const decrypted = safeStorage.decryptString(encrypted)
+            config = JSON.parse(decrypted)
+          } else {
+            config = JSON.parse(encrypted.toString('utf-8'))
+          }
+        } catch {
+          config = {}
+        }
       }
+
+      config[safeProvider] = safeKey
+
+      const json = JSON.stringify(config)
+      if (safeStorage.isEncryptionAvailable()) {
+        const encrypted = safeStorage.encryptString(json)
+        await writeFile(configPath, encrypted)
+      } else {
+        await writeFile(configPath, json, 'utf-8')
+      }
+      return { success: true }
+    } catch (error: unknown) {
+      const err = error as { message?: string }
+      return { success: false, error: err.message || '保存失败' }
+    }
+  })
+
+  ipcMain.handle('config:loadApiKey', async (_event, provider: unknown) => {
+    try {
+      const safeProvider = validateString(provider, 'provider', 100)
+      const configPath = getSecureConfigPath()
+
+      if (!existsSync(configPath)) return null
+
+      const encrypted = await readFile(configPath)
+      let config: Record<string, string> = {}
+
+      if (safeStorage.isEncryptionAvailable()) {
+        const decrypted = safeStorage.decryptString(encrypted)
+        config = JSON.parse(decrypted)
+      } else {
+        config = JSON.parse(encrypted.toString('utf-8'))
+      }
+
+      return config[safeProvider] || null
+    } catch {
+      return null
     }
   })
 

@@ -155,13 +155,10 @@ export default function WizardPage() {
     setStep('execute')
     setIsExecuting(true)
 
-    // 生成 CSV 数据
+    // 生成 CSV 数据，通过 IPC 传入主进程写入临时文件（修复 #3）
     const csv = datasetToCSV(dataset.headers, dataset.rows)
-
-    // 写入临时 CSV（通过 R 执行时使用）
     const dataFile = 'data.csv'
 
-    // 生成 R 代码
     let code = ''
     const method = selectedMethod.id
 
@@ -170,13 +167,15 @@ export default function WizardPage() {
     } else if (method === 'ttest_independent') {
       code = RService.tTestIndependentCode(depVars[0], groupVar, dataFile)
     } else if (method === 'ttest_paired') {
+      // 使用 rEscape 转义变量名（修复 #2）
+      code = RService.correlationCode(depVars[0], depVars[1], 'pearson', dataFile)
+        .replace('=== 相关分析 (pearson) ===', '=== 配对样本 t 检验 ===')
+      // 重新生成配对 t 检验代码
       code = `
 data <- read.csv("${dataFile}", stringsAsFactors = FALSE)
-x1 <- as.numeric(data[["${depVars[0]}"]])
-x2 <- as.numeric(data[["${depVars[1]}"]])
+x1 <- as.numeric(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
+x2 <- as.numeric(data[["${depVars[1].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
 cat("=== 配对样本 t 检验 ===\\n")
-cat("变量1: ${depVars[0]}\\n")
-cat("变量2: ${depVars[1]}\\n\\n")
 result <- t.test(x1, x2, paired = TRUE)
 cat(sprintf("t = %.4f, df = %.2f, p = %.4f\\n", result$statistic, result$parameter, result$p.value))
 cat(sprintf("均值差: %.4f\\n", mean(x1 - x2, na.rm = TRUE)))
@@ -185,53 +184,38 @@ cat(sprintf("95%% CI: [%.4f, %.4f]\\n", result$conf.int[1], result$conf.int[2]))
     } else if (method === 'correlation') {
       code = RService.correlationCode(depVars[0], depVars[1], 'pearson', dataFile)
     } else if (method === 'regression') {
-      const dvs = depVars.slice(1)
-      code = RService.regressionCode(depVars[0], dvs, dataFile)
+      code = RService.regressionCode(depVars[0], depVars.slice(1), dataFile)
     } else if (method === 'reliability') {
       code = RService.reliabilityCode(depVars, dataFile)
     } else if (method === 'chisquare') {
       code = `
 data <- read.csv("${dataFile}", stringsAsFactors = FALSE)
 cat("=== 卡方检验 ===\\n")
-cat("变量1: ${depVars[0]}\\n")
-cat("变量2: ${depVars[1]}\\n\\n")
-tbl <- table(data[["${depVars[0]}"]], data[["${depVars[1]}"]])
+tbl <- table(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]], data[["${depVars[1].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
 cat("列联表:\\n")
 print(tbl)
-cat("\\n")
 result <- chisq.test(tbl)
 print(result)
-if(result$p.value < 0.05) {
-  cat("\\n结论: 两个变量之间存在显著关联 (p < 0.05)\\n")
-} else {
-  cat("\\n结论: 两个变量之间不存在显著关联 (p >= 0.05)\\n")
-}
+if(result$p.value < 0.05) cat("\\n结论: 两个变量之间存在显著关联 (p < 0.05)\\n")
+else cat("\\n结论: 两个变量之间不存在显著关联 (p >= 0.05)\\n")
 `
     } else if (method === 'anova') {
       code = `
 data <- read.csv("${dataFile}", stringsAsFactors = FALSE)
+data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]] <- as.numeric(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
 cat("=== 单因素方差分析 ===\\n")
-cat("因变量: ${depVars[0]}\\n")
-cat("分组变量: ${groupVar}\\n\\n")
-data[["${depVars[0]}"]] <- as.numeric(data[["${depVars[0]}"]])
-model <- aov(${depVars[0]} ~ factor(${groupVar}), data = data)
-result <- summary(model)
-cat("方差分析表:\\n")
-print(result)
-cat("\\n")
-groups <- unique(data[["${groupVar}"]])
+model <- aov(${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')} ~ factor(${groupVar.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}), data = data)
+print(summary(model))
+groups <- unique(data[["${groupVar.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
 for(g in groups) {
-  x <- data[data[["${groupVar}"]] == g, "${depVars[0]}"]
+  x <- data[data[["${groupVar.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]] == g, "${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]
   cat(sprintf("组 %s: N=%d, M=%.4f, SD=%.4f\\n", g, length(x), mean(x, na.rm=TRUE), sd(x, na.rm=TRUE)))
 }
 `
     }
 
-    // 执行 R 代码（注意：数据需要先写入临时文件）
-    // 这里简化处理，使用 RService.execute
-    const execResult = await RService.execute(
-      `data <- read.csv(textConnection("${csv.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"), stringsAsFactors = FALSE)\n` + code
-    )
+    // 通过 IPC 传递 CSV，不在代码中内嵌（修复 #3）
+    const execResult = await RService.execute(code, csv)
 
     setResult(execResult)
     setIsExecuting(false)

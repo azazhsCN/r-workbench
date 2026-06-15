@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { useAI } from '../contexts/AIContext'
 import { useData } from '../contexts/DataContext'
 import { RService } from '../services/rService'
+import { datasetToCSV } from '../services/dataService'
 import type { AnalysisResult } from '../services/rService'
 
 /** 消息类型 */
@@ -165,8 +166,9 @@ export default function ChatPage() {
       prev.map((m) => (m.id === msgId ? { ...m, isExecuting: true } : m))
     )
 
-    // 如果有数据，先将数据写入临时文件（通过 R 执行时自动处理）
-    const result = await RService.execute(code)
+    // 通过 dataCsv 参数传递数据（不在代码中嵌入）
+    const csv = datasetToCSV(dataset!.headers, dataset!.rows)
+    const result = await RService.execute(code, csv)
 
     setMessages((prev) =>
       prev.map((m) =>
@@ -215,12 +217,12 @@ export default function ChatPage() {
               {msg.role === 'assistant' ? 'R' : msg.role === 'user' ? '我' : '⚡'}
             </div>
             <div className={`chat-bubble ${msg.role}`}>
-              {/* 文本内容 */}
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: formatMarkdown(msg.content)
-                }}
-              />
+              {/* 安全文本渲染 — 不使用 dangerouslySetInnerHTML（修复 #4） */}
+              {msg.role === 'assistant' ? (
+                <SafeMarkdown text={msg.content} />
+              ) : (
+                msg.content
+              )}
 
               {/* R 代码块 */}
               {msg.rCode && (
@@ -329,17 +331,77 @@ export default function ChatPage() {
   )
 }
 
-/** 简单的 Markdown 转 HTML */
-function formatMarkdown(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/```r-execute\n[\s\S]*?```/g, '<!-- code block removed -->')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/`(.*?)`/g, '<code>$1</code>')
-    .replace(/^• /gm, '&bull; ')
-    .replace(/^(\d+)\. /gm, '$1. ')
-    .replace(/\n/g, '<br />')
+/**
+ * 安全 Markdown 渲染组件（修复 #4 XSS）
+ * 不使用 dangerouslySetInnerHTML，纯 React 组件渲染
+ */
+function SafeMarkdown({ text }: { text: string }) {
+  // 移除 R 代码块
+  const cleaned = text.replace(/```r-execute\n[\s\S]*?```/g, '')
+
+  // 按行处理
+  const lines = cleaned.split('\n')
+  const elements: React.ReactNode[] = []
+
+  lines.forEach((line, i) => {
+    if (!line.trim()) {
+      elements.push(<br key={i} />)
+      return
+    }
+
+    // 处理行内格式
+    const parts: React.ReactNode[] = []
+    const remaining = line
+    let partIndex = 0
+
+    // 匹配 **bold**、*italic*、`code`
+    const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`)/g
+    let match: RegExpExecArray | null
+    let lastIdx = 0
+
+    while ((match = regex.exec(remaining)) !== null) {
+      // 匹配前的文本
+      if (match.index > lastIdx) {
+        parts.push(remaining.slice(lastIdx, match.index))
+      }
+
+      if (match[2]) {
+        parts.push(<strong key={`${i}-${partIndex++}`}>{match[2]}</strong>)
+      } else if (match[3]) {
+        parts.push(<em key={`${i}-${partIndex++}`}>{match[3]}</em>)
+      } else if (match[4]) {
+        parts.push(
+          <code
+            key={`${i}-${partIndex++}`}
+            style={{ background: 'var(--bg-tertiary)', padding: '1px 4px', borderRadius: 3, fontSize: 13 }}
+          >
+            {match[4]}
+          </code>
+        )
+      }
+
+      lastIdx = match.index + match[0].length
+    }
+
+    if (lastIdx < remaining.length) {
+      parts.push(remaining.slice(lastIdx))
+    }
+
+    // 处理列表前缀
+    let content: React.ReactNode = parts.length === 1 ? parts[0] : <>{parts}</>
+    if (line.startsWith('• ') || line.startsWith('- ')) {
+      content = <>&bull; {content}</>
+    } else if (/^\d+\.\s/.test(line)) {
+      // 有序列表保持原样
+    }
+
+    elements.push(
+      <span key={i}>
+        {content}
+        {i < lines.length - 1 && <br />}
+      </span>
+    )
+  })
+
+  return <div>{elements}</div>
 }

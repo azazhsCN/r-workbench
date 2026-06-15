@@ -1,24 +1,26 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import { aiService, type AIService } from '../services/aiService'
 
 interface AIContextValue {
-  /** AI 服务实例 */
   service: AIService
-  /** 是否已配置 */
   isConfigured: boolean
-  /** 刷新配置状态 */
-  refreshConfig: () => void
+  refreshConfig: () => Promise<void>
 }
 
 const AIContext = createContext<AIContextValue | null>(null)
 
 export function AIProvider({ children }: { children: ReactNode }) {
-  const [isConfigured, setIsConfigured] = useState(aiService.isConfigured())
+  const [isConfigured, setIsConfigured] = useState(false)
 
-  const refreshConfig = useCallback(() => {
-    aiService.loadConfig()
+  const refreshConfig = useCallback(async () => {
+    await aiService.loadConfig()
     setIsConfigured(aiService.isConfigured())
   }, [])
+
+  // 启动时加载一次配置
+  useEffect(() => {
+    refreshConfig()
+  }, [refreshConfig])
 
   return (
     <AIContext.Provider value={{ service: aiService, isConfigured, refreshConfig }}>

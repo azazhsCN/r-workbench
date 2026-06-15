@@ -1,12 +1,10 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { registerIpcHandlers } from './ipc'
-
-let mainWindow: BrowserWindow | null = null
+import { registerIpcHandlers, setMainWindow } from './ipc'
 
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
+  const mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1024,
@@ -16,14 +14,17 @@ function createWindow(): void {
     icon: join(__dirname, '../../resources/icon.ico'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
       contextIsolation: true,
       nodeIntegration: false
+      // sandbox 默认为 true，不再显式禁用
     }
   })
 
+  // 注册到 ipc 模块供其他模块访问
+  setMainWindow(mainWindow)
+
   mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
+    mainWindow.show()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -31,7 +32,6 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // 开发模式加载开发服务器，生产模式加载打包文件
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -40,9 +40,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
-  // 注册 IPC 处理器
   registerIpcHandlers()
-
   createWindow()
 
   app.on('activate', function () {
@@ -55,5 +53,3 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-
-export { mainWindow }

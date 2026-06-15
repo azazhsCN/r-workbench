@@ -28,11 +28,11 @@ const api = {
         path: string
         version: string
       }>,
-    execute: (code: string, dataFiles?: Record<string, string>) =>
-      ipcRenderer.invoke('r:execute', code, dataFiles) as Promise<{
+    execute: (code: string, dataCsv?: string) =>
+      ipcRenderer.invoke('r:execute', code, dataCsv) as Promise<{
         success: boolean
-        data: unknown
-        stdout: string
+        output: string
+        errors: string[]
         stderr: string
         workDir: string
       }>
@@ -49,6 +49,17 @@ const api = {
         meta?: { name: string; rowCount: number; columnCount: number; product: string }
         error?: string
       }>
+  },
+
+  // ── 安全配置存储 ──
+  config: {
+    saveApiKey: (provider: string, apiKey: string) =>
+      ipcRenderer.invoke('config:saveApiKey', provider, apiKey) as Promise<{
+        success: boolean
+        error?: string
+      }>,
+    loadApiKey: (provider: string) =>
+      ipcRenderer.invoke('config:loadApiKey', provider) as Promise<string | null>
   },
 
   // ── 应用信息 ──
@@ -70,8 +81,6 @@ const api = {
   }
 }
 
-// 使用 contextBridge 安全暴露 API
 contextBridge.exposeInMainWorld('api', api)
 
-// 导出类型定义
 export type AppAPI = typeof api

@@ -71,8 +71,15 @@ export default function SettingsPage() {
     }
   }
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // 保存配置到 localStorage
     localStorage.setItem('rworkbench_settings', JSON.stringify(settings))
+
+    // API Key 通过主进程加密存储（修复 #7）
+    if (window.api?.config && settings.aiApiKey) {
+      await window.api.config.saveApiKey(settings.aiProvider, settings.aiApiKey)
+    }
+
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
