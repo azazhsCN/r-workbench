@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json.schemastore.org/electron-builder.json",
+  "appId": "com.rworkbench.app",
+  "productName": "R Workbench",
+  "directories": {
+    "buildResources": "resources",
+    "output": "dist"
+  },
+  "files": [
+    "!**/.vscode/*",
+    "!src/*",
+    "!electron.vite.config.*",
+    "!{.eslintignore,.eslintrc.*,.prettierignore,.prettierrc.*,tsconfig.json,tsconfig.*.json,eslint.config.*}",
+    "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+    "!**/node_modules/.cache/**"
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "resources/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "R Workbench",
+    "installerIcon": "resources/icon.ico",
+    "uninstallerIcon": "resources/icon.ico",
+    "installerHeaderIcon": "resources/icon.ico"
+  },
+  "asar": true,
+  "asarUnpack": ["resources/**"]
+}

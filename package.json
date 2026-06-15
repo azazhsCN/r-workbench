@@ -1,0 +1,50 @@
+{
+  "name": "r-workbench",
+  "version": "0.1.0",
+  "description": "R Workbench - AI驱动的R语言数据分析工作台，替代SPSS的开源方案",
+  "main": "./out/main/index.js",
+  "author": "R Workbench Team",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "start": "electron-vite preview",
+    "build:unpack": "npm run build && electron-builder --dir",
+    "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac",
+    "build:linux": "npm run build && electron-builder --linux",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "papaparse": "^5.5.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sav-reader": "^2.0.8",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@electron-toolkit/utils": "^4.0.0",
+    "@eslint/js": "^9.39.4",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.5.2",
+    "electron": "^33.4.11",
+    "electron-vite": "^4.0.0",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.26",
+    "prettier": "^3.8.4",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.61.0",
+    "vite": "^6.3.5"
+  },
+  "build": {
+    "extends": "./electron-builder.json5"
+  }
+}

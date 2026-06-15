@@ -1,0 +1,345 @@
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useAI } from '../contexts/AIContext'
+import { useData } from '../contexts/DataContext'
+import { RService } from '../services/rService'
+import type { AnalysisResult } from '../services/rService'
+
+/** 消息类型 */
+interface Message {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  rCode?: string
+  rResult?: AnalysisResult
+  isExecuting?: boolean
+  timestamp: number
+}
+
+const WELCOME_MESSAGE: Message = {
+  id: 'welcome',
+  role: 'assistant',
+  content: `你好！我是 R Workbench 的 AI 数据分析助手。🎯
+
+**我能帮你完成：**
+• 描述性统计 — 均值、标准差、频数分布
+• t 检验 — 独立样本 / 配对样本
+• 方差分析 — 单因素 ANOVA
+• 卡方检验 — 独立性 / 拟合度检验
+• 相关分析 — Pearson / Spearman
+• 线性回归 — 简单 / 多元回归
+• 信效度分析 — Cronbach's α
+
+**如何开始：**
+1. 先在「数据管理」页面导入数据
+2. 然后用自然语言描述你的分析需求
+
+试试说：**帮我做一个描述性统计分析**`,
+  timestamp: Date.now()
+}
+
+export default function ChatPage() {
+  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE])
+  const [input, setInput] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const { service: ai, isConfigured } = useAI()
+  const { dataset, hasData } = useData()
+
+  // 自动滚动到底部
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  // 获取数据上下文
+  const getDataContext = useCallback((): string | undefined => {
+    if (!dataset) return undefined
+    const colDescs = dataset.columnInfo.map(
+      (c) => `  - ${c.name} (${c.type === 'numeric' ? '数值' : '分类'}, ${c.total - c.missing}个有效值)`
+    )
+    return `数据集: ${dataset.dataset.name}\n行数: ${dataset.rows.length}\n列数: ${dataset.headers.length}\n变量:\n${colDescs.join('\n')}`
+  }, [dataset])
+
+  const handleSend = async () => {
+    const trimmed = input.trim()
+    if (!trimmed || isStreaming) return
+
+    // 添加用户消息
+    const userMsg: Message = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: trimmed,
+      timestamp: Date.now()
+    }
+    setMessages((prev) => [...prev, userMsg])
+    setInput('')
+    setIsStreaming(true)
+
+    // 检查 AI 配置
+    if (!isConfigured) {
+      const sysMsg: Message = {
+        id: `sys-${Date.now()}`,
+        role: 'system',
+        content: '⚠️ 请先在「设置」页面配置 AI API Key 后再使用对话功能。',
+        timestamp: Date.now()
+      }
+      setMessages((prev) => [...prev, sysMsg])
+      setIsStreaming(false)
+      return
+    }
+
+    // 构建消息历史
+    const chatHistory = messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+    chatHistory.push({ role: 'user', content: trimmed })
+
+    // 创建助手消息（用于流式填充）
+    const assistantMsg: Message = {
+      id: `assistant-${Date.now()}`,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now()
+    }
+    setMessages((prev) => [...prev, assistantMsg])
+
+    // 流式获取 AI 响应
+    let fullContent = ''
+    try {
+      const stream = ai.chatStream(chatHistory, getDataContext())
+      for await (const chunk of stream) {
+        fullContent += chunk
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsg.id ? { ...m, content: fullContent } : m
+          )
+        )
+      }
+    } catch {
+      fullContent = '抱歉，发生了错误。请检查网络连接和 API 配置。'
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMsg.id ? { ...m, content: fullContent } : m
+        )
+      )
+    }
+
+    // 解析 R 代码块
+    const rCodeMatch = fullContent.match(/```r-execute\n([\s\S]*?)```/)
+    if (rCodeMatch) {
+      const rCode = rCodeMatch[1].trim()
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMsg.id ? { ...m, rCode } : m
+        )
+      )
+    }
+
+    setIsStreaming(false)
+  }
+
+  // 执行 R 代码
+  const handleExecuteR = async (msgId: string, code: string) => {
+    if (!hasData) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msgId
+            ? {
+                ...m,
+                rResult: {
+                  success: false,
+                  output: '',
+                  tables: [],
+                  plots: [],
+                  errors: ['请先在「数据管理」页面导入数据']
+                }
+              }
+            : m
+        )
+      )
+      return
+    }
+
+    // 标记为执行中
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msgId ? { ...m, isExecuting: true } : m))
+    )
+
+    // 如果有数据，先将数据写入临时文件（通过 R 执行时自动处理）
+    const result = await RService.execute(code)
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId ? { ...m, rResult: result, isExecuting: false } : m
+      )
+    )
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  return (
+    <div className="chat-page">
+      {/* 状态栏 */}
+      <div
+        style={{
+          padding: '8px 28px',
+          background: 'var(--bg-primary)',
+          borderBottom: '1px solid var(--border)',
+          display: 'flex',
+          gap: 16,
+          fontSize: 12,
+          color: 'var(--text-tertiary)'
+        }}
+      >
+        <span>
+          🤖 AI: {isConfigured ? '✅ 已配置' : '❌ 未配置'}
+        </span>
+        <span>
+          📊 数据: {hasData ? `✅ ${dataset!.dataset.name}` : '❌ 未加载'}
+        </span>
+        <span>
+          ⚙️ R: {RService.getStatus()?.found ? '✅ 就绪' : '❓ 未检测'}
+        </span>
+      </div>
+
+      {/* 消息列表 */}
+      <div className="chat-messages">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`chat-message ${msg.role}`}>
+            <div className={`chat-avatar ${msg.role}`}>
+              {msg.role === 'assistant' ? 'R' : msg.role === 'user' ? '我' : '⚡'}
+            </div>
+            <div className={`chat-bubble ${msg.role}`}>
+              {/* 文本内容 */}
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: formatMarkdown(msg.content)
+                }}
+              />
+
+              {/* R 代码块 */}
+              {msg.rCode && (
+                <div style={{ marginTop: 12 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: 4
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--text-tertiary)',
+                        fontWeight: 600
+                      }}
+                    >
+                      📝 R 代码
+                    </span>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleExecuteR(msg.id, msg.rCode!)}
+                      disabled={msg.isExecuting}
+                    >
+                      {msg.isExecuting ? '⏳ 执行中...' : '▶️ 执行代码'}
+                    </button>
+                  </div>
+                  <pre>
+                    <code>{msg.rCode}</code>
+                  </pre>
+                </div>
+              )}
+
+              {/* R 执行结果 */}
+              {msg.rResult && (
+                <div style={{ marginTop: 12 }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      marginBottom: 4,
+                      color: msg.rResult.success ? 'var(--success)' : 'var(--error)'
+                    }}
+                  >
+                    {msg.rResult.success ? '✅ 执行结果' : '❌ 执行失败'}
+                  </div>
+                  <pre
+                    style={{
+                      background: msg.rResult.success ? '#0f172a' : '#1a0000',
+                      fontSize: 13,
+                      whiteSpace: 'pre-wrap'
+                    }}
+                  >
+                    <code>
+                      {msg.rResult.success
+                        ? msg.rResult.output || '(无输出)'
+                        : msg.rResult.errors.join('\n')}
+                    </code>
+                  </pre>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        {isStreaming && messages[messages.length - 1]?.content === '' && (
+          <div className="chat-message assistant">
+            <div className="chat-avatar assistant">R</div>
+            <div className="chat-bubble assistant">
+              <span style={{ opacity: 0.6 }}>正在思考...</span>
+            </div>
+          </div>
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* 输入区域 */}
+      <div className="chat-input-area">
+        <div className="chat-input-wrapper">
+          <textarea
+            ref={textareaRef}
+            className="chat-input"
+            placeholder={
+              isConfigured
+                ? '描述你的数据分析需求... (Enter 发送, Shift+Enter 换行)'
+                : '请先在设置页面配置 API Key...'
+            }
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={1}
+            disabled={!isConfigured}
+          />
+          <button
+            className="chat-send-btn"
+            onClick={handleSend}
+            disabled={!input.trim() || isStreaming || !isConfigured}
+            title="发送"
+          >
+            →
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** 简单的 Markdown 转 HTML */
+function formatMarkdown(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/```r-execute\n[\s\S]*?```/g, '<!-- code block removed -->')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/`(.*?)`/g, '<code>$1</code>')
+    .replace(/^• /gm, '&bull; ')
+    .replace(/^(\d+)\. /gm, '$1. ')
+    .replace(/\n/g, '<br />')
+}
