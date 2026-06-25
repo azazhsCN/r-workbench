@@ -1,7 +1,74 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, Menu } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { registerIpcHandlers, setMainWindow } from './ipc'
+
+function createMenu(): void {
+  const isMac = process.platform === 'darwin'
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    // macOS 应用菜单
+    ...(isMac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' as const, label: '关于 R Workbench' },
+              { type: 'separator' as const },
+              { role: 'quit' as const, label: '退出 R Workbench' }
+            ]
+          }
+        ]
+      : []),
+    {
+      label: '文件',
+      submenu: [
+        isMac ? { role: 'close' as const, label: '关闭窗口' } : { role: 'quit' as const, label: '退出' }
+      ]
+    },
+    {
+      label: '编辑',
+      submenu: [
+        { role: 'undo' as const, label: '撤销' },
+        { role: 'redo' as const, label: '重做' },
+        { type: 'separator' as const },
+        { role: 'cut' as const, label: '剪切' },
+        { role: 'copy' as const, label: '复制' },
+        { role: 'paste' as const, label: '粘贴' },
+        { role: 'selectAll' as const, label: '全选' }
+      ]
+    },
+    {
+      label: '视图',
+      submenu: [
+        { role: 'reload' as const, label: '重新加载' },
+        { role: 'forceReload' as const, label: '强制重新加载' },
+        { role: 'toggleDevTools' as const, label: '开发者工具' },
+        { type: 'separator' as const },
+        { role: 'resetZoom' as const, label: '重置缩放' },
+        { role: 'zoomIn' as const, label: '放大' },
+        { role: 'zoomOut' as const, label: '缩小' },
+        { type: 'separator' as const },
+        { role: 'togglefullscreen' as const, label: '全屏' }
+      ]
+    },
+    {
+      label: '帮助',
+      submenu: [
+        {
+          label: '关于',
+          click: async () => {
+            const { shell: electronShell } = await import('electron')
+            // 未来可以链接到项目主页
+          }
+        }
+      ]
+    }
+  ]
+
+  const menu = Menu.buildFromTemplate(template)
+  Menu.setApplicationMenu(menu)
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -40,6 +107,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  createMenu()
   registerIpcHandlers()
   createWindow()
 

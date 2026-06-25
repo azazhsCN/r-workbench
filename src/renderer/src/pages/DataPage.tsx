@@ -19,56 +19,51 @@ export default function DataPage() {
 
   const handleFileSelect = useCallback(async () => {
     if (window.api) {
-      const filePath = await window.api.dialog.openFile()
-      if (filePath) {
-        await loadFile(filePath)
+      setIsLoading(true)
+      setError('')
+      try {
+        // 一次性完成：选文件 + 读内容，路径不限
+        const result = await window.api.dialog.readFile()
+        if (!result) {
+          setIsLoading(false)
+          return
+        }
+
+        const { fileName, ext, content, buffer } = result
+
+        if (ext === 'csv' && content) {
+          updateData(parseCSV(content, fileName))
+        } else if ((ext === 'xlsx' || ext === 'xls') && buffer) {
+          updateData(parseExcel(buffer.buffer, fileName))
+        } else if (ext === 'sav') {
+          const savResult = await window.api.data.parseSav(result.filePath)
+          if (savResult.success && savResult.headers && savResult.rows && savResult.columnInfo) {
+            updateData({
+              headers: savResult.headers,
+              rows: savResult.rows as Record<string, unknown>[],
+              columnInfo: savResult.columnInfo as unknown as import('../shared/types').ColumnInfo[],
+              dataset: {
+                name: savResult.meta?.name || fileName,
+                columns: savResult.columnInfo as unknown as import('../shared/types').ColumnInfo[],
+                rowCount: savResult.rows.length
+              }
+            })
+          } else {
+            setError(savResult.error || 'SPSS 文件解析失败')
+          }
+        } else {
+          setError(`不支持的文件格式: .${ext}，请使用 CSV、Excel 或 SPSS 格式`)
+        }
+      } catch (err) {
+        console.error('文件加载失败:', err)
+        setError('文件加载失败，请检查文件格式是否正确')
+      } finally {
+        setIsLoading(false)
       }
     } else {
       fileInputRef.current?.click()
     }
-  }, [])
-
-  const loadFile = async (filePath: string) => {
-    setIsLoading(true)
-    setError('')
-    try {
-      const fileName = filePath.split(/[/\\]/).pop() || ''
-      const ext = fileName.split('.').pop()?.toLowerCase()
-
-      if (ext === 'csv') {
-        const content = await window.api.fs.readFileText(filePath)
-        const result = parseCSV(content, fileName)
-        updateData(result)
-      } else if (ext === 'xlsx' || ext === 'xls') {
-        const buffer = await window.api.fs.readFile(filePath)
-        const result = parseExcel(buffer.buffer, fileName)
-        updateData(result)
-      } else if (ext === 'sav') {
-        const result = await window.api.data.parseSav(filePath)
-        if (result.success && result.headers && result.rows && result.columnInfo) {
-          updateData({
-            headers: result.headers,
-            rows: result.rows as Record<string, unknown>[],
-            columnInfo: result.columnInfo as unknown as import('../shared/types').ColumnInfo[],
-            dataset: {
-              name: result.meta?.name || fileName,
-              columns: result.columnInfo as unknown as import('../shared/types').ColumnInfo[],
-              rowCount: result.rows.length
-            }
-          })
-        } else {
-          setError(result.error || 'SPSS 文件解析失败')
-        }
-      } else {
-        setError(`不支持的文件格式: .${ext}，请使用 CSV、Excel 或 SPSS 格式`)
-      }
-    } catch (err) {
-      console.error('文件加载失败:', err)
-      setError('文件加载失败，请检查文件格式是否正确')
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  }, [updateData])
 
   const handleLocalFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -246,7 +241,7 @@ export default function DataPage() {
             >
               变量信息
             </h3>
-            <div className="data-table-wrapper" style={{ marginBottom: 20, maxHeight: 200, overflow: 'auto' }}>
+            <div className="data-table-wrapper" style={{ marginBottom: 20, overflow: 'auto' }}>
               <table className="data-table">
                 <thead>
                   <tr>
@@ -307,7 +302,7 @@ export default function DataPage() {
             >
               数据预览
             </h3>
-            <div className="data-table-wrapper" style={{ maxHeight: 400, overflow: 'auto' }}>
+            <div className="data-table-wrapper" style={{ overflow: 'auto' }}>
               <table className="data-table">
                 <thead>
                   <tr>

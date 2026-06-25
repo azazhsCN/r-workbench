@@ -1,8 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useAI } from '../contexts/AIContext'
 import { useData } from '../contexts/DataContext'
+import { useR } from '../contexts/RContext'
 import { RService } from '../services/rService'
 import { datasetToCSV } from '../services/dataService'
+import { parseROutput } from '../services/resultParser'
+import { generateInterpretation } from '../services/interpretService'
+import ThreeLineTable from '../components/ThreeLineTable'
 import type { AnalysisResult } from '../services/rService'
 
 /** 消息类型 */
@@ -12,6 +16,11 @@ interface Message {
   content: string
   rCode?: string
   rResult?: AnalysisResult
+  /** 解析后的三线表 */
+  parsedTables?: Array<{ title?: string; headers: string[]; rows: (string | number)[][]; note?: string }>
+  /** AI 解读 */
+  interpretation?: string
+  interpretLoading?: boolean
   isExecuting?: boolean
   timestamp: number
 }
@@ -46,6 +55,7 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const { service: ai, isConfigured } = useAI()
   const { dataset, hasData } = useData()
+  const { status: rStatus } = useR()
 
   // 自动滚动到底部
   useEffect(() => {
@@ -170,9 +180,30 @@ export default function ChatPage() {
     const csv = datasetToCSV(dataset!.headers, dataset!.rows)
     const result = await RService.execute(code, csv)
 
+    // 解析为三线表
+    let parsedTables: Message['parsedTables'] = undefined
+    let interpretation = ''
+
+    if (result.success && result.output) {
+      const parsed = parseROutput(result.output)
+      if (parsed.tables.length > 0) {
+        parsedTables = parsed.tables
+
+        // 自动触发 AI 解读
+        if (isConfigured) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === msgId ? { ...m, rResult: result, isExecuting: false, parsedTables, interpretLoading: true } : m))
+          )
+          interpretation = await generateInterpretation(parsed)
+        }
+      }
+    }
+
     setMessages((prev) =>
       prev.map((m) =>
-        m.id === msgId ? { ...m, rResult: result, isExecuting: false } : m
+        m.id === msgId
+          ? { ...m, rResult: result, isExecuting: false, parsedTables, interpretation, interpretLoading: false }
+          : m
       )
     )
   }
@@ -205,7 +236,7 @@ export default function ChatPage() {
           📊 数据: {hasData ? `✅ ${dataset!.dataset.name}` : '❌ 未加载'}
         </span>
         <span>
-          ⚙️ R: {RService.getStatus()?.found ? '✅ 就绪' : '❓ 未检测'}
+          ⚙️ R: {rStatus.found ? `✅ R ${rStatus.version}` : '❌ 未检测'}
         </span>
       </div>
 
@@ -265,25 +296,67 @@ export default function ChatPage() {
                     style={{
                       fontSize: 12,
                       fontWeight: 600,
-                      marginBottom: 4,
+                      marginBottom: 8,
                       color: msg.rResult.success ? 'var(--success)' : 'var(--error)'
                     }}
                   >
-                    {msg.rResult.success ? '✅ 执行结果' : '❌ 执行失败'}
+                    {msg.rResult.success ? '✅ 分析结果' : '❌ 执行失败'}
                   </div>
-                  <pre
-                    style={{
-                      background: msg.rResult.success ? '#0f172a' : '#1a0000',
-                      fontSize: 13,
-                      whiteSpace: 'pre-wrap'
-                    }}
-                  >
-                    <code>
-                      {msg.rResult.success
-                        ? msg.rResult.output || '(无输出)'
-                        : msg.rResult.errors.join('\n')}
-                    </code>
-                  </pre>
+
+                  {/* 三线表展示 */}
+                  {msg.parsedTables && msg.parsedTables.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      {msg.parsedTables.map((table, i) => (
+                        <ThreeLineTable
+                          key={i}
+                          title={table.title}
+                          headers={table.headers}
+                          rows={table.rows}
+                          note={table.note}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* AI 解读 */}
+                  {msg.interpretLoading && (
+                    <div className="result-interpretation" style={{ marginTop: 8 }}>
+                      <h4>📝 AI 解读</h4>
+                      <p style={{ opacity: 0.6 }}>正在生成结果解读...</p>
+                    </div>
+                  )}
+                  {msg.interpretation && !msg.interpretLoading && (
+                    <div className="result-interpretation" style={{ marginTop: 8 }}>
+                      <h4>📝 结果解读</h4>
+                      <p>{msg.interpretation}</p>
+                    </div>
+                  )}
+
+                  {/* 原始输出（折叠） */}
+                  {msg.rResult.output && (
+                    <details style={{ marginTop: 8 }}>
+                      <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text-tertiary)' }}>
+                        查看原始输出
+                      </summary>
+                      <pre
+                        style={{
+                          background: msg.rResult.success ? '#0f172a' : '#1a0000',
+                          fontSize: 13,
+                          whiteSpace: 'pre-wrap',
+                          marginTop: 4
+                        }}
+                      >
+                        <code>{msg.rResult.output}</code>
+                      </pre>
+                    </details>
+                  )}
+
+                  {/* 错误信息 */}
+                  {!msg.rResult.success && msg.rResult.errors.length > 0 && (
+                    <pre style={{ background: '#1a0000', fontSize: 13, whiteSpace: 'pre-wrap' }}>
+                      <code>{msg.rResult.errors.join('\n')}</code>
+                    </pre>
+                  )}
                 </div>
               )}
             </div>

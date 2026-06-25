@@ -15,6 +15,7 @@ interface NavItemConfig {
 }
 
 const navItems: NavItemConfig[] = [
+  { id: 'welcome', icon: '🏠', label: '首页', section: '导航' },
   { id: 'chat', icon: '💬', label: 'AI 对话分析', section: '分析' },
   { id: 'wizard', icon: '📊', label: '向导式分析', section: '分析' },
   { id: 'data', icon: '📁', label: '数据管理', section: '数据' },

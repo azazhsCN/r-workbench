@@ -9,3 +9,8 @@ dist/
 
 # 打包发行版输出目录
 releases/
+
+# 开发调试脚本
+*.bat
+*.docx
+resources/bin/

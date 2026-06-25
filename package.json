@@ -1,6 +1,6 @@
 {
   "name": "r-workbench",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "R Workbench - AI驱动的R语言数据分析工作台，替代SPSS的开源方案",
   "main": "./out/main/index.js",
   "author": "R Workbench Team",

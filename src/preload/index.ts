@@ -1,14 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-/**
- * 暴露给渲染进程的 API
- * 通过 contextBridge 安全地暴露 IPC 调用接口
- */
 const api = {
   // ── 文件操作 ──
   dialog: {
     openFile: (options?: { filters?: { name: string; extensions: string[] }[] }) =>
-      ipcRenderer.invoke('dialog:openFile', options)
+      ipcRenderer.invoke('dialog:openFile', options),
+    readFile: (options?: { asText?: boolean }) =>
+      ipcRenderer.invoke('dialog:readFile', options) as Promise<{
+        filePath: string
+        fileName: string
+        ext: string
+        content: string | null
+        buffer: Buffer | null
+      } | null>,
+    saveFile: (options?: { defaultName?: string; filters?: { name: string; extensions: string[] }[] }) =>
+      ipcRenderer.invoke('dialog:saveFile', options) as Promise<string | null>
   },
 
   fs: {
@@ -23,18 +29,10 @@ const api = {
   // ── R 环境 ──
   r: {
     detect: () =>
-      ipcRenderer.invoke('r:detect') as Promise<{
-        found: boolean
-        path: string
-        version: string
-      }>,
+      ipcRenderer.invoke('r:detect') as Promise<{ found: boolean; path: string; version: string }>,
     execute: (code: string, dataCsv?: string) =>
       ipcRenderer.invoke('r:execute', code, dataCsv) as Promise<{
-        success: boolean
-        output: string
-        errors: string[]
-        stderr: string
-        workDir: string
+        success: boolean; output: string; errors: string[]; stderr: string; workDir: string
       }>
   },
 
@@ -42,9 +40,7 @@ const api = {
   data: {
     parseSav: (filePath: string) =>
       ipcRenderer.invoke('data:parseSav', filePath) as Promise<{
-        success: boolean
-        headers?: string[]
-        rows?: Record<string, unknown>[]
+        success: boolean; headers?: string[]; rows?: Record<string, unknown>[]
         columnInfo?: Array<{ name: string; type: string; missing: number; total: number }>
         meta?: { name: string; rowCount: number; columnCount: number; product: string }
         error?: string
@@ -54,29 +50,37 @@ const api = {
   // ── 安全配置存储 ──
   config: {
     saveApiKey: (provider: string, apiKey: string) =>
-      ipcRenderer.invoke('config:saveApiKey', provider, apiKey) as Promise<{
-        success: boolean
-        error?: string
-      }>,
+      ipcRenderer.invoke('config:saveApiKey', provider, apiKey) as Promise<{ success: boolean; error?: string }>,
     loadApiKey: (provider: string) =>
       ipcRenderer.invoke('config:loadApiKey', provider) as Promise<string | null>
+  },
+
+  // ── 剪贴板 ──
+  clipboard: {
+    writeHtml: (html: string, plainText: string) =>
+      ipcRenderer.invoke('clipboard:writeHtml', html, plainText) as Promise<{ success: boolean; error?: string }>
+  },
+
+  // ── OfficeCLI ──
+  officecli: {
+    detect: () =>
+      ipcRenderer.invoke('officecli:detect') as Promise<{ found: boolean; version: string; path: string }>,
+    generateDocx: (data: {
+      title: string
+      tables: Array<{ title: string; headers: string[]; rows: (string | number)[][]; note?: string }>
+      interpretation?: string
+      savePath: string
+    }) =>
+      ipcRenderer.invoke('officecli:generateDocx', data) as Promise<{ success: boolean; path?: string; error?: string }>
   },
 
   // ── 应用信息 ──
   app: {
     getPath: () =>
-      ipcRenderer.invoke('app:getPath') as Promise<{
-        userData: string
-        temp: string
-        documents: string
-      }>,
+      ipcRenderer.invoke('app:getPath') as Promise<{ userData: string; temp: string; documents: string }>,
     getInfo: () =>
       ipcRenderer.invoke('app:getInfo') as Promise<{
-        platform: string
-        arch: string
-        version: string
-        electronVersion: string
-        nodeVersion: string
+        platform: string; arch: string; version: string; electronVersion: string; nodeVersion: string
       }>
   }
 }

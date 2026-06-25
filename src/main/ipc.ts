@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, safeStorage } from 'electron'
+﻿import { ipcMain, dialog, app, safeStorage, clipboard } from 'electron'
 import { readFile, writeFile, rm } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join, resolve, normalize } from 'path'
@@ -76,6 +76,36 @@ export function registerIpcHandlers(): void {
     return result.filePaths[0]
   })
 
+  /**
+   * 从对话框选中的文件直接读取内容
+   * 路径来自系统文件对话框，用户主动选择，天然可信
+   */
+  ipcMain.handle(
+    'dialog:readFile',
+    async (_event, options?: { asText?: boolean }) => {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile'],
+        filters: [
+          { name: '数据文件', extensions: ['csv', 'xlsx', 'xls', 'sav'] },
+          { name: '所有文件', extensions: ['*'] }
+        ]
+      })
+      if (result.canceled || result.filePaths.length === 0) return null
+
+      const filePath = result.filePaths[0]
+      const fileName = filePath.split(/[/\\]/).pop() || ''
+      const ext = fileName.split('.').pop()?.toLowerCase()
+
+      if (options?.asText) {
+        const content = await readFile(filePath, 'utf-8')
+        return { filePath, fileName, ext, content: content as string | null, buffer: null }
+      } else {
+        const buffer = await readFile(filePath)
+        return { filePath, fileName, ext, content: null, buffer: buffer }
+      }
+    }
+  )
+
   ipcMain.handle('fs:readFile', async (_event, filePath: unknown) => {
     const safePath = validateFilePath(validateString(filePath, 'filePath'), trustedDirs)
     return await readFile(safePath)
@@ -105,23 +135,52 @@ export function registerIpcHandlers(): void {
 
   // ── R 环境 ──────────────────────────────
 
-  ipcMain.handle('r:detect', async () => {
-    const paths = [
-      'Rscript',
-      'C:\\Program Files\\R\\R-4.4.1\\bin\\Rscript.exe',
-      'C:\\Program Files\\R\\R-4.3.3\\bin\\Rscript.exe',
-      'C:\\Program Files\\R\\R-4.3.2\\bin\\Rscript.exe',
-      'C:\\Program Files\\R\\R-4.2.3\\bin\\Rscript.exe'
-    ]
+  // 缓存检测到的 R 路径
+  let detectedRPath = 'Rscript'
 
-    for (const rPath of paths) {
+  ipcMain.handle('r:detect', async () => {
+    const { readdir } = await import('fs/promises')
+
+    // 动态扫描 R 安装目录，兼容所有版本
+    const scanPaths: string[] = ['Rscript'] // 优先尝试 PATH
+
+    const programFilesDirs = [
+      process.env['ProgramFiles'] || 'C:\\Program Files',
+      process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)',
+      process.env['LOCALAPPDATA'] || ''
+    ].filter(Boolean)
+
+    for (const dir of programFilesDirs) {
       try {
-        const { stdout } = await execAsync(
+        const rDir = `${dir}\\R`
+        const entries = await readdir(rDir, { withFileTypes: true })
+        // 按版本号倒序排列（最新版本优先）
+        const versions = entries
+          .filter((e) => e.isDirectory() && e.name.startsWith('R-'))
+          .map((e) => e.name)
+          .sort()
+          .reverse()
+        for (const ver of versions) {
+          scanPaths.push(`${rDir}\\${ver}\\bin\\Rscript.exe`)
+          scanPaths.push(`${rDir}\\${ver}\\bin\\x64\\Rscript.exe`)
+        }
+      } catch {
+        // 目录不存在，跳过
+      }
+    }
+
+    // 尝试每个路径
+    for (const rPath of scanPaths) {
+      try {
+        const { stdout, stderr } = await execAsync(
           `"${rPath}" --version 2>&1 || "${rPath}" -e "cat(R.version.string)"`,
           { timeout: 10000 }
         )
-        const versionMatch = stdout.match(/R version (\d+\.\d+\.\d+)/)
+        const allOutput = stdout + stderr
+        // 匹配 "R version X.Y.Z" 或 "Rscript (R) version X.Y.Z"
+        const versionMatch = allOutput.match(/version (\d+\.\d+\.\d+)/)
         if (versionMatch) {
+          detectedRPath = rPath
           return { found: true, path: rPath, version: versionMatch[1] }
         }
       } catch {
@@ -165,7 +224,7 @@ cat("\\n__RWB_DONE__\\n")
         const scriptPath = join(workDir, 'script.R')
         await fsWriteFile(scriptPath, scriptContent, 'utf-8')
 
-        const { stdout, stderr } = await execAsync(`Rscript "${scriptPath}"`, {
+        const { stdout, stderr } = await execAsync(`"${detectedRPath}" "${scriptPath}"`, {
           timeout: 60000,
           maxBuffer: 10 * 1024 * 1024,
           cwd: workDir
@@ -321,6 +380,169 @@ cat("\\n__RWB_DONE__\\n")
     } catch {
       return null
     }
+  })
+
+  // ── 剪贴板（HTML 格式，用于粘贴到 Word） ──────────────────────
+
+  ipcMain.handle('clipboard:writeHtml', async (_event, html: unknown, plainText: unknown) => {
+    try {
+      const safeHtml = validateString(html, 'html', 5_000_000)
+      const safeText = validateString(plainText, 'plainText', 5_000_000)
+      // Electron clipboard 同时写入 HTML 和纯文本
+      // Word 粘贴时会优先使用 HTML 格式
+      clipboard.write({
+        text: safeText,
+        html: safeHtml
+      })
+      return { success: true }
+    } catch (error: unknown) {
+      const err = error as { message?: string }
+      return { success: false, error: err.message || '复制失败' }
+    }
+  })
+
+  // ── OfficeCLI（Word/Excel 导出） ──────────────────────
+
+  let officecliPath = ''
+
+  /** 检测 officecli 二进制 */
+  async function detectOfficeCli(): Promise<string> {
+    if (officecliPath) return officecliPath
+    const candidates = [
+      join(app.getAppPath(), 'resources', 'bin', 'officecli.exe'),
+      join(process.resourcesPath || '', 'bin', 'officecli.exe'),
+      join(__dirname, '..', '..', 'resources', 'bin', 'officecli.exe'),
+      'officecli' // PATH 中
+    ]
+    for (const p of candidates) {
+      try {
+        const { stdout } = await execAsync(`"${p}" --version`, { timeout: 5000 })
+        if (stdout.trim()) {
+          officecliPath = p
+          return p
+        }
+      } catch {
+        continue
+      }
+    }
+    return ''
+  }
+
+  ipcMain.handle('officecli:detect', async () => {
+    const path = await detectOfficeCli()
+    if (!path) return { found: false, version: '', path: '' }
+    try {
+      const { stdout } = await execAsync(`"${path}" --version`, { timeout: 5000 })
+      return { found: true, version: stdout.trim(), path }
+    } catch {
+      return { found: false, version: '', path: '' }
+    }
+  })
+
+  ipcMain.handle('officecli:generateDocx', async (_event, data: unknown) => {
+    const { mkdtemp, copyFile, rm } = await import('fs/promises')
+    let tempDir = ''
+    try {
+      const cli = await detectOfficeCli()
+      if (!cli) return { success: false, error: 'OfficeCLI 未安装，请将 officecli.exe 放入 resources/bin/ 目录' }
+
+      const { title, tables, interpretation, savePath } = data as {
+        title: string
+        tables: Array<{ title: string; headers: string[]; rows: (string | number)[][]; note?: string }>
+        interpretation?: string
+        savePath: string
+      }
+
+      tempDir = await mkdtemp(join(require('os').tmpdir(), 'rwb-docx-'))
+      const docxPath = join(tempDir, 'report.docx')
+
+      const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+
+      const run = async (args: string) => {
+        const { stdout } = await execAsync(`"${cli}" ${args}`, { timeout: 30000 })
+        return stdout
+      }
+
+      // 1. 创建 docx
+      await run(`create "${docxPath}"`)
+
+      // 2. 报告标题
+      await run(`add "${docxPath}" / --type paragraph --prop text="${esc(title)}" --prop bold=true --prop size=18`)
+
+      // 3. 逐个添加表格（用 add + set，不用 batch）
+      for (let ti = 0; ti < tables.length; ti++) {
+        const table = tables[ti]
+        const tableIdx = ti + 1
+
+        // 表标题
+        if (table.title) {
+          await run(`add "${docxPath}" / --type paragraph --prop text="${esc(table.title)}" --prop bold=true --prop size=14`)
+        }
+
+        // 添加空表格
+        const totalRows = table.rows.length + 1
+        const cols = table.headers.length
+        await run(`add "${docxPath}" / --type table --prop rows=${totalRows} --prop cols=${cols}`)
+
+        // 设置三线表样式：顶线粗 + 底线粗 + 无左右 + 无内部横竖线
+        await run(`set "${docxPath}" /body/tbl[${tableIdx}] --prop border.top=single --prop border.top.sz=12 --prop border.bottom=single --prop border.bottom.sz=12 --prop border.left=none --prop border.right=none --prop border.insideH=none --prop border.insideV=none`)
+
+        // 表头行每个单元格加底部细线
+        for (let c = 0; c < cols; c++) {
+          await run(`set "${docxPath}" /body/tbl[${tableIdx}]/tr[1]/tc[${c + 1}] --prop border.bottom=single --prop border.bottom.sz=4`)
+        }
+
+        // 填写表头
+        for (let c = 0; c < cols; c++) {
+          await run(`set "${docxPath}" /body/tbl[${tableIdx}]/tr[1]/tc[${c + 1}] --prop text="${esc(table.headers[c])}" --prop bold=true`)
+        }
+
+        // 填写数据行
+        for (let r = 0; r < table.rows.length; r++) {
+          for (let c = 0; c < table.rows[r].length; c++) {
+            const val = String(table.rows[r][c])
+            await run(`set "${docxPath}" /body/tbl[${tableIdx}]/tr[${r + 2}]/tc[${c + 1}] --prop text="${esc(val)}"`)
+          }
+        }
+
+        // 表注
+        if (table.note) {
+          await run(`add "${docxPath}" / --type paragraph --prop text="${esc(table.note)}" --prop italic=true --prop size=10`)
+        }
+      }
+
+      // 4. 解读文字
+      if (interpretation) {
+        await run(`add "${docxPath}" / --type paragraph --prop text=" "`)
+        for (const line of interpretation.split('\n').filter((l) => l.trim())) {
+          await run(`add "${docxPath}" / --type paragraph --prop text="${esc(line)}"`)
+        }
+      }
+
+      // 5. 保存并关闭（resident 模式必须 close 才会写入磁盘）
+      await run(`close "${docxPath}"`)
+
+      // 6. 复制到目标
+      await copyFile(docxPath, savePath)
+      rm(tempDir, { recursive: true, force: true }).catch(() => {})
+
+      return { success: true, path: savePath }
+    } catch (error: unknown) {
+      const err = error as { message?: string; stderr?: string }
+      if (tempDir) rm(tempDir, { recursive: true, force: true }).catch(() => {})
+      return { success: false, error: err.stderr || err.message || '生成失败' }
+    }
+  })
+  ipcMain.handle('dialog:saveFile', async (_event, options?: { defaultName?: string; filters?: { name: string; extensions: string[] }[] }) => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: options?.defaultName || '分析报告.docx',
+      filters: options?.filters || [
+        { name: 'Word 文档', extensions: ['docx'] },
+        { name: 'HTML 文件', extensions: ['html'] }
+      ]
+    })
+    if (result.canceled || !result.filePath) return null
+    return result.filePath
   })
 
   // ── 系统信息 ──────────────────────────────

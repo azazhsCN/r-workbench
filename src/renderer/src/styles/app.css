@@ -421,8 +421,94 @@
   line-height: 1.5;
 }
 
+/* ── 变量选择标签 ── */
+.var-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1.5px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.var-tag:hover {
+  border-color: var(--primary-light);
+  color: var(--primary);
+  background: var(--primary-bg);
+}
+
+.var-tag.selected {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.var-tag.selected::before {
+  content: '✓ ';
+  font-weight: 700;
+}
+
+.var-tag.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.var-section {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.var-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.var-section-desc {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.var-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.var-count {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: 10px;
+}
+
 /* ── 数据页 ── */
 .data-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.data-page .page-header {
+  flex-shrink: 0;
+}
+
+.data-page .page-body {
+  flex: 1;
+  overflow: auto;
   padding: 24px 28px;
 }
 
@@ -462,12 +548,15 @@
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  overflow: auto;
   margin-top: 20px;
+  min-height: 200px;
+  max-height: 500px;
 }
 
 .data-table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
@@ -481,16 +570,24 @@
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
+  z-index: 1;
+  white-space: nowrap;
+  min-width: 80px;
 }
 
 .data-table td {
   padding: 8px 14px;
   border-bottom: 1px solid var(--border-light);
   color: var(--text-primary);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.data-table tr:hover td {
-  background: var(--primary-bg);
+.data-table td:hover {
+  white-space: normal;
+  word-break: break-all;
 }
 
 /* ── 设置页 ── */

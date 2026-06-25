@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { DataProvider } from './contexts/DataContext'
 import { AIProvider } from './contexts/AIContext'
+import { RProvider } from './contexts/RContext'
 import Sidebar from './components/Sidebar'
 import ChatPage from './pages/ChatPage'
 import WizardPage from './pages/WizardPage'
@@ -36,7 +37,8 @@ export default function App() {
   return (
     <DataProvider>
       <AIProvider>
-        <div className="app-layout">
+        <RProvider>
+          <div className="app-layout">
           <Sidebar
             currentPage={currentPage}
             onNavigate={setCurrentPage}
@@ -47,6 +49,7 @@ export default function App() {
             <div className="page-container animate-fade-in">{renderPage()}</div>
           </main>
         </div>
+        </RProvider>
       </AIProvider>
     </DataProvider>
   )

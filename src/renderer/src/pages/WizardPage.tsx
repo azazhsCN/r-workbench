@@ -1,8 +1,12 @@
-import { useState, useCallback } from 'react'
+﻿import { useState, useCallback } from 'react'
 import { useData } from '../contexts/DataContext'
+import { useAI } from '../contexts/AIContext'
 import { RService, type AnalysisResult } from '../services/rService'
 import { datasetToCSV } from '../services/dataService'
-import { generateHTMLReport, type AnalysisRecord } from '../services/reportService'
+import { parseROutput } from '../services/resultParser'
+import { generateInterpretation } from '../services/interpretService'
+import ThreeLineTable, { threeLineTableToHTML } from '../components/ThreeLineTable'
+import type { AnalysisRecord } from '../services/reportService'
 
 /** 向导步骤 */
 type WizardStep = 'select' | 'configure' | 'execute' | 'result'
@@ -113,6 +117,7 @@ const METHODS: AnalysisMethod[] = [
 
 export default function WizardPage() {
   const { dataset, hasData, getNumericColumns, getStringColumns, getAllColumns } = useData()
+  const { isConfigured } = useAI()
 
   const [step, setStep] = useState<WizardStep>('select')
   const [selectedMethod, setSelectedMethod] = useState<AnalysisMethod | null>(null)
@@ -120,6 +125,8 @@ export default function WizardPage() {
   const [groupVar, setGroupVar] = useState<string>('')
   const [, setIsExecuting] = useState(false)
   const [result, setResult] = useState<AnalysisResult | null>(null)
+  const [interpretation, setInterpretation] = useState<string>('')
+  const [interpretLoading, setInterpretLoading] = useState(false)
 
   const resetWizard = useCallback(() => {
     setStep('select')
@@ -127,6 +134,7 @@ export default function WizardPage() {
     setDepVars([])
     setGroupVar('')
     setResult(null)
+    setInterpretation('')
   }, [])
 
   const handleSelectMethod = (method: AnalysisMethod) => {
@@ -172,9 +180,9 @@ export default function WizardPage() {
         .replace('=== 相关分析 (pearson) ===', '=== 配对样本 t 检验 ===')
       // 重新生成配对 t 检验代码
       code = `
-data <- read.csv("${dataFile}", stringsAsFactors = FALSE)
-x1 <- as.numeric(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
-x2 <- as.numeric(data[["${depVars[1].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
+data <- read.csv("${dataFile}", stringsAsFactors = FALSE, check.names = FALSE, fileEncoding = "UTF-8-BOM")
+x1 <- suppressWarnings(as.numeric(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]]))
+x2 <- suppressWarnings(as.numeric(data[["${depVars[1].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]]))
 cat("=== 配对样本 t 检验 ===\\n")
 result <- t.test(x1, x2, paired = TRUE)
 cat(sprintf("t = %.4f, df = %.2f, p = %.4f\\n", result$statistic, result$parameter, result$p.value))
@@ -189,7 +197,7 @@ cat(sprintf("95%% CI: [%.4f, %.4f]\\n", result$conf.int[1], result$conf.int[2]))
       code = RService.reliabilityCode(depVars, dataFile)
     } else if (method === 'chisquare') {
       code = `
-data <- read.csv("${dataFile}", stringsAsFactors = FALSE)
+data <- read.csv("${dataFile}", stringsAsFactors = FALSE, check.names = FALSE, fileEncoding = "UTF-8-BOM")
 cat("=== 卡方检验 ===\\n")
 tbl <- table(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]], data[["${depVars[1].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
 cat("列联表:\\n")
@@ -201,8 +209,8 @@ else cat("\\n结论: 两个变量之间不存在显著关联 (p >= 0.05)\\n")
 `
     } else if (method === 'anova') {
       code = `
-data <- read.csv("${dataFile}", stringsAsFactors = FALSE)
-data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]] <- as.numeric(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
+data <- read.csv("${dataFile}", stringsAsFactors = FALSE, check.names = FALSE, fileEncoding = "UTF-8-BOM")
+data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]] <- suppressWarnings(as.numeric(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
 cat("=== 单因素方差分析 ===\\n")
 model <- aov(${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')} ~ factor(${groupVar.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}), data = data)
 print(summary(model))
@@ -218,6 +226,18 @@ for(g in groups) {
     const execResult = await RService.execute(code, csv)
 
     setResult(execResult)
+
+    // 自动触发 AI 解读
+    if (execResult.success && execResult.output) {
+      const parsed = parseROutput(execResult.output)
+      if (parsed.tables.length > 0 && isConfigured) {
+        setInterpretLoading(true)
+        const interp = await generateInterpretation(parsed)
+        setInterpretation(interp)
+        setInterpretLoading(false)
+      }
+    }
+
     setIsExecuting(false)
     setStep('result')
   }
@@ -283,7 +303,7 @@ for(g in groups) {
                   {methods.map((m) => (
                     <div
                       key={m.id}
-                      className="wizard-card"
+                      className={`wizard-card ${selectedMethod?.id === m.id ? 'active' : ''}`}
                       onClick={() => handleSelectMethod(m)}
                       style={{ opacity: hasData ? 1 : 0.6 }}
                     >
@@ -305,29 +325,28 @@ for(g in groups) {
               ← 返回选择
             </button>
 
-            <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, marginBottom: 16 }}>
-              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>
+            <div className="var-section">
+              <div className="var-section-title">
                 {selectedMethod.needsGroup ? '选择因变量（数值型）' : `选择变量（${selectedMethod.minVars === selectedMethod.maxVars ? `选${selectedMethod.minVars}个` : `至少选${selectedMethod.minVars}个`}）`}
-              </h3>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+              </div>
+              <div className="var-section-desc">
                 {selectedMethod.id === 'regression'
                   ? '第一个变量为因变量，其余为自变量'
                   : selectedMethod.id === 'ttest_paired'
                   ? '选择两个配对变量'
                   : selectedMethod.id === 'correlation'
                   ? '选择两个变量分析相关性'
-                  : '点击选择/取消变量'}
-              </p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  : '点击选择或取消变量'}
+              </div>
+              <div className="var-tags">
                 {getAvailableVars().map((v) => (
-                  <button
+                  <span
                     key={v}
-                    className={`btn btn-sm ${depVars.includes(v) ? 'btn-primary' : 'btn-secondary'}`}
+                    className={`var-tag ${depVars.includes(v) ? 'selected' : ''} ${!depVars.includes(v) && depVars.length >= selectedMethod.maxVars ? 'disabled' : ''}`}
                     onClick={() => toggleVar(v)}
-                    disabled={!depVars.includes(v) && depVars.length >= selectedMethod.maxVars}
                   >
                     {v}
-                  </button>
+                  </span>
                 ))}
                 {getAvailableVars().length === 0 && (
                   <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
@@ -335,40 +354,45 @@ for(g in groups) {
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8 }}>
-                已选: {depVars.length} / {selectedMethod.maxVars} 个变量
+              <div className="var-count">
+                已选 {depVars.length} / {selectedMethod.maxVars} 个变量
+                {depVars.length > 0 && (
+                  <span>：{depVars.join('、')}</span>
+                )}
               </div>
             </div>
 
             {selectedMethod.needsGroup && (
-              <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, marginBottom: 16 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 4 }}>选择分组变量</h3>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+              <div className="var-section">
+                <div className="var-section-title">选择分组变量</div>
+                <div className="var-section-desc">
                   选择一个分类变量作为分组依据（该变量应有2个或多个水平）
-                </p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                </div>
+                <div className="var-tags">
                   {getStringColumns().map((v) => (
-                    <button
+                    <span
                       key={v}
-                      className={`btn btn-sm ${groupVar === v ? 'btn-primary' : 'btn-secondary'}`}
+                      className={`var-tag ${groupVar === v ? 'selected' : ''}`}
                       onClick={() => setGroupVar(v)}
                     >
                       {v}
-                    </button>
+                    </span>
                   ))}
-                  {/* 也允许选择取值较少的数值型变量作为分组 */}
                   {getNumericColumns()
                     .filter((v) => !depVars.includes(v))
                     .map((v) => (
-                      <button
+                      <span
                         key={v}
-                        className={`btn btn-sm ${groupVar === v ? 'btn-primary' : 'btn-secondary'}`}
+                        className={`var-tag ${groupVar === v ? 'selected' : ''}`}
                         onClick={() => setGroupVar(v)}
                       >
                         {v}
-                      </button>
+                      </span>
                     ))}
                 </div>
+                {groupVar && (
+                  <div className="var-count">分组变量：{groupVar}</div>
+                )}
               </div>
             )}
 
@@ -399,7 +423,8 @@ for(g in groups) {
         {/* 步骤 4：结果 */}
         {step === 'result' && result && selectedMethod && (
           <div className="animate-slide-up">
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+            {/* 操作按钮 */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
               <button className="btn btn-ghost btn-sm" onClick={resetWizard}>
                 ← 重新分析
               </button>
@@ -410,24 +435,61 @@ for(g in groups) {
                 className="btn btn-secondary btn-sm"
                 onClick={() => {
                   const output = result.output || result.errors.join('\n')
-                  navigator.clipboard.writeText(output).then(() => alert('已复制到剪贴板'))
+                  navigator.clipboard.writeText(output).then(() => alert('✅ 已复制原始输出'))
                 }}
               >
-                📋 复制结果
+                📋 复制原始输出
               </button>
               <button
                 className="btn btn-secondary btn-sm"
-                onClick={() => {
-                  const record: AnalysisRecord = {
-                    id: `r-${Date.now()}`,
-                    method: selectedMethod.id,
-                    methodName: selectedMethod.name,
-                    variables: depVars,
-                    groupVar: groupVar || undefined,
-                    output: result.output || result.errors.join('\n'),
-                    timestamp: Date.now()
+                onClick={async () => {
+                  const parsed = parseROutput(result.output || '')
+                  const html = threeLineTableToHTML(parsed.tables, interpretation)
+                  const plainText = parsed.tables.map((t) => {
+                    const h = t.headers.join('\t')
+                    const r = t.rows.map((row) => row.join('\t')).join('\n')
+                    return `${t.title}\n${h}\n${r}\n${t.note || ''}`
+                  }).join('\n\n') + (interpretation ? '\n\n' + interpretation : '')
+                  try {
+                    await window.api.clipboard.writeHtml(html, plainText)
+                    alert('✅ 已复制，直接粘贴到 Word 即可保留三线表排版')
+                  } catch {
+                    navigator.clipboard.writeText(plainText).then(() => alert('已复制纯文本'))
                   }
-                  const html = generateHTMLReport([record])
+                }}
+              >
+                📄 复制到 Word
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={async () => {
+                  const parsed = parseROutput(result.output || '')
+                  // 尝试用 OfficeCLI 生成 .docx
+                  if (window.api?.officecli) {
+                    const cli = await window.api.officecli.detect()
+                    if (cli.found) {
+                      const savePath = await window.api.dialog.saveFile({
+                        defaultName: `${selectedMethod.name}_分析报告.docx`,
+                        filters: [{ name: 'Word 文档', extensions: ['docx'] }]
+                      })
+                      if (savePath) {
+                        const res = await window.api.officecli.generateDocx({
+                          title: selectedMethod.name + ' 分析报告',
+                          tables: parsed.tables,
+                          interpretation,
+                          savePath
+                        })
+                        if (res.success) {
+                          alert('✅ Word 报告已生成：' + res.path)
+                        } else {
+                          alert('❌ 生成失败：' + res.error)
+                        }
+                      }
+                      return
+                    }
+                  }
+                  // 降级：导出 HTML 三线表报告
+                  const html = threeLineTableToHTML(parsed.tables, interpretation)
                   const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
                   const url = URL.createObjectURL(blob)
                   const a = document.createElement('a')
@@ -435,12 +497,14 @@ for(g in groups) {
                   a.download = `${selectedMethod.name}_分析报告.html`
                   a.click()
                   URL.revokeObjectURL(url)
+                  alert('⚠️ OfficeCLI 未安装，已导出 HTML 格式。运行 download-officecli.bat 安装后可导出 Word 格式。')
                 }}
               >
-                📄 导出报告
+                📥 导出报告
               </button>
             </div>
 
+            {/* 成功/失败提示 */}
             <div
               style={{
                 background: result.success ? 'var(--success-bg)' : 'var(--error-bg)',
@@ -455,19 +519,80 @@ for(g in groups) {
               {result.success ? '✅ 分析完成' : '❌ 分析失败'}
             </div>
 
-            <div
-              style={{
-                background: 'var(--bg-primary)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-lg)',
-                padding: 20
-              }}
-            >
-              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>📊 输出结果</h3>
-              <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
-                <code>{result.output || result.errors.join('\n') || '(无输出)'}</code>
-              </pre>
-            </div>
+            {/* 三线表展示 */}
+            {result.success && result.output && (() => {
+              const parsed = parseROutput(result.output)
+              if (parsed.tables.length > 0) {
+                return (
+                  <div style={{ marginBottom: 20 }}>
+                    {parsed.tables.map((table, i) => (
+                      <ThreeLineTable
+                        key={i}
+                        title={table.title}
+                        headers={table.headers}
+                        rows={table.rows}
+                        note={table.note}
+                      />
+                    ))}
+                  </div>
+                )
+              }
+              return null
+            })()}
+
+            {/* AI 结果解读 */}
+            {interpretLoading && (
+              <div className="result-interpretation">
+                <h4>📝 结果解读</h4>
+                <p style={{ opacity: 0.6 }}>AI 正在生成结果解读...</p>
+              </div>
+            )}
+            {interpretation && !interpretLoading && (
+              <div className="result-interpretation">
+                <h4>📝 结果解读</h4>
+                <p>{interpretation}</p>
+              </div>
+            )}
+            {!interpretation && !interpretLoading && result.success && !isConfigured && (
+              <div
+                style={{
+                  background: 'var(--warning-bg)',
+                  border: '1px solid var(--warning)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 12,
+                  marginBottom: 16,
+                  fontSize: 13
+                }}
+              >
+                💡 配置 AI API Key 后，可自动生成符合论文风格的结果解读
+              </div>
+            )}
+
+            {/* 原始输出（折叠） */}
+            <details style={{ marginTop: 16 }}>
+              <summary
+                style={{
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  color: 'var(--text-tertiary)',
+                  marginBottom: 8
+                }}
+              >
+                查看 R 原始输出
+              </summary>
+              <div
+                style={{
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: 16
+                }}
+              >
+                <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
+                  <code>{result.output || result.errors.join('\n') || '(无输出)'}</code>
+                </pre>
+              </div>
+            </details>
 
             {/* 使用提示 */}
             <div
@@ -480,8 +605,8 @@ for(g in groups) {
                 fontSize: 13
               }}
             >
-              💡 <strong>提示：</strong>你可以点击「复制结果」将统计结果粘贴到论文中，
-              或点击「导出报告」生成 HTML 格式的分析报告（可用 Word 打开编辑）。
+              💡 <strong>提示：</strong>「📄 复制到 Word」可将三线表和解读直接粘贴到论文中；
+              「📥 导出报告」可生成 Word 格式的完整分析报告。
             </div>
           </div>
         )}

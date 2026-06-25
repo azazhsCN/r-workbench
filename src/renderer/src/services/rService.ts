@@ -2,21 +2,19 @@
  * R 执行服务
  * 提供 R 环境检测、代码执行、结果解析功能
  *
- * 修复 #2: 所有插入 R 代码的字符串均经过 rEscape 转义
- * 修复 #3: 数据通过 IPC dataCsv 参数传入主进程写入临时文件
- * 修复 #8: 代码不再额外包装，由主进程统一负责错误捕获
+ * - rEscape(): 转义变量名防注入
+ * - 数据通过 IPC dataCsv 参数传递，不嵌入代码
+ * - 代码不额外包装，主进程统一处理
  */
 
 import type { RExecuteResult } from '../../shared/types'
 
-/** R 环境状态 */
 export interface RStatus {
   found: boolean
   path: string
   version: string
 }
 
-/** 分析结果 */
 export interface AnalysisResult {
   success: boolean
   output: string
@@ -31,10 +29,9 @@ export interface ParsedTable {
   rows: string[][]
 }
 
-/**
- * 转义字符串以安全嵌入 R 代码
- * 修复 #2: 防止 R 代码注入
- */
+/** 统一的 read.csv 头 */
+const READ_CSV = 'read.csv(dataFile, stringsAsFactors = FALSE, check.names = FALSE, fileEncoding = "UTF-8-BOM")'
+
 function rEscape(s: string): string {
   return s
     .replace(/\\/g, '\\\\')
@@ -46,13 +43,9 @@ function rEscape(s: string): string {
     .replace(/\0/g, '')
 }
 
-/**
- * R 执行服务
- */
 export class RService {
   private static instance: RStatus | null = null
 
-  /** 检测 R 环境 */
   static async detect(): Promise<RStatus> {
     if (!window.api) return { found: false, path: '', version: '' }
     const result = await window.api.r.detect()
@@ -64,18 +57,11 @@ export class RService {
     return RService.instance
   }
 
-  /**
-   * 执行 R 代码
-   * @param code R 代码（无需包装，主进程统一处理）
-   * @param dataCsv 可选的 CSV 数据，通过 IPC 传入主进程写入临时文件
-   */
   static async execute(code: string, dataCsv?: string): Promise<AnalysisResult> {
     if (!window.api) {
       return { success: false, output: '', tables: [], plots: [], errors: ['API 未就绪'] }
     }
-
     const result: RExecuteResult = await window.api.r.execute(code, dataCsv)
-
     if (!result.success) {
       return {
         success: false,
@@ -85,29 +71,26 @@ export class RService {
         errors: result.errors || [result.stderr || '执行失败']
       }
     }
-
-    return {
-      success: true,
-      output: result.output || '',
-      tables: [],
-      plots: [],
-      errors: []
-    }
+    return { success: true, output: result.output || '', tables: [], plots: [], errors: [] }
   }
-
-  // ── 以下代码生成方法均使用 rEscape 转义变量名 ──
 
   /** 描述性统计 */
   static descriptiveCode(vars: string[], dataFile = 'data.csv'): string {
     const varList = vars.map((v) => `"${rEscape(v)}"`).join(', ')
     return `
-data <- read.csv("${rEscape(dataFile)}", stringsAsFactors = FALSE)
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
 vars <- c(${varList})
 for(v in vars) {
-  x <- as.numeric(data[[v]])
-  cat(sprintf("%-20s N=%-5d M=%.3f SD=%.3f Min=%.3f Max=%.3f Med=%.3f\\n",
-    v, sum(!is.na(x)), mean(x, na.rm=TRUE), sd(x, na.rm=TRUE),
-    min(x, na.rm=TRUE), max(x, na.rm=TRUE), median(x, na.rm=TRUE)))
+  x <- suppressWarnings(as.numeric(data[[v]]))
+  valid <- x[!is.na(x)]
+  if(length(valid) > 0) {
+    cat(sprintf("%-50s N=%-5d M=%.3f SD=%.3f Min=%.3f Max=%.3f Med=%.3f\\n",
+      substr(v, 1, 50), length(valid), mean(valid), sd(valid),
+      min(valid), max(valid), median(valid)))
+  } else {
+    cat(sprintf("%-50s N=0 (无数值数据)\\n", substr(v, 1, 50)))
+  }
 }
 `
   }
@@ -117,11 +100,12 @@ for(v in vars) {
     const safeDv = rEscape(dv)
     const safeGroup = rEscape(groupVar)
     return `
-data <- read.csv("${rEscape(dataFile)}", stringsAsFactors = FALSE)
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
 groups <- unique(data[["${safeGroup}"]])
 if(length(groups) != 2) stop("分组变量必须恰好有2个水平")
-g1 <- as.numeric(data[data[["${safeGroup}"]] == groups[1], "${safeDv}"])
-g2 <- as.numeric(data[data[["${safeGroup}"]] == groups[2], "${safeDv}"])
+g1 <- suppressWarnings(as.numeric(data[data[["${safeGroup}"]] == groups[1], "${safeDv}"]))
+g2 <- suppressWarnings(as.numeric(data[data[["${safeGroup}"]] == groups[2], "${safeDv}"]))
 g1 <- g1[!is.na(g1)]
 g2 <- g2[!is.na(g2)]
 cat("=== 独立样本 t 检验 ===\\n")
@@ -147,9 +131,10 @@ if(result$p.value < 0.05) {
     dataFile = 'data.csv'
   ): string {
     return `
-data <- read.csv("${rEscape(dataFile)}", stringsAsFactors = FALSE)
-x <- as.numeric(data[["${rEscape(var1)}"]])
-y <- as.numeric(data[["${rEscape(var2)}"]])
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+x <- suppressWarnings(as.numeric(data[["${rEscape(var1)}"]]))
+y <- suppressWarnings(as.numeric(data[["${rEscape(var2)}"]]))
 cat("=== 相关分析 (${method}) ===\\n")
 result <- cor.test(x, y, method = "${method}")
 cat(sprintf("r = %.4f\\n", result$estimate))
@@ -166,7 +151,8 @@ else cat("结论: 不存在显著相关 (p >= 0.05)\\n")
     const safeDv = rEscape(dv)
     const formula = `"${safeDv}" ~ ${ivs.map((v) => `"${rEscape(v)}"`).join(' + ')}`
     return `
-data <- read.csv("${rEscape(dataFile)}", stringsAsFactors = FALSE)
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
 model <- lm(${formula}, data = data)
 s <- summary(model)
 cat("=== 线性回归分析 ===\\n")
@@ -187,15 +173,18 @@ for(i in 1:nrow(coefs)) {
   static reliabilityCode(items: string[], dataFile = 'data.csv'): string {
     const itemList = items.map((v) => `"${rEscape(v)}"`).join(', ')
     return `
-data <- read.csv("${rEscape(dataFile)}", stringsAsFactors = FALSE)
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
 items <- c(${itemList})
 item_data <- data[, items]
+item_data <- as.data.frame(lapply(item_data, function(x) suppressWarnings(as.numeric(x))))
+item_data <- item_data[complete.cases(item_data), ]
 k <- ncol(item_data)
-item_vars <- apply(item_data, 2, var, na.rm = TRUE)
-total_var <- var(rowSums(item_data, na.rm = TRUE), na.rm = TRUE)
+item_vars <- apply(item_data, 2, var)
+total_var <- var(rowSums(item_data))
 alpha <- (k / (k - 1)) * (1 - sum(item_vars) / total_var)
 cat("=== 信度分析 (Cronbach's α) ===\\n")
-cat(sprintf("项目数: %d, 有效样本: %d\\n", k, sum(complete.cases(item_data))))
+cat(sprintf("项目数: %d, 有效样本: %d\\n", k, nrow(item_data)))
 cat(sprintf("Cronbach's α = %.4f\\n\\n", alpha))
 if(alpha >= 0.9) cat("信度非常好 (α ≥ 0.9)\\n")
 else if(alpha >= 0.8) cat("信度好 (α ≥ 0.8)\\n")

@@ -114,8 +114,81 @@ button:disabled {
   opacity: 0.5;
 }
 
-.btn {
-  display: inline-flex;
+/* ── 三线表（学术论文规范） ── */
+.three-line-table {
+  width: max-content;
+  min-width: 60%;
+  margin: 0 auto;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 顶线 */
+.three-line-table thead tr {
+  border-top: 2px solid var(--text-primary);
+}
+
+/* 表头底线 */
+.three-line-table thead tr th {
+  border-bottom: 1px solid var(--text-primary);
+  padding: 6px 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: transparent;
+  white-space: nowrap;
+}
+
+/* 数据单元格 */
+.three-line-table tbody td {
+  padding: 5px 16px;
+  color: var(--text-primary);
+  border: none;
+}
+
+/* 交替行底色（可选，增加可读性） */
+.three-line-table tbody tr:nth-child(even) {
+  background: var(--bg-secondary);
+}
+
+/* 表底线 */
+.three-line-table tbody tr:last-child {
+  border-bottom: 2px solid var(--text-primary);
+}
+
+/* ── 结果解读卡片 ── */
+.result-interpretation {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding: 16px 20px;
+  margin: 16px 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text-primary);
+}
+
+.result-interpretation h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+
+.result-interpretation p {
+  margin-bottom: 8px;
+}
+
+.result-interpretation p:last-child {
+  margin-bottom: 0;
+}
+
+.result-interpretation strong {
+  color: var(--text-primary);
+}
+
+/* ── 动画 ── */
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -162,6 +235,52 @@ button:disabled {
 .btn-lg {
   padding: 10px 24px;
   font-size: 15px;
+}
+
+/* 选中状态（用于按钮组切换） */
+.btn.active,
+.btn.selected {
+  background: var(--primary);
+  color: var(--text-inverse);
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+}
+
+.btn.active::before,
+.btn.selected::before {
+  content: '✓ ';
+  font-weight: 700;
+}
+
+/* 卡片选中状态 */
+.welcome-card.active,
+.wizard-card.active {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.2);
+}
+
+.welcome-card.active::after,
+.wizard-card.active::after {
+  content: '✓';
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  background: var(--primary);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.welcome-card,
+.wizard-card {
+  position: relative;
 }
 
 /* ── 输入框 ── */
