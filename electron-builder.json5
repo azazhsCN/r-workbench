@@ -4,7 +4,7 @@
   "productName": "R Workbench",
   "directories": {
     "buildResources": "resources",
-    "output": "dist"
+    "output": "releases"
   },
   "files": [
     "!**/.vscode/*",

@@ -6,3 +6,6 @@ dist/
 .env
 .env.local
 .npmrc
+
+# 打包发行版输出目录
+releases/
