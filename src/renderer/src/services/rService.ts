@@ -65,7 +65,7 @@ export class RService {
     if (!result.success) {
       return {
         success: false,
-        output: result.stdout || '',
+        output: result.output || '',
         tables: [],
         plots: [],
         errors: result.errors || [result.stderr || '执行失败']
@@ -191,6 +191,56 @@ else if(alpha >= 0.8) cat("信度好 (α ≥ 0.8)\\n")
 else if(alpha >= 0.7) cat("信度可接受 (α ≥ 0.7)\\n")
 else if(alpha >= 0.6) cat("信度尚可 (α ≥ 0.6)\\n")
 else cat("信度不佳 (α < 0.6)\\n")
+`
+  }
+
+  /** 配对样本 t 检验 */
+  static tTestPairedCode(var1: string, var2: string, dataFile = 'data.csv'): string {
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+x1 <- suppressWarnings(as.numeric(data[["${rEscape(var1)}"]]))
+x2 <- suppressWarnings(as.numeric(data[["${rEscape(var2)}"]]))
+cat("=== 配对样本 t 检验 ===\\n")
+result <- t.test(x1, x2, paired = TRUE)
+cat(sprintf("t = %.4f, df = %.2f, p = %.4f\\n", result$statistic, result$parameter, result$p.value))
+cat(sprintf("均值差: %.4f\\n", mean(x1 - x2, na.rm = TRUE)))
+cat(sprintf("95%% CI: [%.4f, %.4f]\\n", result$conf.int[1], result$conf.int[2]))
+if(result$p.value < 0.05) cat("\\n结论: 两个配对变量之间存在显著差异 (p < 0.05)\\n")
+else cat("\\n结论: 两个配对变量之间不存在显著差异 (p >= 0.05)\\n")
+`
+  }
+
+  /** 卡方检验 */
+  static chiSquareCode(var1: string, var2: string, dataFile = 'data.csv'): string {
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+cat("=== 卡方检验 ===\\n")
+tbl <- table(data[["${rEscape(var1)}"]], data[["${rEscape(var2)}"]])
+cat("列联表:\\n")
+print(tbl)
+result <- chisq.test(tbl)
+print(result)
+if(result$p.value < 0.05) cat("\\n结论: 两个变量之间存在显著关联 (p < 0.05)\\n")
+else cat("\\n结论: 两个变量之间不存在显著关联 (p >= 0.05)\\n")
+`
+  }
+
+  /** 单因素方差分析 */
+  static anovaCode(dv: string, groupVar: string, dataFile = 'data.csv'): string {
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+data[["${rEscape(dv)}"]] <- suppressWarnings(as.numeric(data[["${rEscape(dv)}"]]))
+cat("=== 单因素方差分析 ===\\n")
+model <- aov(${rEscape(dv)} ~ factor(${rEscape(groupVar)}), data = data)
+print(summary(model))
+groups <- unique(data[["${rEscape(groupVar)}"]])
+for(g in groups) {
+  x <- data[data[["${rEscape(groupVar)}"]] == g, "${rEscape(dv)}"]
+  cat(sprintf("组 %s: N=%d, M=%.4f, SD=%.4f\\n", g, length(x), mean(x, na.rm=TRUE), sd(x, na.rm=TRUE)))
+}
 `
   }
 }

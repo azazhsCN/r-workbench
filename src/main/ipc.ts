@@ -457,7 +457,6 @@ cat("\\n__RWB_DONE__\\n")
       const docxPath = join(tempDir, 'report.docx')
 
       const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-
       const run = async (args: string) => {
         const { stdout } = await execAsync(`"${cli}" ${args}`, { timeout: 30000 })
         return stdout

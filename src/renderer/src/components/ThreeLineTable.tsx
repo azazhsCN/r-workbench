@@ -20,6 +20,16 @@ interface ThreeLineTableProps {
   align?: ('left' | 'center' | 'right')[]
 }
 
+/** HTML 实体转义 */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 /** 将三线表数据导出为 Word 兼容的 HTML */
 export function threeLineTableToHTML(tables: Array<{ title?: string; headers: string[]; rows: (string | number)[][]; note?: string }>, interpretation?: string): string {
   const formatCell = (v: string | number) => {
@@ -45,24 +55,24 @@ table tbody tr:last-child { border-bottom: 2pt solid black; }
 </style></head><body>`
 
   for (const t of tables) {
-    if (t.title) html += `<p class="title">${t.title}</p>`
+    if (t.title) html += `<p class="title">${escapeHtml(t.title)}</p>`
     html += '<table><thead><tr>'
-    for (const h of t.headers) html += `<th>${h}</th>`
+    for (const h of t.headers) html += `<th>${escapeHtml(h)}</th>`
     html += '</tr></thead><tbody>'
     for (const row of t.rows) {
       html += '<tr>'
       for (let i = 0; i < row.length; i++) {
         const align = i === 0 ? 'left' : 'center'
-        html += `<td style="text-align:${align}">${formatCell(row[i])}</td>`
+        html += `<td style="text-align:${align}">${escapeHtml(formatCell(row[i]))}</td>`
       }
       html += '</tr>'
     }
     html += '</tbody></table>'
-    if (t.note) html += `<p class="note">${t.note}</p>`
+    if (t.note) html += `<p class="note">${escapeHtml(t.note)}</p>`
   }
 
   if (interpretation) {
-    html += `<p class="interp">${interpretation}</p>`
+    html += `<p class="interp">${escapeHtml(interpretation)}</p>`
   }
 
   html += '</body></html>'

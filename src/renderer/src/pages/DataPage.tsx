@@ -115,7 +115,7 @@ export default function DataPage() {
     <div className="data-page">
       <div className="page-header">
         <h1>📁 数据管理</h1>
-        <p>导入和预览你的数据集，支持 CSV、Excel (.xlsx/.xls) 格式</p>
+        <p>导入和预览你的数据集，支持 CSV、Excel (.xlsx/.xls)、SPSS (.sav) 格式</p>
       </div>
 
       <div className="page-body">

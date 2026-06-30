@@ -6,7 +6,6 @@ import { datasetToCSV } from '../services/dataService'
 import { parseROutput } from '../services/resultParser'
 import { generateInterpretation } from '../services/interpretService'
 import ThreeLineTable, { threeLineTableToHTML } from '../components/ThreeLineTable'
-import type { AnalysisRecord } from '../services/reportService'
 
 /** 向导步骤 */
 type WizardStep = 'select' | 'configure' | 'execute' | 'result'
@@ -175,20 +174,7 @@ export default function WizardPage() {
     } else if (method === 'ttest_independent') {
       code = RService.tTestIndependentCode(depVars[0], groupVar, dataFile)
     } else if (method === 'ttest_paired') {
-      // 使用 rEscape 转义变量名（修复 #2）
-      code = RService.correlationCode(depVars[0], depVars[1], 'pearson', dataFile)
-        .replace('=== 相关分析 (pearson) ===', '=== 配对样本 t 检验 ===')
-      // 重新生成配对 t 检验代码
-      code = `
-data <- read.csv("${dataFile}", stringsAsFactors = FALSE, check.names = FALSE, fileEncoding = "UTF-8-BOM")
-x1 <- suppressWarnings(as.numeric(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]]))
-x2 <- suppressWarnings(as.numeric(data[["${depVars[1].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]]))
-cat("=== 配对样本 t 检验 ===\\n")
-result <- t.test(x1, x2, paired = TRUE)
-cat(sprintf("t = %.4f, df = %.2f, p = %.4f\\n", result$statistic, result$parameter, result$p.value))
-cat(sprintf("均值差: %.4f\\n", mean(x1 - x2, na.rm = TRUE)))
-cat(sprintf("95%% CI: [%.4f, %.4f]\\n", result$conf.int[1], result$conf.int[2]))
-`
+      code = RService.tTestPairedCode(depVars[0], depVars[1], dataFile)
     } else if (method === 'correlation') {
       code = RService.correlationCode(depVars[0], depVars[1], 'pearson', dataFile)
     } else if (method === 'regression') {
@@ -196,30 +182,9 @@ cat(sprintf("95%% CI: [%.4f, %.4f]\\n", result$conf.int[1], result$conf.int[2]))
     } else if (method === 'reliability') {
       code = RService.reliabilityCode(depVars, dataFile)
     } else if (method === 'chisquare') {
-      code = `
-data <- read.csv("${dataFile}", stringsAsFactors = FALSE, check.names = FALSE, fileEncoding = "UTF-8-BOM")
-cat("=== 卡方检验 ===\\n")
-tbl <- table(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]], data[["${depVars[1].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
-cat("列联表:\\n")
-print(tbl)
-result <- chisq.test(tbl)
-print(result)
-if(result$p.value < 0.05) cat("\\n结论: 两个变量之间存在显著关联 (p < 0.05)\\n")
-else cat("\\n结论: 两个变量之间不存在显著关联 (p >= 0.05)\\n")
-`
+      code = RService.chiSquareCode(depVars[0], depVars[1], dataFile)
     } else if (method === 'anova') {
-      code = `
-data <- read.csv("${dataFile}", stringsAsFactors = FALSE, check.names = FALSE, fileEncoding = "UTF-8-BOM")
-data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]] <- suppressWarnings(as.numeric(data[["${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
-cat("=== 单因素方差分析 ===\\n")
-model <- aov(${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')} ~ factor(${groupVar.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}), data = data)
-print(summary(model))
-groups <- unique(data[["${groupVar.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]])
-for(g in groups) {
-  x <- data[data[["${groupVar.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]] == g, "${depVars[0].replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]
-  cat(sprintf("组 %s: N=%d, M=%.4f, SD=%.4f\\n", g, length(x), mean(x, na.rm=TRUE), sd(x, na.rm=TRUE)))
-}
-`
+      code = RService.anovaCode(depVars[0], groupVar, dataFile)
     }
 
     // 通过 IPC 传递 CSV，不在代码中内嵌（修复 #3）

@@ -57,10 +57,7 @@ function createMenu(): void {
       submenu: [
         {
           label: '关于',
-          click: async () => {
-            const { shell: electronShell } = await import('electron')
-            // 未来可以链接到项目主页
-          }
+          click: async () => { /* 未来可链接到项目主页 */ }
         }
       ]
     }
