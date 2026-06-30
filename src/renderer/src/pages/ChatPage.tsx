@@ -460,10 +460,10 @@ function SafeMarkdown({ text }: { text: string }) {
       parts.push(remaining.slice(lastIdx))
     }
 
-    // 处理列表前缀
-    let content: React.ReactNode = parts.length === 1 ? parts[0] : <>{parts}</>
+    // 处理列表前缀（S5: 原始文本已含前缀，不重复添加）
+    const content: React.ReactNode = parts.length === 1 ? parts[0] : <>{parts}</>
     if (line.startsWith('• ') || line.startsWith('- ')) {
-      content = <>&bull; {content}</>
+      // 原始文本中的 • / - 已包含在 parts 中，不需再前置
     } else if (/^\d+\.\s/.test(line)) {
       // 有序列表保持原样
     }

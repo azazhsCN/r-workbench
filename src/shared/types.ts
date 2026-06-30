@@ -13,6 +13,13 @@ export interface RExecuteResult {
   workDir: string
 }
 
+// R 环境检测状态
+export interface RStatus {
+  found: boolean
+  path: string
+  version: string
+}
+
 // 数据集列信息
 export interface ColumnInfo {
   name: string

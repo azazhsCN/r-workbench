@@ -49,9 +49,13 @@ export default function SettingsPage() {
   }, [])
 
   const handleSave = async () => {
-    localStorage.setItem('rworkbench_settings', JSON.stringify(settings))
-    if (window.api?.config && settings.aiApiKey) {
-      await window.api.config.saveApiKey(settings.aiProvider, settings.aiApiKey)
+    // S1: 不将 aiApiKey 写入 localStorage，避免明文残留
+    const { aiApiKey, ...safeSettings } = settings
+    localStorage.setItem('rworkbench_settings', JSON.stringify(safeSettings))
+
+    // API Key 仅通过 safeStorage 加密存储
+    if (window.api?.config && aiApiKey) {
+      await window.api.config.saveApiKey(settings.aiProvider, aiApiKey)
     }
     // 通知 AIContext 刷新配置，让对话页面立即可用
     await refreshConfig()

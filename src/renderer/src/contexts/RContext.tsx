@@ -1,12 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import type { RStatus } from '../../shared/types'
 
-export interface RStatus {
-  found: boolean
-  path: string
-  version: string
-}
-
-interface RContextValue {
+export interface RContextValue {
   status: RStatus
   detecting: boolean
   detect: () => Promise<void>

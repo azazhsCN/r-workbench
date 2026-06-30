@@ -1,12 +1,13 @@
 ﻿import { ipcMain, dialog, app, safeStorage, clipboard } from 'electron'
 import { readFile, writeFile, rm } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join, resolve, normalize } from 'path'
-import { exec } from 'child_process'
+import { join, resolve, normalize, sep } from 'path'
+import { exec, execFile } from 'child_process'
 import { promisify } from 'util'
 import { SavBufferReader } from 'sav-reader'
 
 const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 // ── 安全工具 ──────────────────────────────────────
 
@@ -20,7 +21,7 @@ function validateFilePath(filePath: string, allowedDirs: string[]): string {
   }
   const normalized = normalize(resolve(filePath))
   const allowed = allowedDirs.some(
-    (dir) => normalized.startsWith(normalize(dir) + '\\') || normalized === normalize(dir)
+    (dir) => normalized.startsWith(normalize(dir) + sep) || normalized === normalize(dir)
   )
   if (!allowed) {
     throw new Error(`路径不在允许范围内: ${filePath}`)
@@ -212,7 +213,7 @@ export function registerIpcHandlers(): void {
         // 统一包装：主进程负责错误捕获和结果输出
         const scriptContent = `options(warn = 1)
 options(digits = 6)
-setwd("${workDir.replace(/\\/g, '\\\\')}")
+setwd("${workDir.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")
 tryCatch({
 ${safeCode}
 }, error = function(e) {
@@ -350,6 +351,8 @@ cat("\\n__RWB_DONE__\\n")
         const encrypted = safeStorage.encryptString(json)
         await writeFile(configPath, encrypted)
       } else {
+        // S2: 加密不可用时警告（仍写入，但用户应知晓风险）
+        console.warn('safeStorage 不可用，API Key 将以明文存储。建议使用支持密钥环的操作系统。')
         await writeFile(configPath, json, 'utf-8')
       }
       return { success: true }
@@ -446,86 +449,103 @@ cat("\\n__RWB_DONE__\\n")
       const cli = await detectOfficeCli()
       if (!cli) return { success: false, error: 'OfficeCLI 未安装，请将 officecli.exe 放入 resources/bin/ 目录' }
 
+      // 输入校验（S6）
+      if (!data || typeof data !== 'object') return { success: false, error: '无效参数' }
       const { title, tables, interpretation, savePath } = data as {
         title: string
         tables: Array<{ title: string; headers: string[]; rows: (string | number)[][]; note?: string }>
         interpretation?: string
         savePath: string
       }
+      validateString(title, 'title', 1000)
+      if (interpretation) validateString(interpretation, 'interpretation', 100_000)
+      // B3: savePath 路径校验
+      const safeSavePath = validateFilePath(validateString(savePath, 'savePath'), [
+        app.getPath('userData'), app.getPath('documents'), app.getPath('desktop'),
+        app.getPath('temp'), app.getPath('downloads')
+      ])
 
       tempDir = await mkdtemp(join(require('os').tmpdir(), 'rwb-docx-'))
       const docxPath = join(tempDir, 'report.docx')
 
-      const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-      const run = async (args: string) => {
-        const { stdout } = await execAsync(`"${cli}" ${args}`, { timeout: 30000 })
+      // B2: 用 execFileAsync 替代 execAsync，参数作为数组传递，不走 shell
+      const run = async (...args: string[]) => {
+        const { stdout } = await execFileAsync(cli, args, { timeout: 30000 })
         return stdout
       }
 
+      const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+
       // 1. 创建 docx
-      await run(`create "${docxPath}"`)
+      await run('create', docxPath)
 
       // 2. 报告标题
-      await run(`add "${docxPath}" / --type paragraph --prop text="${esc(title)}" --prop bold=true --prop size=18`)
+      await run('add', docxPath, '/', '--type', 'paragraph', '--prop', `text=${esc(title)}`, '--prop', 'bold=true', '--prop', 'size=18')
 
-      // 3. 逐个添加表格（用 add + set，不用 batch）
+      // 3. 逐个添加表格
       for (let ti = 0; ti < tables.length; ti++) {
         const table = tables[ti]
         const tableIdx = ti + 1
 
         // 表标题
         if (table.title) {
-          await run(`add "${docxPath}" / --type paragraph --prop text="${esc(table.title)}" --prop bold=true --prop size=14`)
+          await run('add', docxPath, '/', '--type', 'paragraph', '--prop', `text=${esc(table.title)}`, '--prop', 'bold=true', '--prop', 'size=14')
         }
 
         // 添加空表格
         const totalRows = table.rows.length + 1
         const cols = table.headers.length
-        await run(`add "${docxPath}" / --type table --prop rows=${totalRows} --prop cols=${cols}`)
+        await run('add', docxPath, '/', '--type', 'table', '--prop', `rows=${totalRows}`, '--prop', `cols=${cols}`)
 
-        // 设置三线表样式：顶线粗 + 底线粗 + 无左右 + 无内部横竖线
-        await run(`set "${docxPath}" /body/tbl[${tableIdx}] --prop border.top=single --prop border.top.sz=12 --prop border.bottom=single --prop border.bottom.sz=12 --prop border.left=none --prop border.right=none --prop border.insideH=none --prop border.insideV=none`)
+        // 三线表样式
+        await run('set', docxPath, `/body/tbl[${tableIdx}]`,
+          '--prop', 'border.top=single', '--prop', 'border.top.sz=12',
+          '--prop', 'border.bottom=single', '--prop', 'border.bottom.sz=12',
+          '--prop', 'border.left=none', '--prop', 'border.right=none',
+          '--prop', 'border.insideH=none', '--prop', 'border.insideV=none')
 
-        // 表头行每个单元格加底部细线
+        // 表头行底部细线
         for (let c = 0; c < cols; c++) {
-          await run(`set "${docxPath}" /body/tbl[${tableIdx}]/tr[1]/tc[${c + 1}] --prop border.bottom=single --prop border.bottom.sz=4`)
+          await run('set', docxPath, `/body/tbl[${tableIdx}]/tr[1]/tc[${c + 1}]`,
+            '--prop', 'border.bottom=single', '--prop', 'border.bottom.sz=4')
         }
 
         // 填写表头
         for (let c = 0; c < cols; c++) {
-          await run(`set "${docxPath}" /body/tbl[${tableIdx}]/tr[1]/tc[${c + 1}] --prop text="${esc(table.headers[c])}" --prop bold=true`)
+          await run('set', docxPath, `/body/tbl[${tableIdx}]/tr[1]/tc[${c + 1}]`,
+            '--prop', `text=${esc(table.headers[c])}`, '--prop', 'bold=true')
         }
 
         // 填写数据行
         for (let r = 0; r < table.rows.length; r++) {
           for (let c = 0; c < table.rows[r].length; c++) {
-            const val = String(table.rows[r][c])
-            await run(`set "${docxPath}" /body/tbl[${tableIdx}]/tr[${r + 2}]/tc[${c + 1}] --prop text="${esc(val)}"`)
+            await run('set', docxPath, `/body/tbl[${tableIdx}]/tr[${r + 2}]/tc[${c + 1}]`,
+              '--prop', `text=${esc(String(table.rows[r][c]))}`)
           }
         }
 
         // 表注
         if (table.note) {
-          await run(`add "${docxPath}" / --type paragraph --prop text="${esc(table.note)}" --prop italic=true --prop size=10`)
+          await run('add', docxPath, '/', '--type', 'paragraph', '--prop', `text=${esc(table.note)}`, '--prop', 'italic=true', '--prop', 'size=10')
         }
       }
 
       // 4. 解读文字
       if (interpretation) {
-        await run(`add "${docxPath}" / --type paragraph --prop text=" "`)
+        await run('add', docxPath, '/', '--type', 'paragraph', '--prop', 'text= ')
         for (const line of interpretation.split('\n').filter((l) => l.trim())) {
-          await run(`add "${docxPath}" / --type paragraph --prop text="${esc(line)}"`)
+          await run('add', docxPath, '/', '--type', 'paragraph', '--prop', `text=${esc(line)}`)
         }
       }
 
-      // 5. 保存并关闭（resident 模式必须 close 才会写入磁盘）
-      await run(`close "${docxPath}"`)
+      // 5. 保存并关闭
+      await run('close', docxPath)
 
       // 6. 复制到目标
-      await copyFile(docxPath, savePath)
+      await copyFile(docxPath, safeSavePath)
       rm(tempDir, { recursive: true, force: true }).catch(() => {})
 
-      return { success: true, path: savePath }
+      return { success: true, path: safeSavePath }
     } catch (error: unknown) {
       const err = error as { message?: string; stderr?: string }
       if (tempDir) rm(tempDir, { recursive: true, force: true }).catch(() => {})

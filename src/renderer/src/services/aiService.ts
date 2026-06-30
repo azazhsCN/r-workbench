@@ -113,8 +113,8 @@ export class AIService {
   }
 
   /** 获取当前配置 */
-  getConfig(): AIConfig | null {
-    if (!this.config) this.loadConfig()
+  async getConfig(): Promise<AIConfig | null> {
+    if (!this.config) await this.loadConfig()
     return this.config
   }
 

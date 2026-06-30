@@ -122,7 +122,7 @@ export default function WizardPage() {
   const [selectedMethod, setSelectedMethod] = useState<AnalysisMethod | null>(null)
   const [depVars, setDepVars] = useState<string[]>([])
   const [groupVar, setGroupVar] = useState<string>('')
-  const [, setIsExecuting] = useState(false)
+  const [, setIsExecuting] = useState(false) // S8: 无 getter，步骤切换已覆盖加载状态
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [interpretation, setInterpretation] = useState<string>('')
   const [interpretLoading, setInterpretLoading] = useState(false)

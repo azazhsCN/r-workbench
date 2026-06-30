@@ -7,14 +7,9 @@
  * - 代码不额外包装，主进程统一处理
  */
 
-import type { RExecuteResult } from '../../shared/types'
+import type { RExecuteResult, RStatus } from '../../shared/types'
 
-export interface RStatus {
-  found: boolean
-  path: string
-  version: string
-}
-
+/** 分析结果 */
 export interface AnalysisResult {
   success: boolean
   output: string
@@ -229,16 +224,23 @@ else cat("\\n结论: 两个变量之间不存在显著关联 (p >= 0.05)\\n")
 
   /** 单因素方差分析 */
   static anovaCode(dv: string, groupVar: string, dataFile = 'data.csv'): string {
+    const safeDv = rEscape(dv)
+    const safeGroup = rEscape(groupVar)
     return `
 dataFile <- "${rEscape(dataFile)}"
 data <- ${READ_CSV}
-data[["${rEscape(dv)}"]] <- suppressWarnings(as.numeric(data[["${rEscape(dv)}"]]))
+dv_col <- make.names("${safeDv}")
+grp_col <- make.names("${safeGroup}")
+if (!dv_col %in% names(data)) { dv_col <- "${safeDv}" }
+if (!grp_col %in% names(data)) { grp_col <- "${safeGroup}" }
+data[[dv_col]] <- suppressWarnings(as.numeric(data[[dv_col]]))
 cat("=== 单因素方差分析 ===\\n")
-model <- aov(${rEscape(dv)} ~ factor(${rEscape(groupVar)}), data = data)
+fml <- as.formula(paste0(dv_col, " ~ factor(", grp_col, ")"))
+model <- aov(fml, data = data)
 print(summary(model))
-groups <- unique(data[["${rEscape(groupVar)}"]])
+groups <- unique(data[[grp_col]])
 for(g in groups) {
-  x <- data[data[["${rEscape(groupVar)}"]] == g, "${rEscape(dv)}"]
+  x <- data[data[[grp_col]] == g, dv_col]
   cat(sprintf("组 %s: N=%d, M=%.4f, SD=%.4f\\n", g, length(x), mean(x, na.rm=TRUE), sd(x, na.rm=TRUE)))
 }
 `
