@@ -635,10 +635,6 @@
   margin-top: 2px;
 }
 
-.settings-input {
-  width: 320px;
-}
-
 /* ── 状态指示 ── */
 .status-dot {
   width: 8px;

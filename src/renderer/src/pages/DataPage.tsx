@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { parseCSV, parseExcel, datasetToCSV, type ParseResult } from '../services/dataService'
 import { useData } from '../contexts/DataContext'
+import type { ColumnInfo } from '../../shared/types'
 
 export default function DataPage() {
   const { dataset: sharedDataset, setDataset: setSharedDataset } = useData()
@@ -41,10 +42,10 @@ export default function DataPage() {
             updateData({
               headers: savResult.headers,
               rows: savResult.rows as Record<string, unknown>[],
-              columnInfo: savResult.columnInfo as unknown as import('../shared/types').ColumnInfo[],
+              columnInfo: savResult.columnInfo as ColumnInfo[],
               dataset: {
                 name: savResult.meta?.name || fileName,
-                columns: savResult.columnInfo as unknown as import('../shared/types').ColumnInfo[],
+                columns: savResult.columnInfo as ColumnInfo[],
                 rowCount: savResult.rows.length
               }
             })

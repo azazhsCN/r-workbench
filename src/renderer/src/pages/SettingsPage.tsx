@@ -354,10 +354,11 @@ function RPackageCard({ name, desc }: { name: string; desc: string }) {
     }
   }
 
-  // S4: useEffect 替代渲染期间副作用
+  // S4+S5: useEffect + name 依赖
   useEffect(() => {
     checkInstalled()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name])
 
   const handleInstall = async () => {
     if (!window.api) return

@@ -10,7 +10,6 @@ export interface RExecuteResult {
   output: string
   errors: string[]
   stderr: string
-  workDir: string
 }
 
 // R 环境检测状态
@@ -23,7 +22,7 @@ export interface RStatus {
 // 数据集列信息
 export interface ColumnInfo {
   name: string
-  type: 'numeric' | 'string' | 'date' | 'unknown'
+  type: 'numeric' | 'string' | 'unknown'
   missing: number
   total: number
 }

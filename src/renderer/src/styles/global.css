@@ -188,7 +188,9 @@ button:disabled {
   color: var(--text-primary);
 }
 
-/* ── 动画 ── */
+/* ── 通用按钮 ── */
+.btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;

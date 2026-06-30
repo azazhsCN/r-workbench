@@ -32,7 +32,7 @@ const api = {
       ipcRenderer.invoke('r:detect') as Promise<{ found: boolean; path: string; version: string }>,
     execute: (code: string, dataCsv?: string) =>
       ipcRenderer.invoke('r:execute', code, dataCsv) as Promise<{
-        success: boolean; output: string; errors: string[]; stderr: string; workDir: string
+        success: boolean; output: string; errors: string[]; stderr: string
       }>,
     plot: (code: string, dataCsv?: string) =>
       ipcRenderer.invoke('r:plot', code, dataCsv) as Promise<{

@@ -194,7 +194,6 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
 /** 为图表配套生成分析代码 */
 function generateAnalysisCode(methodId: string, variables: string[], groupVar: string | undefined, df: string): string | null {
   if (variables.length < 1) return null
-  const rEscape = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
   const dataFile = `"${rEscape(df)}"`
 
   switch (methodId) {

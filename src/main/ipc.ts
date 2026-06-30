@@ -170,14 +170,21 @@ export function registerIpcHandlers(): void {
       }
     }
 
-    // 尝试每个路径
+    // 尝试每个路径（S1: 用 execFileAsync 替代 execAsync，不走 shell）
     for (const rPath of scanPaths) {
       try {
-        const { stdout, stderr } = await execAsync(
-          `"${rPath}" --version 2>&1 || "${rPath}" -e "cat(R.version.string)"`,
-          { timeout: 10000 }
-        )
-        const allOutput = stdout + stderr
+        let allOutput = ''
+        try {
+          const { stdout, stderr } = await execFileAsync(rPath, ['--version'], { timeout: 10000 })
+          allOutput = stdout + stderr
+        } catch {
+          try {
+            const { stdout } = await execFileAsync(rPath, ['-e', 'cat(R.version.string)'], { timeout: 10000 })
+            allOutput = stdout
+          } catch {
+            continue
+          }
+        }
         // 匹配 "R version X.Y.Z" 或 "Rscript (R) version X.Y.Z"
         const versionMatch = allOutput.match(/version (\d+\.\d+\.\d+)/)
         if (versionMatch) {
@@ -239,8 +246,7 @@ cat("\\n__RWB_DONE__\\n")
           success: errors.length === 0,
           output: stdout.replace(/__RWB_ERROR__:.*\n?/g, '').replace(/__RWB_DONE__\n?$/, '').trim(),
           errors,
-          stderr,
-          workDir
+          stderr
         }
       } catch (error: unknown) {
         const err = error as { stdout?: string; stderr?: string; message?: string }
@@ -248,8 +254,7 @@ cat("\\n__RWB_DONE__\\n")
           success: false,
           output: '',
           errors: [err.stderr || err.message || '执行失败'],
-          stderr: err.stderr || '',
-          workDir: ''
+          stderr: err.stderr || ''
         }
       } finally {
         // 清理临时目录
