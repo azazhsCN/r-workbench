@@ -303,6 +303,28 @@ export default function SettingsPage() {
           )}
         </div>
 
+        {/* ── R 包管理 ── */}
+        {rStatus.found && (
+          <div className="settings-section">
+            <div className="settings-section-title">📦 R 包管理</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+              部分分析方法需要额外安装 R 包。首次使用时会自动检测并提示安装。
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { name: 'ggplot2', desc: '图表绘制' },
+                { name: 'psych', desc: '信效度分析' },
+                { name: 'lavaan', desc: '结构方程模型' },
+                { name: 'mediation', desc: '中介效应' },
+                { name: 'pROC', desc: 'ROC 曲线' },
+                { name: 'survival', desc: '生存分析' },
+              ].map((pkg) => (
+                <RPackageCard key={pkg.name} name={pkg.name} desc={pkg.desc} />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 保存按钮 */}
         <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
           <button className="btn btn-primary" onClick={handleSave}>
@@ -310,6 +332,61 @@ export default function SettingsPage() {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/** R 包状态卡片 */
+function RPackageCard({ name, desc }: { name: string; desc: string }) {
+  const [status, setStatus] = useState<'unknown' | 'installed' | 'missing' | 'installing'>('unknown')
+  const [checking, setChecking] = useState(false)
+
+  const checkInstalled = async () => {
+    if (!window.api) return
+    setChecking(true)
+    try {
+      const result = await window.api.r.packages([name])
+      setStatus(result.installed.includes(name) ? 'installed' : 'missing')
+    } catch {
+      setStatus('unknown')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  const handleInstall = async () => {
+    if (!window.api) return
+    setStatus('installing')
+    try {
+      const result = await window.api.r.install(name)
+      setStatus(result.success ? 'installed' : 'missing')
+    } catch {
+      setStatus('missing')
+    }
+  }
+
+  if (status === 'unknown' && !checking) {
+    checkInstalled()
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8,
+      padding: '8px 12px', border: '1px solid var(--border)',
+      borderRadius: 'var(--radius-md)', fontSize: 13, minWidth: 180
+    }}>
+      <span style={{ fontWeight: 500 }}>{name}</span>
+      <span style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>{desc}</span>
+      <span style={{ marginLeft: 'auto' }}>
+        {status === 'installed' && <span style={{ color: 'var(--success)' }}>✓</span>}
+        {status === 'missing' && (
+          <button className="btn btn-sm btn-secondary" onClick={handleInstall} style={{ padding: '2px 8px', fontSize: 12 }}>
+            安装
+          </button>
+        )}
+        {status === 'installing' && <span style={{ color: 'var(--text-tertiary)' }}>⏳</span>}
+        {checking && <span style={{ color: 'var(--text-tertiary)' }}>...</span>}
+      </span>
     </div>
   )
 }

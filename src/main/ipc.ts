@@ -260,6 +260,99 @@ cat("\\n__RWB_DONE__\\n")
     }
   )
 
+  // ── R 绘图（r:plot） ──────────────────────
+
+  ipcMain.handle('r:plot', async (_event, code: unknown, dataCsv?: unknown) => {
+    let workDir = ''
+    try {
+      const safeCode = validateString(code, 'code', 5_000_000)
+      const os = await import('os')
+      const { mkdtemp, writeFile: fsWrite, readFile: fsRead, rm: fsRm } = await import('fs/promises')
+
+      workDir = await mkdtemp(join(os.tmpdir(), 'rwb-plot-'))
+
+      // 写入数据
+      if (dataCsv && typeof dataCsv === 'string') {
+        await fsWrite(join(workDir, 'data.csv'), dataCsv, 'utf-8')
+      }
+
+      // 写入主题模板
+      const themePath = join(__dirname, '..', '..', 'resources', 'rScripts', 'theme_academic.R')
+      try {
+        const themeContent = await fsRead(themePath, 'utf-8')
+        await fsWrite(join(workDir, 'theme_academic.R'), themeContent, 'utf-8')
+      } catch {
+        // 主题文件不存在时使用默认主题
+      }
+
+      // 写入 R 脚本
+      const scriptContent = `options(warn = 1)
+setwd("${workDir.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")
+${safeCode}
+`
+      await fsWrite(join(workDir, 'plot_script.R'), scriptContent, 'utf-8')
+
+      const { stdout, stderr } = await execAsync(`"${detectedRPath}" "${join(workDir, 'plot_script.R')}"`, {
+        timeout: 60000,
+        maxBuffer: 10 * 1024 * 1024,
+        cwd: workDir
+      })
+
+      // 解析输出找图片路径
+      const plotMatch = stdout.match(/PLOT_SAVED:(.+)/)
+      if (plotMatch) {
+        const plotFile = plotMatch[1].trim()
+        const plotPath = join(workDir, plotFile)
+        try {
+          const imgBuffer = await fsRead(plotPath)
+          const base64 = imgBuffer.toString('base64')
+          return { success: true, base64, path: plotPath, error: null }
+        } catch {
+          return { success: false, base64: null, path: null, error: '图表文件未生成' }
+        }
+      }
+
+      return { success: false, base64: null, path: null, error: stderr || stdout || '未找到图表输出' }
+    } catch (error: unknown) {
+      const err = error as { message?: string; stderr?: string }
+      return { success: false, base64: null, path: null, error: err.stderr || err.message || '绘图失败' }
+    } finally {
+      // 不清理工作目录（图片可能还需要显示）
+    }
+  })
+
+  // ── R 包管理 ──────────────────────
+
+  ipcMain.handle('r:packages', async (_event, packageNames: unknown) => {
+    try {
+      const names = Array.isArray(packageNames) ? packageNames : [packageNames]
+      const checkCode = names.map((n) => `"${validateString(n, 'packageName', 100)}"`).join(', ')
+      const code = `pkgs <- c(${checkCode})
+installed <- pkgs[pkgs %in% rownames(installed.packages())]
+cat(paste(installed, collapse = ","))`
+      const scriptPath = join(require('os').tmpdir(), 'rwb-check.R')
+      await writeFile(scriptPath, code, 'utf-8')
+      const { stdout } = await execAsync(`"${detectedRPath}" "${scriptPath}"`, { timeout: 30000 })
+      return { installed: stdout.trim().split(',').filter(Boolean) }
+    } catch {
+      return { installed: [] }
+    }
+  })
+
+  ipcMain.handle('r:install', async (_event, packageName: unknown) => {
+    try {
+      const pkg = validateString(packageName, 'packageName', 100)
+      const code = `install.packages("${pkg}", repos = "https://cran.r-project.org", quiet = TRUE)`
+      const scriptPath = join(require('os').tmpdir(), 'rwb-install.R')
+      await writeFile(scriptPath, code, 'utf-8')
+      const { stdout, stderr } = await execAsync(`"${detectedRPath}" "${scriptPath}"`, { timeout: 300000 })
+      return { success: true, output: stdout, error: null }
+    } catch (error: unknown) {
+      const err = error as { message?: string; stderr?: string }
+      return { success: false, output: '', error: err.stderr || err.message || '安装失败' }
+    }
+  })
+
   // ── SPSS 解析 ──────────────────────────────
 
   ipcMain.handle('data:parseSav', async (_event, filePath: unknown) => {

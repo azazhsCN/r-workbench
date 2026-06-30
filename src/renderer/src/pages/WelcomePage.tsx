@@ -111,7 +111,7 @@ export default function WelcomePage({ onNavigate }: WelcomePageProps) {
           textAlign: 'center'
         }}
       >
-        R Workbench v0.1.3 — 开源 · 免费 · 中文友好
+        R Workbench v0.2.0 — 开源 · 免费 · 中文友好
       </div>
     </div>
   )

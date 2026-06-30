@@ -6,6 +6,7 @@ import { datasetToCSV } from '../services/dataService'
 import { parseROutput } from '../services/resultParser'
 import { generateInterpretation } from '../services/interpretService'
 import ThreeLineTable, { threeLineTableToHTML } from '../components/ThreeLineTable'
+import PlotViewer from '../components/PlotViewer'
 
 /** 向导步骤 */
 type WizardStep = 'select' | 'configure' | 'execute' | 'result'
@@ -111,6 +112,61 @@ const METHODS: AnalysisMethod[] = [
     minVars: 2,
     maxVars: 50,
     varType: 'numeric'
+  },
+  {
+    id: 'ttest_one',
+    name: '单样本 t 检验',
+    icon: '🎯',
+    description: '检验样本均值是否等于某个指定值',
+    category: '差异检验',
+    needsGroup: false,
+    minVars: 1,
+    maxVars: 1,
+    varType: 'numeric'
+  },
+  {
+    id: 'normality',
+    name: '正态性检验',
+    icon: '🔔',
+    description: 'Shapiro-Wilk 检验数据是否服从正态分布',
+    category: '基础分析',
+    needsGroup: false,
+    minVars: 1,
+    maxVars: 10,
+    varType: 'numeric'
+  },
+  {
+    id: 'nonparametric',
+    name: '非参数检验',
+    icon: '📊',
+    description: 'Mann-Whitney U 检验，数据不满足正态假设时使用',
+    category: '差异检验',
+    needsGroup: true,
+    minVars: 1,
+    maxVars: 1,
+    varType: 'numeric'
+  },
+  {
+    id: 'frequency',
+    name: '频数统计',
+    icon: '📋',
+    description: '统计分类变量各类别的频数和百分比',
+    category: '基础分析',
+    needsGroup: false,
+    minVars: 1,
+    maxVars: 10,
+    varType: 'any'
+  },
+  {
+    id: 'summary_by',
+    name: '分类汇总',
+    icon: '📊',
+    description: '按分组变量计算均值、标准差等汇总统计',
+    category: '基础分析',
+    needsGroup: true,
+    minVars: 1,
+    maxVars: 1,
+    varType: 'numeric'
   }
 ]
 
@@ -185,6 +241,16 @@ export default function WizardPage() {
       code = RService.chiSquareCode(depVars[0], depVars[1], dataFile)
     } else if (method === 'anova') {
       code = RService.anovaCode(depVars[0], groupVar, dataFile)
+    } else if (method === 'ttest_one') {
+      code = RService.tTestOneSampleCode(depVars[0], 0, dataFile)
+    } else if (method === 'normality') {
+      code = RService.normalityTestCode(depVars, dataFile)
+    } else if (method === 'nonparametric') {
+      code = RService.nonparametricCode(depVars[0], groupVar, dataFile)
+    } else if (method === 'frequency') {
+      code = RService.frequencyCode(depVars, dataFile)
+    } else if (method === 'summary_by') {
+      code = RService.summaryByCode(groupVar, depVars[0], dataFile)
     }
 
     // 通过 IPC 传递 CSV，不在代码中内嵌（修复 #3）
@@ -504,6 +570,18 @@ export default function WizardPage() {
               }
               return null
             })()}
+
+            {/* 图表可视化 */}
+            {selectedMethod && depVars.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>📊 可视化图表</h3>
+                <PlotViewer
+                  methodId={selectedMethod.id}
+                  variables={depVars}
+                  groupVar={groupVar || undefined}
+                />
+              </div>
+            )}
 
             {/* AI 结果解读 */}
             {interpretLoading && (

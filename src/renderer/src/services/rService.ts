@@ -1,4 +1,4 @@
-/**
+﻿/**
  * R 执行服务
  * 提供 R 环境检测、代码执行、结果解析功能
  *
@@ -242,6 +242,110 @@ groups <- unique(data[[grp_col]])
 for(g in groups) {
   x <- data[data[[grp_col]] == g, dv_col]
   cat(sprintf("组 %s: N=%d, M=%.4f, SD=%.4f\\n", g, length(x), mean(x, na.rm=TRUE), sd(x, na.rm=TRUE)))
+}
+`
+  }
+
+  /** 单样本 t 检验 */
+  static tTestOneSampleCode(varName: string, mu: number, dataFile = 'data.csv'): string {
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+x <- suppressWarnings(as.numeric(data[["${rEscape(varName)}"]]))
+x <- x[!is.na(x)]
+cat("=== 单样本 t 检验 ===\\n")
+cat(sprintf("变量: ${rEscape(varName)}, 检验值: ${mu}\\n"))
+cat(sprintf("样本: N=%d, M=%.4f, SD=%.4f\\n\\n", length(x), mean(x), sd(x)))
+result <- t.test(x, mu = ${mu})
+cat(sprintf("t = %.4f, df = %.2f, p = %.4f\\n", result$statistic, result$parameter, result$p.value))
+cat(sprintf("95%% CI: [%.4f, %.4f]\\n", result$conf.int[1], result$conf.int[2]))
+if(result$p.value < 0.05) cat("\\n结论: 样本均值与检验值存在显著差异 (p < 0.05)\\n")
+else cat("\\n结论: 样本均值与检验值不存在显著差异 (p >= 0.05)\\n")
+`
+  }
+
+  /** 正态性检验（Shapiro-Wilk） */
+  static normalityTestCode(vars: string[], dataFile = 'data.csv'): string {
+    const varList = vars.map((v) => `"${rEscape(v)}"`).join(', ')
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+vars <- c(${varList})
+cat("=== 正态性检验 (Shapiro-Wilk) ===\\n")
+cat(sprintf("%-30s %-10s %-12s %-10s\\n", "变量", "W统计量", "p值", "结论"))
+cat(paste(rep("-", 65), collapse = ""), "\\n")
+for(v in vars) {
+  x <- suppressWarnings(as.numeric(data[[v]]))
+  x <- x[!is.na(x)]
+  if(length(x) >= 3 && length(x) <= 5000) {
+    r <- shapiro.test(x)
+    conclusion <- if(r$p.value < 0.05) "非正态" else "正态"
+    cat(sprintf("%-30s %-10.4f %-12.4f %-10s\\n", substr(v, 1, 30), r$statistic, r$p.value, conclusion))
+  } else {
+    cat(sprintf("%-30s %-10s %-12s %-10s\\n", substr(v, 1, 30), "-", "-", "样本量不适用"))
+  }
+}
+`
+  }
+
+  /** 非参数检验（Mann-Whitney U） */
+  static nonparametricCode(dv: string, groupVar: string, dataFile = 'data.csv'): string {
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+groups <- unique(data[["${rEscape(groupVar)}"]])
+if(length(groups) != 2) stop("分组变量必须恰好有2个水平")
+g1 <- suppressWarnings(as.numeric(data[data[["${rEscape(groupVar)}"]] == groups[1], "${rEscape(dv)}"]))
+g2 <- suppressWarnings(as.numeric(data[data[["${rEscape(groupVar)}"]] == groups[2], "${rEscape(dv)}"]))
+g1 <- g1[!is.na(g1)]
+g2 <- g2[!is.na(g2)]
+cat("=== 非参数检验 (Mann-Whitney U) ===\\n")
+cat(sprintf("组1 (%s): N=%d, Median=%.4f\\n", groups[1], length(g1), median(g1)))
+cat(sprintf("组2 (%s): N=%d, Median=%.4f\\n\\n", groups[2], length(g2), median(g2)))
+result <- wilcox.test(g1, g2)
+cat(sprintf("W = %.0f, p = %.4f\\n", result$statistic, result$p.value))
+if(result$p.value < 0.05) cat("\\n结论: 两组存在显著差异 (p < 0.05)\\n")
+else cat("\\n结论: 两组不存在显著差异 (p >= 0.05)\\n")
+`
+  }
+
+  /** 频数统计 */
+  static frequencyCode(vars: string[], dataFile = 'data.csv'): string {
+    const varList = vars.map((v) => `"${rEscape(v)}"`).join(', ')
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+vars <- c(${varList})
+for(v in vars) {
+  cat(sprintf("\\n=== 频数统计: %s ===\\n", v))
+  tbl <- table(data[[v]], useNA = "ifany")
+  pct <- prop.table(tbl) * 100
+  cat(sprintf("%-20s %-8s %-10s\\n", "类别", "频数", "百分比"))
+  cat(paste(rep("-", 40), collapse = ""), "\\n")
+  for(i in seq_along(tbl)) {
+    cat(sprintf("%-20s %-8d %-10.1f%%\\n", names(tbl)[i], tbl[i], pct[i]))
+  }
+  cat(sprintf("合计: %d\\n", sum(tbl)))
+}
+`
+  }
+
+  /** 分类汇总 */
+  static summaryByCode(groupVar: string, valueVar: string, dataFile = 'data.csv'): string {
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+data$value <- suppressWarnings(as.numeric(data[["${rEscape(valueVar)}"]]))
+data$group <- data[["${rEscape(groupVar)}"]]
+cat("=== 分类汇总 ===\\n")
+cat(sprintf("分组变量: ${rEscape(groupVar)}, 汇总变量: ${rEscape(valueVar)}\\n\\n"))
+cat(sprintf("%-20s %-8s %-12s %-12s %-12s %-12s\\n", "组别", "N", "Mean", "SD", "Min", "Max"))
+cat(paste(rep("-", 78), collapse = ""), "\\n")
+groups <- unique(data$group)
+for(g in groups[!is.na(groups)]) {
+  x <- data$value[data$group == g]
+  x <- x[!is.na(x)]
+  cat(sprintf("%-20s %-8d %-12.4f %-12.4f %-12.4f %-12.4f\\n", g, length(x), mean(x), sd(x), min(x), max(x)))
 }
 `
   }
