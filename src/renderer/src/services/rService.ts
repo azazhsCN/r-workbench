@@ -8,6 +8,7 @@
  */
 
 import type { RExecuteResult, RStatus } from '../../shared/types'
+import { rEscape } from './utils'
 
 /** 分析结果 */
 export interface AnalysisResult {
@@ -26,17 +27,6 @@ export interface ParsedTable {
 
 /** 统一的 read.csv 头 */
 const READ_CSV = 'read.csv(dataFile, stringsAsFactors = FALSE, check.names = FALSE, fileEncoding = "UTF-8-BOM")'
-
-function rEscape(s: string): string {
-  return s
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t')
-    .replace(/\0/g, '')
-}
 
 export class RService {
   private static instance: RStatus | null = null

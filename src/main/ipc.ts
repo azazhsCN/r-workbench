@@ -285,10 +285,16 @@ cat("\\n__RWB_DONE__\\n")
         // 主题文件不存在时使用默认主题
       }
 
-      // 写入 R 脚本
+      // 写入 R 脚本（B1: 加载主题 + B2: tryCatch 错误捕获）
       const scriptContent = `options(warn = 1)
 setwd("${workDir.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")
+source("theme_academic.R")
+tryCatch({
 ${safeCode}
+}, error = function(e) {
+  cat("__RWB_ERROR__:", conditionMessage(e), "\\n")
+})
+cat("\\n__RWB_DONE__\\n")
 `
       await fsWrite(join(workDir, 'plot_script.R'), scriptContent, 'utf-8')
 
@@ -298,7 +304,12 @@ ${safeCode}
         cwd: workDir
       })
 
-      // 解析输出找图片路径
+      // 解析输出（检查 R 错误哨兵 + 找图片路径）
+      const errorMatch = stdout.match(/__RWB_ERROR__:(.*)/)
+      if (errorMatch) {
+        return { success: false, base64: null, path: null, error: errorMatch[1].trim() }
+      }
+
       const plotMatch = stdout.match(/PLOT_SAVED:(.+)/)
       if (plotMatch) {
         const plotFile = plotMatch[1].trim()
@@ -317,22 +328,37 @@ ${safeCode}
       const err = error as { message?: string; stderr?: string }
       return { success: false, base64: null, path: null, error: err.stderr || err.message || '绘图失败' }
     } finally {
-      // 不清理工作目录（图片可能还需要显示）
+      // S5: 图片已通过 base64 返回，清理临时目录
+      if (workDir) {
+        rm(workDir, { recursive: true, force: true }).catch(() => {})
+      }
     }
   })
 
   // ── R 包管理 ──────────────────────
 
   ipcMain.handle('r:packages', async (_event, packageNames: unknown) => {
+    const os = await import('os')
+    const { mkdtemp } = await import('fs/promises')
     try {
       const names = Array.isArray(packageNames) ? packageNames : [packageNames]
-      const checkCode = names.map((n) => `"${validateString(n, 'packageName', 100)}"`).join(', ')
+      // S1: 白名单校验包名，防 R 代码注入
+      const pkgRegex = /^[a-zA-Z0-9._]+$/
+      const validNames = names.filter((n) => {
+        const s = validateString(n, 'packageName', 100)
+        return pkgRegex.test(s)
+      })
+      if (validNames.length === 0) return { installed: [] }
+      const checkCode = validNames.map((n) => `"${n}"`).join(', ')
       const code = `pkgs <- c(${checkCode})
 installed <- pkgs[pkgs %in% rownames(installed.packages())]
 cat(paste(installed, collapse = ","))`
-      const scriptPath = join(require('os').tmpdir(), 'rwb-check.R')
+      // S6: 使用唯一临时目录
+      const tempDir = await mkdtemp(join(os.tmpdir(), 'rwb-pkg-'))
+      const scriptPath = join(tempDir, 'check.R')
       await writeFile(scriptPath, code, 'utf-8')
       const { stdout } = await execAsync(`"${detectedRPath}" "${scriptPath}"`, { timeout: 30000 })
+      rm(tempDir, { recursive: true, force: true }).catch(() => {})
       return { installed: stdout.trim().split(',').filter(Boolean) }
     } catch {
       return { installed: [] }
@@ -340,15 +366,25 @@ cat(paste(installed, collapse = ","))`
   })
 
   ipcMain.handle('r:install', async (_event, packageName: unknown) => {
+    const os = await import('os')
+    const { mkdtemp } = await import('fs/promises')
+    let tempDir = ''
     try {
       const pkg = validateString(packageName, 'packageName', 100)
+      // S1: 白名单校验
+      if (!/^[a-zA-Z0-9._]+$/.test(pkg)) {
+        return { success: false, output: '', error: '无效的包名' }
+      }
       const code = `install.packages("${pkg}", repos = "https://cran.r-project.org", quiet = TRUE)`
-      const scriptPath = join(require('os').tmpdir(), 'rwb-install.R')
+      tempDir = await mkdtemp(join(os.tmpdir(), 'rwb-ins-'))
+      const scriptPath = join(tempDir, 'install.R')
       await writeFile(scriptPath, code, 'utf-8')
-      const { stdout, stderr } = await execAsync(`"${detectedRPath}" "${scriptPath}"`, { timeout: 300000 })
+      const { stdout } = await execAsync(`"${detectedRPath}" "${scriptPath}"`, { timeout: 300000 })
+      rm(tempDir, { recursive: true, force: true }).catch(() => {})
       return { success: true, output: stdout, error: null }
     } catch (error: unknown) {
       const err = error as { message?: string; stderr?: string }
+      if (tempDir) rm(tempDir, { recursive: true, force: true }).catch(() => {})
       return { success: false, output: '', error: err.stderr || err.message || '安装失败' }
     }
   })

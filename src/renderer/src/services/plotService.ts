@@ -1,9 +1,9 @@
-/**
+﻿/**
  * 绘图服务
  * 生成 ggplot2 R 代码，返回图片路径
  */
 
-import type { RStatus } from '../../shared/types'
+import { rEscape } from './utils'
 
 export interface PlotResult {
   success: boolean
@@ -26,18 +26,6 @@ export interface PlotConfig {
   height?: number
 }
 
-/** 转义 R 字符串 */
-function rEscape(s: string): string {
-  return s
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/'/g, "\\'")
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t')
-    .replace(/\0/g, '')
-}
-
 /** 生成图表 R 代码 */
 export function generatePlotCode(config: PlotConfig, dataFile = 'data.csv'): string {
   const { type, variables, groupVar, title, width = 6, height = 4 } = config
@@ -58,11 +46,12 @@ export function generatePlotCode(config: PlotConfig, dataFile = 'data.csv'): str
     case 'density':
       return densityCode(variables, groupVar, title, w, h, dataFile)
     default:
-      return `cat("ERROR: Unknown plot type: ${type}")\n`
+      return `cat("ERROR: Unknown plot type: ${rEscape(type)}")\n`
   }
 }
 
 function scatterCode(vars: string[], groupVar: string | undefined, title: string | undefined, w: number, h: number, df: string): string {
+  if (vars.length < 2) return `cat("ERROR: scatter plot requires 2 variables")\n`
   const x = rEscape(vars[0])
   const y = rEscape(vars[1])
   const t = title ? `"${rEscape(title)}"` : `"${x} vs ${y}"`
@@ -161,6 +150,7 @@ save_plot(p, "plot_bar.png", width = ${w}, height = ${h})
 }
 
 function lineCode(vars: string[], groupVar: string | undefined, title: string | undefined, w: number, h: number, df: string): string {
+  if (vars.length < 2) return `cat("ERROR: line plot requires 2 variables")\n`
   const x = rEscape(vars[0])
   const y = rEscape(vars[1])
   const g = groupVar ? rEscape(groupVar) : null

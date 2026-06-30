@@ -1,9 +1,10 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { useData } from '../contexts/DataContext'
 import { useAI } from '../contexts/AIContext'
 import { RService } from '../services/rService'
 import { generatePlotCode, METHOD_PLOT_MAP, type PlotConfig } from '../services/plotService'
 import { datasetToCSV } from '../services/dataService'
+import { rEscape } from '../services/utils'
 import ThreeLineTable from './ThreeLineTable'
 import { generateInterpretation } from '../services/interpretService'
 import { parseROutput } from '../services/resultParser'
@@ -72,9 +73,14 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
             setParsedTables(parsed.tables)
             if (parsed.tables.length > 0 && isConfigured) {
               setInterpretLoading(true)
-              const interp = await generateInterpretation(parsed)
-              setInterpretation(interp)
-              setInterpretLoading(false)
+              try {
+                const interp = await generateInterpretation(parsed)
+                setInterpretation(interp)
+              } catch {
+                setInterpretation('')
+              } finally {
+                setInterpretLoading(false)
+              }
             }
           }
         }

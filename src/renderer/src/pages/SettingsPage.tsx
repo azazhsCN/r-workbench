@@ -354,6 +354,11 @@ function RPackageCard({ name, desc }: { name: string; desc: string }) {
     }
   }
 
+  // S4: useEffect 替代渲染期间副作用
+  useEffect(() => {
+    checkInstalled()
+  }, [])
+
   const handleInstall = async () => {
     if (!window.api) return
     setStatus('installing')
@@ -363,10 +368,6 @@ function RPackageCard({ name, desc }: { name: string; desc: string }) {
     } catch {
       setStatus('missing')
     }
-  }
-
-  if (status === 'unknown' && !checking) {
-    checkInstalled()
   }
 
   return (

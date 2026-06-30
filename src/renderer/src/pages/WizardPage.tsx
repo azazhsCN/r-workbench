@@ -178,6 +178,7 @@ export default function WizardPage() {
   const [selectedMethod, setSelectedMethod] = useState<AnalysisMethod | null>(null)
   const [depVars, setDepVars] = useState<string[]>([])
   const [groupVar, setGroupVar] = useState<string>('')
+  const [mu, setMu] = useState<number>(0) // S9: 单样本 t 检验的检验值
   const [, setIsExecuting] = useState(false) // S8: 无 getter，步骤切换已覆盖加载状态
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [interpretation, setInterpretation] = useState<string>('')
@@ -242,7 +243,7 @@ export default function WizardPage() {
     } else if (method === 'anova') {
       code = RService.anovaCode(depVars[0], groupVar, dataFile)
     } else if (method === 'ttest_one') {
-      code = RService.tTestOneSampleCode(depVars[0], 0, dataFile)
+      code = RService.tTestOneSampleCode(depVars[0], mu, dataFile)
     } else if (method === 'normality') {
       code = RService.normalityTestCode(depVars, dataFile)
     } else if (method === 'nonparametric') {
@@ -263,9 +264,14 @@ export default function WizardPage() {
       const parsed = parseROutput(execResult.output)
       if (parsed.tables.length > 0 && isConfigured) {
         setInterpretLoading(true)
-        const interp = await generateInterpretation(parsed)
-        setInterpretation(interp)
-        setInterpretLoading(false)
+        try {
+          const interp = await generateInterpretation(parsed)
+          setInterpretation(interp)
+        } catch {
+          setInterpretation('')
+        } finally {
+          setInterpretLoading(false)
+        }
       }
     }
 
@@ -424,6 +430,20 @@ export default function WizardPage() {
                 {groupVar && (
                   <div className="var-count">分组变量：{groupVar}</div>
                 )}
+              </div>
+            )}
+
+            {/* S9: 单样本 t 检验需要指定检验值 */}
+            {selectedMethod.id === 'ttest_one' && (
+              <div className="var-section">
+                <div className="var-section-title">指定检验值 (μ₀)</div>
+                <div className="var-section-desc">检验样本均值是否等于该值（如 0、60、3.5）</div>
+                <input
+                  type="number"
+                  value={mu}
+                  onChange={(e) => setMu(Number(e.target.value))}
+                  style={{ width: 200, padding: '6px 12px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}
+                />
               </div>
             )}
 
