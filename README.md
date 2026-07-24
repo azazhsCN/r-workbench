@@ -99,7 +99,7 @@ R Workbench 是一款面向统计学初学者的 AI 驱动数据分析桌面应�
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-repo/r-workbench.git
+git clone https://github.com/azazhsCN/r-workbench.git
 cd r-workbench
 
 # 安装依赖

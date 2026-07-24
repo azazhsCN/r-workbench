@@ -22,7 +22,7 @@
 cd r-workbench
 
 # 添加远程仓库（替换为你的 GitHub 用户名）
-git remote add origin https://github.com/YOUR_USERNAME/r-workbench.git
+git remote add origin https://github.com/azazhsCN/r-workbench.git
 
 # 推送代码
 git push -u origin master
@@ -84,7 +84,7 @@ AI 驱动的 R 语言数据分析工作台
 
 ### 问题反馈
 
-如有问题或建议，请提交 [Issue](https://github.com/YOUR_USERNAME/r-workbench/issues)
+如有问题或建议，请提交 [Issue](https://github.com/azazhsCN/r-workbench/issues)
 
 ---
 
