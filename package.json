@@ -1,10 +1,25 @@
 {
   "name": "r-workbench",
-  "version": "0.2.2",
+  "version": "1.0.0",
   "description": "R Workbench - AI驱动的R语言数据分析工作台，替代SPSS的开源方案",
   "main": "./out/main/index.js",
+  "keywords": [
+    "r-language",
+    "statistics",
+    "data-analysis",
+    "spss-alternative",
+    "electron",
+    "academic",
+    "thesis",
+    "survey-analysis"
+  ],
   "author": "R Workbench Team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rworkbench/r-workbench.git"
+  },
+  "homepage": "https://github.com/rworkbench/r-workbench#readme",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -17,7 +32,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "lint": "eslint src --ext .ts,.tsx"
+    "lint": "eslint src/"
   },
   "dependencies": {
     "papaparse": "^5.5.3",

@@ -17,15 +17,3 @@ export function rEscape(s: string): string {
     .replace(/\t/g, '\\t')
     .replace(/\0/g, '')
 }
-
-/**
- * HTML 实体转义
- */
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}

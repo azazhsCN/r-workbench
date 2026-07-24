@@ -282,12 +282,31 @@ cat("\\n__RWB_DONE__\\n")
       }
 
       // 写入主题模板
-      const themePath = join(__dirname, '..', '..', 'resources', 'rScripts', 'theme_academic.R')
-      try {
-        const themeContent = await fsRead(themePath, 'utf-8')
-        await fsWrite(join(workDir, 'theme_academic.R'), themeContent, 'utf-8')
-      } catch {
-        // 主题文件不存在时使用默认主题
+      // 写入主题模板（开发模式用 __dirname，打包后用 process.resourcesPath）
+      const themeCandidates = [
+        join(__dirname, '..', '..', 'src', 'main', 'rScripts', 'theme_academic.R'),
+        join(process.resourcesPath || '', 'rScripts', 'theme_academic.R')
+      ]
+      let themeWritten = false
+      for (const themePath of themeCandidates) {
+        try {
+          const themeContent = await fsRead(themePath, 'utf-8')
+          await fsWrite(join(workDir, 'theme_academic.R'), themeContent, 'utf-8')
+          themeWritten = true
+          break
+        } catch {
+          continue
+        }
+      }
+      if (!themeWritten) {
+        // 写入最小化备用主题
+        await fsWrite(join(workDir, 'theme_academic.R'), `
+theme_academic <- function(base_size = 12) theme_minimal(base_size = base_size)
+colors_academic <- c("#2166AC", "#B2182B", "#4DAF4A", "#FF7F00", "#984EA3", "#A65628")
+save_plot <- function(p, f, w = 6, h = 4, dpi = 300) {
+  ggplot2::ggsave(f, plot = p, width = w, height = h, dpi = dpi, units = "in", bg = "white")
+  cat(paste0("PLOT_SAVED:", f))
+}`, 'utf-8')
       }
 
       // 写入 R 脚本（B1: 加载主题 + B2: tryCatch 错误捕获）

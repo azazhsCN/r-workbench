@@ -1,16 +1,44 @@
+# 依赖
 node_modules/
+
+# 构建输出
 out/
 dist/
 .vite/
+
+# 日志
 *.log
+
+# 环境变量
 .env
 .env.local
+.env.*.local
+
+# npm
 .npmrc
 
-# 打包发行版输出目录
+# 打包输出
 releases/
 
-# 开发调试脚本
+# 开发脚本
 *.bat
-*.docx
+
+# OfficeCLI 二进制（32MB，需用户自行下载）
 resources/bin/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+
+# 生成的报告文件
+*.docx

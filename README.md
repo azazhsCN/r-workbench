@@ -9,6 +9,14 @@
 
 R Workbench 是一款面向统计学初学者的 AI 驱动数据分析桌面应用。通过**对话式**和**向导式**两种交互模式，让用户无需编写代码即可完成专业级统计分析，替代昂贵的 SPSS 商业软件。
 
+### 截图
+
+> 截图将在正式发布时添加
+
+| 首页 | AI 对话分析 | 向导式分析 | 数据管理 |
+|------|------------|-----------|---------|
+| ![首页](docs/screenshots/welcome.png) | ![对话](docs/screenshots/chat.png) | ![向导](docs/screenshots/wizard.png) | ![数据](docs/screenshots/data.png) |
+
 ### 目标用户
 
 - 🎓 统计学相关的专科生、本科生、入门研究生
