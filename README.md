@@ -11,11 +11,13 @@ R Workbench 是一款面向统计学初学者的 AI 驱动数据分析桌面应�
 
 ### 截图
 
-> 截图将在正式发布时添加
+| AI 对话分析 | 向导式分析 |
+|-------------|-----------|
+| ![AI 对话分析](docs/screenshots/chat.png) | ![向导式分析](docs/screenshots/wizard.png) |
 
-| 首页 | AI 对话分析 | 向导式分析 | 数据管理 |
-|------|------------|-----------|---------|
-| ![首页](docs/screenshots/welcome.png) | ![对话](docs/screenshots/chat.png) | ![向导](docs/screenshots/wizard.png) | ![数据](docs/screenshots/data.png) |
+| 数据管理 | 设置 |
+|----------|------|
+| ![数据管理](docs/screenshots/data.png) | ![设置](docs/screenshots/settings.png) |
 
 ### 目标用户
 
@@ -33,16 +35,27 @@ R Workbench 是一款面向统计学初学者的 AI 驱动数据分析桌面应�
 - 支持 OpenAI / DeepSeek / 通义千问等 API
 
 ### 📊 向导式分析
-- 8 种常用统计分析方法：
-  - 描述性统计
-  - 独立样本 t 检验 / 配对样本 t 检验
+- 13 种常用统计分析方法：
+  - 描述性统计 / 频数统计 / 分类汇总
+  - 独立样本 t 检验 / 配对样本 t 检验 / 单样本 t 检验
   - 单因素方差分析 (ANOVA)
-  - 卡方检验
+  - 卡方检验 / 正态性检验 / 非参数检验
   - Pearson / Spearman 相关分析
   - 线性回归
   - Cronbach's α 信度分析
 - 分步引导，自动选择变量
 - 自动生成 R 代码并执行
+
+### 📈 可视化图表
+- 6 种学术规范图表：
+  - 散点图（+ 回归线 + R²）
+  - 直方图（+ 正态曲线）
+  - 箱线图（分组对比）
+  - 柱状图（+ 误差线）
+  - 折线图（趋势展示）
+  - 核密度图
+- 学术主题模板（APA 规范）
+- 导出 PNG 图片（300/600 DPI）
 
 ### 📁 数据管理
 - 支持 CSV、Excel (.xlsx/.xls)、SPSS (.sav) 格式
@@ -51,9 +64,10 @@ R Workbench 是一款面向统计学初学者的 AI 驱动数据分析桌面应�
 - 缺失值统计
 
 ### 📄 结果导出
-- 一键复制统计结果到剪贴板
-- 导出 HTML 格式分析报告（可用 Word 打开）
-- APA 格式统计结果模板
+- 学术三线表展示（APA 规范）
+- AI 自动生成结果解读
+- 一键复制到 Word（三线表格式）
+- 导出 Word 格式分析报告
 
 ## 技术栈
 
@@ -65,7 +79,9 @@ R Workbench 是一款面向统计学初学者的 AI 驱动数据分析桌面应�
 | UI 样式 | 自定义 CSS（中文优化） |
 | 数据解析 | xlsx (SheetJS) + papaparse + sav-reader |
 | R 执行 | child_process + Rscript |
+| 绘图 | ggplot2 |
 | AI 接口 | OpenAI 兼容 API |
+| 报告导出 | OfficeCLI |
 | 打包 | electron-builder (NSIS) |
 
 ## 快速开始
@@ -121,7 +137,7 @@ r-workbench/
 │   │   │   ├── contexts/        # React Context
 │   │   │   ├── data/            # 示例数据
 │   │   │   ├── pages/           # 页面组件
-│   │   │   ├── services/        # 服务层（AI/R/数据/报告）
+│   │   │   ├── services/        # 服务层（AI/R/数据/图表）
 │   │   │   └── styles/          # CSS 样式
 │   │   └── index.html
 │   └── shared/                  # 共享类型定义
@@ -132,14 +148,6 @@ r-workbench/
 └── package.json
 ```
 
-## 盈利模式
-
-| 收入来源 | 说明 |
-|---------|------|
-| 技术支持 | 为学校/机构提供数据分析培训和技术咨询服务 |
-| Token 服务 | 提供预配置的 AI API Token，用户无需自行申请 |
-| 一键分析 | 付费模板化分析方案，适合特定论文场景 |
-
 ## 开源许可
 
 [MIT License](LICENSE)
@@ -149,7 +157,7 @@ r-workbench/
 - [R 语言](https://www.r-project.org/) — 统计计算与图形
 - [Electron](https://www.electronjs.org/) — 跨平台桌面框架
 - [React](https://react.dev/) — 用户界面库
-- [GGPLOT2](https://ggplot2.tidyverse.org/) — 数据可视化
+- [ggplot2](https://ggplot2.tidyverse.org/) — 数据可视化
 
 ---
 
