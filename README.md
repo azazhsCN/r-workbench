@@ -1,13 +1,13 @@
 # R Workbench
 
-> 🧪 AI 驱动的 R 语言数据分析工作台 — 替代 SPSS 的开源方案
+> 🧪 AI 驱动的 R 语言数据分析工作台
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
 
 ## 简介
 
-R Workbench 是一款面向统计学初学者的 AI 驱动数据分析桌面应用。通过**对话式**和**向导式**两种交互模式，让用户无需编写代码即可完成专业级统计分析，替代昂贵的 SPSS 商业软件。
+R Workbench 是一款面向统计学初学者的 AI 驱动数据分析桌面应用。通过**对话式**和**向导式**两种交互模式，让用户无需编写代码即可完成专业级统计分析。
 
 ### 截图
 
