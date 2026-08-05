@@ -2,11 +2,10 @@
 import { readFile, writeFile, rm } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join, resolve, normalize, sep } from 'path'
-import { exec, execFile } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { SavBufferReader } from 'sav-reader'
 
-const execAsync = promisify(exec)
 const execFileAsync = promisify(execFile)
 
 // ── 安全工具 ──────────────────────────────────────
@@ -232,7 +231,7 @@ cat("\\n__RWB_DONE__\\n")
         const scriptPath = join(workDir, 'script.R')
         await fsWriteFile(scriptPath, scriptContent, 'utf-8')
 
-        const { stdout, stderr } = await execAsync(`"${detectedRPath}" "${scriptPath}"`, {
+        const { stdout, stderr } = await execFileAsync(detectedRPath, [scriptPath], {
           timeout: 60000,
           maxBuffer: 10 * 1024 * 1024,
           cwd: workDir
@@ -272,7 +271,7 @@ cat("\\n__RWB_DONE__\\n")
     try {
       const safeCode = validateString(code, 'code', 5_000_000)
       const os = await import('os')
-      const { mkdtemp, writeFile: fsWrite, readFile: fsRead, rm: fsRm } = await import('fs/promises')
+      const { mkdtemp, writeFile: fsWrite, readFile: fsRead } = await import('fs/promises')
 
       workDir = await mkdtemp(join(os.tmpdir(), 'rwb-plot-'))
 
@@ -322,7 +321,7 @@ cat("\\n__RWB_DONE__\\n")
 `
       await fsWrite(join(workDir, 'plot_script.R'), scriptContent, 'utf-8')
 
-      const { stdout, stderr } = await execAsync(`"${detectedRPath}" "${join(workDir, 'plot_script.R')}"`, {
+      const { stdout, stderr } = await execFileAsync(detectedRPath, [join(workDir, 'plot_script.R')], {
         timeout: 60000,
         maxBuffer: 10 * 1024 * 1024,
         cwd: workDir
@@ -341,7 +340,8 @@ cat("\\n__RWB_DONE__\\n")
         try {
           const imgBuffer = await fsRead(plotPath)
           const base64 = imgBuffer.toString('base64')
-          return { success: true, base64, path: plotPath, error: null }
+          // Nit: 临时目录会在 finally 中删除，path 不再指向有效文件，返回空
+          return { success: true, base64, path: '', error: null }
         } catch {
           return { success: false, base64: null, path: null, error: '图表文件未生成' }
         }
@@ -381,7 +381,7 @@ cat(paste(installed, collapse = ","))`
       const tempDir = await mkdtemp(join(os.tmpdir(), 'rwb-pkg-'))
       const scriptPath = join(tempDir, 'check.R')
       await writeFile(scriptPath, code, 'utf-8')
-      const { stdout } = await execAsync(`"${detectedRPath}" "${scriptPath}"`, { timeout: 30000 })
+      const { stdout } = await execFileAsync(detectedRPath, [scriptPath], { timeout: 30000 })
       rm(tempDir, { recursive: true, force: true }).catch(() => {})
       return { installed: stdout.trim().split(',').filter(Boolean) }
     } catch {
@@ -403,7 +403,7 @@ cat(paste(installed, collapse = ","))`
       tempDir = await mkdtemp(join(os.tmpdir(), 'rwb-ins-'))
       const scriptPath = join(tempDir, 'install.R')
       await writeFile(scriptPath, code, 'utf-8')
-      const { stdout } = await execAsync(`"${detectedRPath}" "${scriptPath}"`, { timeout: 300000 })
+      const { stdout } = await execFileAsync(detectedRPath, [scriptPath], { timeout: 300000 })
       rm(tempDir, { recursive: true, force: true }).catch(() => {})
       return { success: true, output: stdout, error: null }
     } catch (error: unknown) {
@@ -418,12 +418,23 @@ cat(paste(installed, collapse = ","))`
   ipcMain.handle('data:parseSav', async (_event, filePath: unknown) => {
     try {
       const safePath = validateFilePath(validateString(filePath, 'filePath'), trustedDirs)
+      // S4: 限制文件大小（SPSS .sav 超过 200MB 视为异常，避免 OOM）
+      const MAX_SAV_SIZE = 200 * 1024 * 1024
+      const stat = await import('fs/promises').then((m) => m.stat(safePath))
+      if (stat.size > MAX_SAV_SIZE) {
+        return { success: false, error: '文件过大（>200MB），暂不支持解析' }
+      }
       const buffer = await readFile(safePath)
       const sav = new SavBufferReader(buffer)
       await sav.open()
 
       const headers = sav.meta.sysvars.map((v) => v.name)
-      const allRows = await sav.readAllRows()
+      // S4: 限制行数，避免 GB 级数据 OOM
+      const MAX_SAV_ROWS = 200000
+      const totalRows = sav.meta.nrows ?? Number.MAX_SAFE_INTEGER
+      const allRows = totalRows > MAX_SAV_ROWS
+        ? (await sav.readAllRows()).slice(0, MAX_SAV_ROWS)
+        : await sav.readAllRows()
 
       const rows = allRows.map((row: Record<string, unknown>) => {
         const normalized: Record<string, unknown> = {}
@@ -442,7 +453,9 @@ cat(paste(installed, collapse = ","))`
           if (
             val === '' || val === null || val === undefined ||
             (typeof missingValues === 'number' && val === missingValues) ||
-            (Array.isArray(missingValues) && missingValues.includes(val as number))
+            (Array.isArray(missingValues) && missingValues.includes(val as number)) ||
+            // Nit: 字符串缺失值（如 "." 或 "NA"）漏检修复
+            (typeof val === 'string' && (val.trim() === '' || val.trim().toLowerCase() === 'na' || val.trim() === '.'))
           ) {
             missing++
           }
@@ -572,7 +585,7 @@ cat(paste(installed, collapse = ","))`
     ]
     for (const p of candidates) {
       try {
-        const { stdout } = await execAsync(`"${p}" --version`, { timeout: 5000 })
+        const { stdout } = await execFileAsync(p, ['--version'], { timeout: 5000 })
         if (stdout.trim()) {
           officecliPath = p
           return p
@@ -588,7 +601,7 @@ cat(paste(installed, collapse = ","))`
     const path = await detectOfficeCli()
     if (!path) return { found: false, version: '', path: '' }
     try {
-      const { stdout } = await execAsync(`"${path}" --version`, { timeout: 5000 })
+      const { stdout } = await execFileAsync(path, ['--version'], { timeout: 5000 })
       return { found: true, version: stdout.trim(), path }
     } catch {
       return { found: false, version: '', path: '' }

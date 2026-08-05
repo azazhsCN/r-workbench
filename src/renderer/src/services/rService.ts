@@ -38,10 +38,6 @@ export class RService {
     return result
   }
 
-  static getStatus(): RStatus | null {
-    return RService.instance
-  }
-
   static async execute(code: string, dataCsv?: string): Promise<AnalysisResult> {
     if (!window.api) {
       return { success: false, output: '', tables: [], plots: [], errors: ['API 未就绪'] }
@@ -87,12 +83,13 @@ for(v in vars) {
     return `
 dataFile <- "${rEscape(dataFile)}"
 data <- ${READ_CSV}
-groups <- unique(data[["${safeGroup}"]])
+groups <- sort(unique(data[["${safeGroup}"]]))
 if(length(groups) != 2) stop("分组变量必须恰好有2个水平")
 g1 <- suppressWarnings(as.numeric(data[data[["${safeGroup}"]] == groups[1], "${safeDv}"]))
 g2 <- suppressWarnings(as.numeric(data[data[["${safeGroup}"]] == groups[2], "${safeDv}"]))
 g1 <- g1[!is.na(g1)]
 g2 <- g2[!is.na(g2)]
+if (length(g1) < 2 || length(g2) < 2) stop("每组至少需要 2 个有效样本")
 cat("=== 独立样本 t 检验 ===\\n")
 cat(sprintf("组1 (%s): N=%d, M=%.4f, SD=%.4f\\n", groups[1], length(g1), mean(g1), sd(g1)))
 cat(sprintf("组2 (%s): N=%d, M=%.4f, SD=%.4f\\n\\n", groups[2], length(g2), mean(g2), sd(g2)))
@@ -165,8 +162,11 @@ item_data <- data[, items]
 item_data <- as.data.frame(lapply(item_data, function(x) suppressWarnings(as.numeric(x))))
 item_data <- item_data[complete.cases(item_data), ]
 k <- ncol(item_data)
+if (k < 2) stop("信度分析至少需要 2 个项目")
+if (nrow(item_data) < 2) stop("有效样本量不足（至少需要 2 行）")
 item_vars <- apply(item_data, 2, var)
 total_var <- var(rowSums(item_data))
+if (any(item_vars == 0) || total_var == 0) stop("项目方差为 0，无法计算信度（检查是否有常量列）")
 alpha <- (k / (k - 1)) * (1 - sum(item_vars) / total_var)
 cat("=== 信度分析 (Cronbach's α) ===\\n")
 cat(sprintf("项目数: %d, 有效样本: %d\\n", k, nrow(item_data)))
@@ -219,19 +219,21 @@ else cat("\\n结论: 两个变量之间不存在显著关联 (p >= 0.05)\\n")
     return `
 dataFile <- "${rEscape(dataFile)}"
 data <- ${READ_CSV}
-dv_col <- make.names("${safeDv}")
-grp_col <- make.names("${safeGroup}")
-if (!dv_col %in% names(data)) { dv_col <- "${safeDv}" }
-if (!grp_col %in% names(data)) { grp_col <- "${safeGroup}" }
-data[[dv_col]] <- suppressWarnings(as.numeric(data[[dv_col]]))
+# 用临时变量名避免列名直接进入公式（支持含空格/中文/特殊字符的列名）
+data$.dv <- suppressWarnings(as.numeric(data[["${safeDv}"]]))
+data$.grp <- factor(data[["${safeGroup}"]])
+valid_idx <- !is.na(data$.dv) & !is.na(data$.grp)
+data <- data[valid_idx, ]
+if (nlevels(data$.grp) < 2) stop("分组变量至少需要 2 个水平")
+if (nrow(data) < 2) stop("有效样本量不足")
 cat("=== 单因素方差分析 ===\\n")
-fml <- as.formula(paste0(dv_col, " ~ factor(", grp_col, ")"))
+fml <- as.formula(".dv ~ .grp")
 model <- aov(fml, data = data)
 print(summary(model))
-groups <- unique(data[[grp_col]])
+groups <- levels(data$.grp)
 for(g in groups) {
-  x <- data[data[[grp_col]] == g, dv_col]
-  cat(sprintf("组 %s: N=%d, M=%.4f, SD=%.4f\\n", g, length(x), mean(x, na.rm=TRUE), sd(x, na.rm=TRUE)))
+  x <- data$.dv[data$.grp == g]
+  cat(sprintf("组 %s: N=%d, M=%.4f, SD=%.4f\\n", g, length(x), mean(x), sd(x)))
 }
 `
   }
@@ -283,12 +285,13 @@ for(v in vars) {
     return `
 dataFile <- "${rEscape(dataFile)}"
 data <- ${READ_CSV}
-groups <- unique(data[["${rEscape(groupVar)}"]])
+groups <- sort(unique(data[["${rEscape(groupVar)}"]]))
 if(length(groups) != 2) stop("分组变量必须恰好有2个水平")
 g1 <- suppressWarnings(as.numeric(data[data[["${rEscape(groupVar)}"]] == groups[1], "${rEscape(dv)}"]))
 g2 <- suppressWarnings(as.numeric(data[data[["${rEscape(groupVar)}"]] == groups[2], "${rEscape(dv)}"]))
 g1 <- g1[!is.na(g1)]
 g2 <- g2[!is.na(g2)]
+if (length(g1) < 2 || length(g2) < 2) stop("每组至少需要 2 个有效样本")
 cat("=== 非参数检验 (Mann-Whitney U) ===\\n")
 cat(sprintf("组1 (%s): N=%d, Median=%.4f\\n", groups[1], length(g1), median(g1)))
 cat(sprintf("组2 (%s): N=%d, Median=%.4f\\n\\n", groups[2], length(g2), median(g2)))
@@ -331,11 +334,16 @@ cat("=== 分类汇总 ===\\n")
 cat(sprintf("分组变量: ${rEscape(groupVar)}, 汇总变量: ${rEscape(valueVar)}\\n\\n"))
 cat(sprintf("%-20s %-8s %-12s %-12s %-12s %-12s\\n", "组别", "N", "Mean", "SD", "Min", "Max"))
 cat(paste(rep("-", 78), collapse = ""), "\\n")
-groups <- unique(data$group)
-for(g in groups[!is.na(groups)]) {
+groups <- sort(unique(data$group[!is.na(data$group)]))
+if (length(groups) == 0) stop("分组变量没有有效值")
+for(g in groups) {
   x <- data$value[data$group == g]
   x <- x[!is.na(x)]
-  cat(sprintf("%-20s %-8d %-12.4f %-12.4f %-12.4f %-12.4f\\n", g, length(x), mean(x), sd(x), min(x), max(x)))
+  if (length(x) < 2) {
+    cat(sprintf("%-20s %-8d %-12s %-12s %-12s %-12s\\n", g, length(x), "-", "-", "-", "-"))
+  } else {
+    cat(sprintf("%-20s %-8d %-12.4f %-12.4f %-12.4f %-12.4f\\n", g, length(x), mean(x), sd(x), min(x), max(x)))
+  }
 }
 `
   }

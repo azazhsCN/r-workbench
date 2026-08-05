@@ -1,10 +1,9 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
 import { useData } from '../contexts/DataContext'
 import { useAI } from '../contexts/AIContext'
 import { RService } from '../services/rService'
 import { generatePlotCode, METHOD_PLOT_MAP, type PlotConfig } from '../services/plotService'
 import { datasetToCSV } from '../services/dataService'
-import { rEscape } from '../services/utils'
 import ThreeLineTable from './ThreeLineTable'
 import { generateInterpretation } from '../services/interpretService'
 import { parseROutput } from '../services/resultParser'
@@ -27,7 +26,6 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
   const [selectedType, setSelectedType] = useState<string | null>(null)
   const [interpretation, setInterpretation] = useState('')
   const [interpretLoading, setInterpretLoading] = useState(false)
-  const [analysisResult, setAnalysisResult] = useState<string | null>(null)
   const [parsedTables, setParsedTables] = useState<Array<{ title?: string; headers: string[]; rows: (string | number)[][]; note?: string }>>([])
 
   const plots = METHOD_PLOT_MAP[methodId] || []
@@ -63,12 +61,11 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
       if (result.success && result.base64) {
         setPlotSrc(`data:image/png;base64,${result.base64}`)
 
-        // 同时执行分析获取结果
-        const analysisCode = generateAnalysisCode(methodId, variables, groupVar, 'data.csv')
-        if (analysisCode) {
-          const analysisRes = await RService.execute(analysisCode, csv)
+        // 同时执行分析获取结果（S5: 复用 rService 生成器，与向导页保持一致）
+      const analysisCode = generateAnalysisCode(methodId, variables, groupVar)
+      if (analysisCode) {
+        const analysisRes = await RService.execute(analysisCode, csv)
           if (analysisRes.success && analysisRes.output) {
-            setAnalysisResult(analysisRes.output)
             const parsed = parseROutput(analysisRes.output)
             setParsedTables(parsed.tables)
             if (parsed.tables.length > 0 && isConfigured) {
@@ -191,33 +188,35 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
   )
 }
 
-/** 为图表配套生成分析代码 */
-function generateAnalysisCode(methodId: string, variables: string[], groupVar: string | undefined, df: string): string | null {
+/** 为图表配套生成分析代码（S5: 复用 rService 生成器，与向导页保持一致） */
+function generateAnalysisCode(methodId: string, variables: string[], groupVar?: string): string | null {
   if (variables.length < 1) return null
-  const dataFile = `"${rEscape(df)}"`
 
   switch (methodId) {
     case 'descriptive':
-      return `data <- read.csv(${dataFile}, check.names = FALSE, fileEncoding = "UTF-8-BOM")
-vars <- c(${variables.map(v => `"${rEscape(v)}"`).join(', ')})
-for(v in vars) {
-  x <- suppressWarnings(as.numeric(data[[v]]))
-  valid <- x[!is.na(x)]
-  if(length(valid) > 0) cat(sprintf("%-30s N=%-5d M=%.3f SD=%.3f\\n", v, length(valid), mean(valid), sd(valid)))
-}`
+      return RService.descriptiveCode(variables)
     case 'correlation':
-      return `data <- read.csv(${dataFile}, check.names = FALSE, fileEncoding = "UTF-8-BOM")
-x <- suppressWarnings(as.numeric(data[["${rEscape(variables[0])}"]]))
-y <- suppressWarnings(as.numeric(data[["${rEscape(variables[1])}"]]))
-r <- cor.test(x, y, method = "pearson")
-cat(sprintf("r = %.4f, p = %.4f, N = %d\\n", r$estimate, r$p.value, sum(complete.cases(x, y))))`
+      if (variables.length < 2) return null
+      return RService.correlationCode(variables[0], variables[1])
     case 'ttest_independent':
-      return `data <- read.csv(${dataFile}, check.names = FALSE, fileEncoding = "UTF-8-BOM")
-groups <- unique(data[["${rEscape(groupVar || '')}"]])
-g1 <- suppressWarnings(as.numeric(data[data[["${rEscape(groupVar || '')}"]] == groups[1], "${rEscape(variables[0])}"]))
-g2 <- suppressWarnings(as.numeric(data[data[["${rEscape(groupVar || '')}"]] == groups[2], "${rEscape(variables[0])}"]))
-r <- t.test(g1[!is.na(g1)], g2[!is.na(g2)])
-cat(sprintf("t = %.4f, df = %.2f, p = %.4f\\n", r$statistic, r$parameter, r$p.value))`
+      if (!groupVar || variables.length < 1) return null
+      return RService.tTestIndependentCode(variables[0], groupVar)
+    case 'ttest_paired':
+      if (variables.length < 2) return null
+      return RService.tTestPairedCode(variables[0], variables[1])
+    case 'anova':
+      if (!groupVar || variables.length < 1) return null
+      return RService.anovaCode(variables[0], groupVar)
+    case 'chi_square':
+      if (variables.length < 2) return null
+      return RService.chiSquareCode(variables[0], variables[1])
+    case 'regression':
+      if (variables.length < 2) return null
+      return RService.regressionCode(variables[0], variables.slice(1))
+    case 'reliability':
+      return RService.reliabilityCode(variables)
+    case 'frequency':
+      return RService.frequencyCode(variables)
     default:
       return null
   }

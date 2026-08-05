@@ -94,6 +94,9 @@ export class AIService {
           if (window.api?.config) {
             await window.api.config.saveApiKey(provider, apiKey)
           }
+          // S6: 迁移完成后从 localStorage 删除明文 key，避免永久残留
+          delete rest.aiApiKey
+          localStorage.setItem('rworkbench_settings', JSON.stringify(rest))
         }
 
         if (!apiKey) return null

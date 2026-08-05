@@ -1,6 +1,6 @@
 {
   "name": "r-workbench",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "R Workbench - AI驱动的R语言数据分析工作台，替代SPSS的开源方案",
   "main": "./out/main/index.js",
   "keywords": [
@@ -17,9 +17,9 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rworkbench/r-workbench.git"
+    "url": "https://github.com/azazhsCN/r-workbench.git"
   },
-  "homepage": "https://github.com/rworkbench/r-workbench#readme",
+  "homepage": "https://github.com/azazhsCN/r-workbench#readme",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
