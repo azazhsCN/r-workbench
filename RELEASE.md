@@ -1,10 +1,10 @@
-# R Workbench v0.2.2
+# R Workbench v0.2.3
 
 AI 驱动的 R 语言数据分析工作台
 
 ## 下载
 
-- **Windows 安装包**：`R Workbench Setup 0.2.2.exe` (89 MB)
+- **Windows 安装包**：`R Workbench Setup 0.2.3.exe` (89 MB)
 
 ## 注意事项
 
@@ -29,4 +29,4 @@ AI 驱动的 R 语言数据分析工作台
 
 ### 问题反馈
 
-如有问题或建议，请提交 [Issue](https://github.com/azazhsCN/r-workbench/issues)
+如有问题，请访问 [GitHub Issues](https://github.com/azazhsCN/r-workbench/issues) 提交反馈。
