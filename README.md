@@ -145,7 +145,7 @@ r-workbench/
 ├── resources/                   # 应用资源
 ├── electron.vite.config.ts      # electron-vite 配置
 ├── electron-builder.json5       # 打包配置
-├── scripts/validate/            # 统计正确性验证脚本（论文 Table 2）
+├── scripts/validate/            # 统计正确性验证脚本
 ├── .github/workflows/           # GitHub Actions（CI）
 └── package.json
 ```
@@ -154,8 +154,7 @@ r-workbench/
 
 R Workbench 内置一组可复现的统计正确性验证脚本，用于验证系统实现的分析方法
 （描述统计、t 检验、ANOVA、相关、回归、卡方、非参数、信度、正态性等）在
-标准 R 数据集上产生与 R 参考实现一致的结果。结果随 `v0.2.4` release 发布，供
-论文 Table 2 及审稿人复核。
+标准 R 数据集上产生与 R 参考实现一致的结果。
 
 ```bash
 # 运行验证（需 R >= 4.2，纯 base R，无额外依赖）
@@ -164,9 +163,8 @@ Rscript scripts/validate/run_validation.R
 
 - 脚本：`scripts/validate/run_validation.R`
 - 结果：`scripts/validate/VALIDATION_RESULTS.md`
-- 说明与验证边界：`scripts/validate/README.md`
-- release 绑定：`docs/validation-release.md`
-- 论文实验绑定：<https://github.com/azazhsCN/r-workbench/releases/tag/v0.2.4>
+- 运行说明与验证边界：`scripts/validate/README.md`
+- 发布说明：`docs/validation-release.md`
 
 ## 开源许可
 
