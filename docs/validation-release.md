@@ -19,7 +19,6 @@ sleep、HairEyeColor）执行，并输出参考值、R Workbench 实现值及一
 - 验证脚本所在 tag：**v0.2.4**
   - 包含：`scripts/validate/`、`.github/workflows/stat-validation.yml`、
     `docs/validation-release.md`
-  - 当前指向 commit `6a82876`
 
 ## 3. 复现方式
 
