@@ -7,12 +7,11 @@
 # 的关键统计量，判断是否在浮点精度内一致。结果写入 stdout，并在项目内输出
 # VALIDATION_RESULTS.md 作为论文 Table 2 的可复现证据。
 #
-# 运行（需 R >= 4.2；信度分析需 psych）：
+# 运行（需 R >= 4.2，纯 base R，无第三方 R 包依赖；信度分析用 base R 手算）：
 #   Rscript scripts/validate/run_validation.R
 # ============================================================================
 
 suppressMessages(library(stats))
-HAS_PSYCH <- requireNamespace("psych", quietly = TRUE)
 EPS <- 1e-9
 
 report <- list()
@@ -73,7 +72,7 @@ compare_code <- function(method, dataset, data_expr, ref_code, wb_code, extracts
 cat("==========================================================\n")
 cat("R Workbench 统计正确性验证（严格版）\n")
 cat("R:", R.version.string, "\n")
-cat("psych:", if (HAS_PSYCH) "可用" else "不可用\n", "\n")
+cat("依赖：仅 base R（无第三方 R 包）\n")
 cat("==========================================================\n")
 
 # ---- 1. 描述性统计 (mtcars$mpg) ----
@@ -218,11 +217,11 @@ if (length(failed)) {
   cat("==> 全部方法在浮点精度内与 R 标准实现一致。\n")
 }
 
-# 写结果 Markdown（供论文/补充材料）
+# 写结果 Markdown
 md_lines <- c(
   "# 统计验证结果", "",
   paste0("R 版本：", R.version.string),
-  paste0("psych 包：", if (HAS_PSYCH) as.character(packageVersion("psych")) else "未安装"),
+  "依赖：仅 base R（无第三方 R 包）",
   "", "| 方法 | 数据集 | 统计量 | 参考 | 工作台 | 结果 |", "|---|---|---|---|---|---|"
 )
 for (r in report) {
