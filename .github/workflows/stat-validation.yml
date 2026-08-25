@@ -1,0 +1,53 @@
+name: Stat-Correctness-Validation
+
+# 统计正确性验证：对新提交/PR 运行 R Workbench 的统计验证脚本，
+# 并作为论文 Table 2 声称的可复现证据。
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'src/renderer/src/services/rService.ts'
+      - 'src/renderer/src/services/resultParser.ts'
+      - 'src/renderer/src/services/plotService.ts'
+      - 'scripts/validate/**'
+  pull_request:
+    paths:
+      - 'src/renderer/src/services/rService.ts'
+      - 'src/renderer/src/services/resultParser.ts'
+      - 'scripts/validate/**'
+  workflow_dispatch: {}   # 允许手动触发
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # GitHub runner 默认无 R，用 r-lib 官方 action 安装（纯净 base R 即可，无需额外包）
+      - name: 安装 R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'   # 或固定 '4.3.1'
+
+      - name: 运行统计验证（base R，无需额外依赖）
+        run: Rscript scripts/validate/run_validation.R
+
+      - name: 上传验证输出（作为补充材料 / 论文证据）
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results
+          path: |
+            scripts/validate/VALIDATION_RESULTS.md
+            scripts/validate/*.txt
+          if-no-files-found: ignore
+
+  # 兜底：若 R 环境安装失败（离线/镜像问题），至少校验脚本语法与结构
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 校验脚本存在
+        run: |
+          test -f scripts/validate/run_validation.R && echo "run_validation.R 存在" || (echo "缺少 run_validation.R" && exit 1)
+          test -f scripts/validate/README.md && echo "README.md 存在" || exit 1
