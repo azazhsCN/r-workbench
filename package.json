@@ -1,6 +1,6 @@
 {
   "name": "r-workbench",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "description": "R Workbench - AI驱动的R语言数据分析工作台，替代SPSS的开源方案",
   "main": "./out/main/index.js",
   "keywords": [
@@ -11,7 +11,10 @@
     "electron",
     "academic",
     "thesis",
-    "survey-analysis"
+    "survey-analysis",
+    "i18n",
+    "internationalization",
+    "bilingual"
   ],
   "author": "R Workbench Team",
   "license": "MIT",
@@ -35,9 +38,12 @@
     "lint": "eslint src/"
   },
   "dependencies": {
+    "i18next": "^26.4.2",
+    "i18next-browser-languagedetector": "^8.2.1",
     "papaparse": "^5.5.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-i18next": "^17.0.13",
     "sav-reader": "^2.0.8",
     "xlsx": "^0.18.5"
   },

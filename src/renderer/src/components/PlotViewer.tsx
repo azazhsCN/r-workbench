@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useData } from '../contexts/DataContext'
 import { useAI } from '../contexts/AIContext'
 import { RService } from '../services/rService'
@@ -18,6 +19,7 @@ interface PlotViewerProps {
 }
 
 export default function PlotViewer({ methodId, variables, groupVar }: PlotViewerProps) {
+  const { t } = useTranslation()
   const { dataset } = useData()
   const { isConfigured } = useAI()
   const [plotSrc, setPlotSrc] = useState<string | null>(null)
@@ -29,6 +31,20 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
   const [parsedTables, setParsedTables] = useState<Array<{ title?: string; headers: string[]; rows: (string | number)[][]; note?: string }>>([])
 
   const plots = METHOD_PLOT_MAP[methodId] || []
+
+  // 图表类型标签中文 → i18n key 映射
+  const plotLabelKey: Record<string, string> = {
+    '直方图': 'plot.label.histogram',
+    '箱线图': 'plot.label.boxplot',
+    '分组箱线图': 'plot.label.grouped_boxplot',
+    '配对趋势图': 'plot.label.paired_line',
+    '均值柱状图': 'plot.label.mean_bar',
+    '频数柱状图': 'plot.label.freq_bar',
+    '散点图': 'plot.label.scatter',
+    '散点图+回归线': 'plot.label.scatter_regression',
+    '条目均值图': 'plot.label.item_bar',
+    '核密度图': 'plot.label.density'
+  }
 
   if (plots.length === 0) return null
 
@@ -52,7 +68,7 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
       const csv = datasetToCSV(dataset.headers, dataset.rows)
 
       if (!window.api) {
-        setError('API 未就绪')
+        setError(t('plot.error.noApi'))
         return
       }
 
@@ -82,10 +98,10 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
           }
         }
       } else {
-        setError(result.error || '图表生成失败')
+        setError(result.error || t('plot.error.generate'))
       }
     } catch (e: unknown) {
-      setError((e as Error).message || '生成失败')
+      setError((e as Error).message || t('plot.error.fail'))
     } finally {
       setLoading(false)
     }
@@ -102,7 +118,7 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
             onClick={() => handleGeneratePlot(p.type)}
             disabled={loading}
           >
-            📊 {p.label}
+            📊 {t(plotLabelKey[p.label] || p.label)}
           </button>
         ))}
       </div>
@@ -111,7 +127,7 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
       {loading && (
         <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)' }}>
           <div style={{ animation: 'spin 1s linear infinite', display: 'inline-block', fontSize: 24, marginBottom: 8 }}>⏳</div>
-          <div>正在生成图表...</div>
+          <div>{t('plot.loading')}</div>
         </div>
       )}
 
@@ -134,7 +150,7 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
           }}>
             <img
               src={plotSrc}
-              alt="分析图表"
+              alt={t('plot.alt.chart')}
               style={{ maxWidth: '100%', height: 'auto', borderRadius: 'var(--radius-sm)' }}
             />
           </div>
@@ -150,7 +166,7 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
                 link.click()
               }}
             >
-              💾 保存图片
+              💾 {t('plot.saveImage')}
             </button>
           </div>
 
@@ -172,13 +188,13 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
           {/* AI 解读 */}
           {interpretLoading && (
             <div className="result-interpretation" style={{ marginTop: 12 }}>
-              <h4>📝 结果解读</h4>
-              <p style={{ opacity: 0.6 }}>正在生成...</p>
+              <h4>{t('plot.interpretation.title')}</h4>
+              <p style={{ opacity: 0.6 }}>{t('plot.interpretation.generating')}</p>
             </div>
           )}
           {interpretation && !interpretLoading && (
             <div className="result-interpretation" style={{ marginTop: 12 }}>
-              <h4>📝 结果解读</h4>
+              <h4>{t('plot.interpretation.title')}</h4>
               <p>{interpretation}</p>
             </div>
           )}

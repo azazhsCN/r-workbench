@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { parseCSV, parseExcel, datasetToCSV, type ParseResult } from '../services/dataService'
 import { useData } from '../contexts/DataContext'
 import type { ColumnInfo } from '../../shared/types'
 
 export default function DataPage() {
+  const { t } = useTranslation()
   const { dataset: sharedDataset, setDataset: setSharedDataset } = useData()
   const [parseResult, setParseResult] = useState<ParseResult | null>(sharedDataset)
   const [isLoading, setIsLoading] = useState(false)
@@ -50,21 +52,21 @@ export default function DataPage() {
               }
             })
           } else {
-            setError(savResult.error || 'SPSS 文件解析失败')
+            setError(savResult.error || t('data.error.savParse'))
           }
         } else {
-          setError(`不支持的文件格式: .${ext}，请使用 CSV、Excel 或 SPSS 格式`)
+          setError(t('data.error.unsupported', { ext }))
         }
       } catch (err) {
         console.error('文件加载失败:', err)
-        setError('文件加载失败，请检查文件格式是否正确')
+        setError(t('data.error.loadFailed'))
       } finally {
         setIsLoading(false)
       }
     } else {
       fileInputRef.current?.click()
     }
-  }, [updateData])
+  }, [updateData, t])
 
   const handleLocalFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -80,10 +82,10 @@ export default function DataPage() {
         const buffer = await file.arrayBuffer()
         updateData(parseExcel(buffer, file.name))
       } else {
-        setError(`不支持的文件格式: .${ext}`)
+        setError(t('data.error.unsupported', { ext }))
       }
     } catch {
-      setError('文件读取失败')
+      setError(t('data.error.readFailed'))
     } finally {
       setIsLoading(false)
     }
@@ -92,11 +94,11 @@ export default function DataPage() {
   const handleManualImport = () => {
     if (!manualText.trim()) return
     try {
-      updateData(parseCSV(manualText, '手动输入数据'))
+      updateData(parseCSV(manualText, t('data.manualInput.title')))
       setManualInput(false)
       setManualText('')
     } catch {
-      setError('数据解析失败，请检查格式')
+      setError(t('data.error.parseFailed'))
     }
   }
 
@@ -115,25 +117,25 @@ export default function DataPage() {
   return (
     <div className="data-page">
       <div className="page-header">
-        <h1>📁 数据管理</h1>
-        <p>导入和预览你的数据集，支持 CSV、Excel (.xlsx/.xls)、SPSS (.sav) 格式</p>
+        <h1>📁 {t('data.title')}</h1>
+        <p>{t('data.subtitle')}</p>
       </div>
 
       <div className="page-body">
         {/* 导入按钮区域 */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
           <button className="btn btn-primary" onClick={handleFileSelect}>
-            📂 导入文件
+            📂 {t('data.importFile')}
           </button>
           <button
             className="btn btn-secondary"
             onClick={() => setManualInput(!manualInput)}
           >
-            ✏️ 手动输入
+            ✏️ {t('data.manualInput')}
           </button>
           {parseResult && (
             <button className="btn btn-secondary" onClick={handleExportCSV}>
-              💾 导出 CSV
+              💾 {t('data.exportCsv')}
             </button>
           )}
         </div>
@@ -151,12 +153,12 @@ export default function DataPage() {
             }}
           >
             <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 8 }}>
-              粘贴 CSV 格式数据（第一行为列名）：
+              {t('data.manualInput.hint')}
             </p>
             <textarea
               value={manualText}
               onChange={(e) => setManualText(e.target.value)}
-              placeholder={'姓名,年龄,成绩\n张三,20,85\n李四,21,92\n王五,20,78'}
+              placeholder={t('data.manualInput.placeholder')}
               style={{
                 width: '100%',
                 height: 150,
@@ -167,10 +169,10 @@ export default function DataPage() {
             />
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button className="btn btn-primary btn-sm" onClick={handleManualImport}>
-                导入
+                {t('data.manualInput.import')}
               </button>
               <button className="btn btn-ghost btn-sm" onClick={() => setManualInput(false)}>
-                取消
+                {t('data.manualInput.cancel')}
               </button>
             </div>
           </div>
@@ -214,17 +216,17 @@ export default function DataPage() {
                 marginBottom: 20
               }}
             >
-              <InfoCard label="数据集" value={parseResult.dataset.name} />
-              <InfoCard label="行数" value={parseResult.rows.length.toString()} />
-              <InfoCard label="列数" value={parseResult.headers.length.toString()} />
+              <InfoCard label={t('data.info.dataset')} value={parseResult.dataset.name} />
+              <InfoCard label={t('data.info.rows')} value={parseResult.rows.length.toString()} />
+              <InfoCard label={t('data.info.cols')} value={parseResult.headers.length.toString()} />
               <InfoCard
-                label="数值列"
+                label={t('data.info.numericCols')}
                 value={parseResult.columnInfo
                   .filter((c) => c.type === 'numeric')
                   .length.toString()}
               />
               <InfoCard
-                label="分类列"
+                label={t('data.info.catCols')}
                 value={parseResult.columnInfo
                   .filter((c) => c.type === 'string')
                   .length.toString()}
@@ -240,17 +242,17 @@ export default function DataPage() {
                 color: 'var(--text-primary)'
               }}
             >
-              变量信息
+              {t('data.colInfo.title')}
             </h3>
             <div className="data-table-wrapper" style={{ marginBottom: 20, overflow: 'auto' }}>
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>变量名</th>
-                    <th>类型</th>
-                    <th>有效值</th>
-                    <th>缺失值</th>
-                    <th>缺失率</th>
+                    <th>{t('data.colInfo.name')}</th>
+                    <th>{t('data.colInfo.type')}</th>
+                    <th>{t('data.colInfo.valid')}</th>
+                    <th>{t('data.colInfo.missing')}</th>
+                    <th>{t('data.colInfo.missingRate')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -274,7 +276,7 @@ export default function DataPage() {
                                 : 'var(--success)'
                           }}
                         >
-                          {col.type === 'numeric' ? '数值' : '分类'}
+                          {col.type === 'numeric' ? t('data.colInfo.numeric') : t('data.colInfo.categorical')}
                         </span>
                       </td>
                       <td>{col.total - col.missing}</td>
@@ -301,7 +303,7 @@ export default function DataPage() {
                 color: 'var(--text-primary)'
               }}
             >
-              数据预览
+              {t('data.preview.title')}
             </h3>
             <div className="data-table-wrapper" style={{ overflow: 'auto' }}>
               <table className="data-table">
@@ -336,7 +338,7 @@ export default function DataPage() {
                   color: 'var(--text-tertiary)'
                 }}
               >
-                显示前 200 行，共 {parseResult.rows.length} 行数据
+                {t('data.preview.showRows', { total: parseResult.rows.length })}
               </p>
             )}
           </div>
@@ -346,9 +348,9 @@ export default function DataPage() {
         {!parseResult && !isLoading && (
           <div className="data-upload-zone" onClick={handleFileSelect}>
             <div className="data-upload-icon">📂</div>
-            <div className="data-upload-text">点击导入数据文件</div>
+            <div className="data-upload-text">{t('data.empty.title')}</div>
             <div className="data-upload-hint">
-              支持 CSV (.csv)、Excel (.xlsx/.xls) 格式
+              {t('data.empty.hint')}
             </div>
           </div>
         )}
@@ -358,7 +360,7 @@ export default function DataPage() {
             <div className="empty-state-icon" style={{ animation: 'spin 1s linear infinite' }}>
               ⏳
             </div>
-            <div className="empty-state-text">正在加载数据...</div>
+            <div className="empty-state-text">{t('data.loading')}</div>
           </div>
         )}
       </div>

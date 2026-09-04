@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { PageType } from '../App'
 
 interface SidebarProps {
@@ -10,16 +11,17 @@ interface SidebarProps {
 interface NavItemConfig {
   id: PageType
   icon: string
-  label: string
-  section: string
+  labelKey: string
+  sectionKey: string
 }
 
+// label/section 使用 i18n key，支持运行时切换语言
 const navItems: NavItemConfig[] = [
-  { id: 'welcome', icon: '🏠', label: '首页', section: '导航' },
-  { id: 'chat', icon: '💬', label: 'AI 对话分析', section: '分析' },
-  { id: 'wizard', icon: '📊', label: '向导式分析', section: '分析' },
-  { id: 'data', icon: '📁', label: '数据管理', section: '数据' },
-  { id: 'settings', icon: '⚙️', label: '设置', section: '系统' }
+  { id: 'welcome', icon: '🏠', labelKey: 'nav.home', sectionKey: 'nav.section.nav' },
+  { id: 'chat', icon: '💬', labelKey: 'nav.chat', sectionKey: 'nav.section.analysis' },
+  { id: 'wizard', icon: '📊', labelKey: 'nav.wizard', sectionKey: 'nav.section.analysis' },
+  { id: 'data', icon: '📁', labelKey: 'nav.data', sectionKey: 'nav.section.data' },
+  { id: 'settings', icon: '⚙️', labelKey: 'nav.settings', sectionKey: 'nav.section.system' }
 ]
 
 export default function Sidebar({
@@ -28,11 +30,13 @@ export default function Sidebar({
   collapsed,
   onToggle
 }: SidebarProps) {
-  // 按 section 分组
+  const { t } = useTranslation()
+
+  // 按 section 分组，section 标题取翻译
   const sections = navItems.reduce<Record<string, NavItemConfig[]>>(
     (acc, item) => {
-      if (!acc[item.section]) acc[item.section] = []
-      acc[item.section].push(item)
+      if (!acc[item.sectionKey]) acc[item.sectionKey] = []
+      acc[item.sectionKey].push(item)
       return acc
     },
     {}
@@ -50,16 +54,16 @@ export default function Sidebar({
       <nav className="sidebar-nav">
         {Object.entries(sections).map(([section, items]) => (
           <div key={section}>
-            <div className="sidebar-section-title">{section}</div>
+            <div className="sidebar-section-title">{t(section)}</div>
             {items.map((item) => (
               <button
                 key={item.id}
                 className={`nav-item ${currentPage === item.id ? 'active' : ''}`}
                 onClick={() => onNavigate(item.id)}
-                title={collapsed ? item.label : undefined}
+                title={collapsed ? t(item.labelKey) : undefined}
               >
                 <span className="nav-icon">{item.icon}</span>
-                <span className="nav-label">{item.label}</span>
+                <span className="nav-label">{t(item.labelKey)}</span>
               </button>
             ))}
           </div>
@@ -70,7 +74,7 @@ export default function Sidebar({
       <div className="sidebar-footer">
         <button className="sidebar-toggle" onClick={onToggle}>
           <span style={{ fontSize: 16 }}>{collapsed ? '→' : '←'}</span>
-          {!collapsed && <span className="nav-label" style={{ marginLeft: 8, fontSize: 13 }}>收起</span>}
+          {!collapsed && <span className="nav-label" style={{ marginLeft: 8, fontSize: 13 }}>{t('nav.collapse')}</span>}
         </button>
       </div>
     </aside>

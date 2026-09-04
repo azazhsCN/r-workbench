@@ -8,6 +8,7 @@ import WizardPage from './pages/WizardPage'
 import DataPage from './pages/DataPage'
 import SettingsPage from './pages/SettingsPage'
 import WelcomePage from './pages/WelcomePage'
+import './i18n' // 初始化 i18next（自动根据系统/本地语言加载）
 import './styles/app.css'
 
 /** 页面类型 */

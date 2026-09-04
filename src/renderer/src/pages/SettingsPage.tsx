@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAI } from '../contexts/AIContext'
 import { useR } from '../contexts/RContext'
+import { setLanguage, type AppLanguage } from '../i18n'
 
 interface AppSettings {
   aiProvider: string
@@ -8,13 +10,14 @@ interface AppSettings {
   aiBaseUrl: string
   aiModel: string
   fontSize: number
+  language: AppLanguage | 'system'
 }
 
 /** 预设服务商 — 只提供 API 地址，模型由用户填写 */
 const PROVIDERS = [
   { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', placeholder: 'gpt-4o / gpt-4o-mini / o3 ...' },
   { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', placeholder: 'deepseek-chat / deepseek-reasoner ...' },
-  { id: 'custom', name: '其他（自定义地址）', baseUrl: '', placeholder: '输入模型名称' }
+  { id: 'custom', nameKey: 'settings.ai.provider.custom', baseUrl: '', placeholder: '' }
 ]
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -22,12 +25,14 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiApiKey: '',
   aiBaseUrl: PROVIDERS[0].baseUrl,
   aiModel: '',
-  fontSize: 14
+  fontSize: 14,
+  language: 'system'
 }
 
 type VerifyStatus = 'idle' | 'testing' | 'success' | 'fail'
 
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const { refreshConfig } = useAI()
   const { status: rStatus, detecting: rDetecting, detect: rDetect } = useR()
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
@@ -36,6 +41,13 @@ export default function SettingsPage() {
   // 验证状态
   const [verifyStatus, setVerifyStatus] = useState<VerifyStatus>('idle')
   const [verifyMsg, setVerifyMsg] = useState('')
+
+  // 语言选项
+  const languageOptions: { value: AppLanguage | 'system'; labelKey: string }[] = [
+    { value: 'system', labelKey: 'settings.language.system' },
+    { value: 'zh-CN', labelKey: 'settings.language.zhCN' },
+    { value: 'en-US', labelKey: 'settings.language.enUS' }
+  ]
 
   useEffect(() => {
     const saved = localStorage.getItem('rworkbench_settings')
@@ -57,6 +69,8 @@ export default function SettingsPage() {
     if (window.api?.config && aiApiKey) {
       await window.api.config.saveApiKey(settings.aiProvider, aiApiKey)
     }
+    // 应用语言选择
+    setLanguage(settings.language)
     // 通知 AIContext 刷新配置，让对话页面立即可用
     await refreshConfig()
     setSaved(true)
@@ -79,12 +93,12 @@ export default function SettingsPage() {
   const handleVerify = async () => {
     if (!settings.aiApiKey || !settings.aiBaseUrl || !settings.aiModel) {
       setVerifyStatus('fail')
-      setVerifyMsg('请先填写完整的 API Key、地址和模型名称')
+      setVerifyMsg(t('settings.ai.test.fillFirst'))
       return
     }
 
     setVerifyStatus('testing')
-    setVerifyMsg('正在验证...')
+    setVerifyMsg(t('settings.ai.testing'))
 
     try {
       const response = await fetch(`${settings.aiBaseUrl}/chat/completions`, {
@@ -104,23 +118,23 @@ export default function SettingsPage() {
         const data = await response.json()
         if (data.choices && data.choices.length > 0) {
           setVerifyStatus('success')
-          setVerifyMsg(`✅ 连接成功！模型 ${settings.aiModel} 可用`)
+          setVerifyMsg(t('settings.ai.test.modelOk', { model: settings.aiModel }))
         } else {
           setVerifyStatus('fail')
-          setVerifyMsg('⚠️ 响应格式异常，请检查模型名称是否正确')
+          setVerifyMsg(t('settings.ai.test.responseAbnormal'))
         }
       } else {
         const errBody = await response.text().catch(() => '')
-        let errMsg = `❌ 请求失败 (${response.status})`
+        let errMsg = `${t('settings.ai.test.genericFail')} (${response.status})`
         try {
           const errJson = JSON.parse(errBody)
           errMsg = `❌ ${errJson.error?.message || errMsg}`
         } catch {
           // use default
         }
-        if (response.status === 401) errMsg = '❌ API Key 无效，请检查'
-        if (response.status === 404) errMsg = '❌ 模型不存在，请检查模型名称'
-        if (response.status === 429) errMsg = '⚠️ 请求频率过高，但连接本身是通的'
+        if (response.status === 401) errMsg = `❌ ${t('settings.ai.test.keyInvalid')}`
+        if (response.status === 404) errMsg = `❌ ${t('settings.ai.test.modelNotFound')}`
+        if (response.status === 429) errMsg = `⚠️ ${t('settings.ai.test.rateLimit')}`
 
         setVerifyStatus(response.status === 429 ? 'success' : 'fail')
         setVerifyMsg(errMsg)
@@ -128,23 +142,43 @@ export default function SettingsPage() {
     } catch (err: unknown) {
       const e = err as { message?: string }
       setVerifyStatus('fail')
-      setVerifyMsg(`❌ 网络错误: ${e.message || '请检查地址和网络'}`)
+      setVerifyMsg(`❌ ${t('settings.ai.test.networkError')}${e.message || t('settings.ai.test.checkNetwork')}`)
     }
   }
 
   const currentProvider = PROVIDERS.find((p) => p.id === settings.aiProvider)
+  const providerName = (p: (typeof PROVIDERS)[number]) => (p.name as string) || t(p.nameKey || '')
 
   return (
     <div className="settings-page">
       <div className="page-header">
-        <h1>⚙️ 设置</h1>
-        <p>配置 AI 服务和 R 环境</p>
+        <h1>⚙️ {t('settings.title')}</h1>
+        <p>{t('settings.subtitle')}</p>
       </div>
 
       <div className="page-body">
+        {/* ── 语言 ── */}
+        <div className="settings-section">
+          <div className="settings-section-title">🌐 {t('settings.section.language')}</div>
+          <div className="settings-desc" style={{ marginBottom: 12 }}>
+            {t('settings.language.desc')}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {languageOptions.map((opt) => (
+              <button
+                key={opt.value}
+                className={`btn btn-sm ${settings.language === opt.value ? 'active' : 'btn-secondary'}`}
+                onClick={() => setSettings((prev) => ({ ...prev, language: opt.value }))}
+              >
+                {t(opt.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* ── AI 配置 ── */}
         <div className="settings-section">
-          <div className="settings-section-title">🤖 AI 服务配置</div>
+          <div className="settings-section-title">🤖 {t('settings.section.ai')}</div>
 
           {/* 服务商选择 */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
@@ -154,16 +188,16 @@ export default function SettingsPage() {
                 className={`btn btn-sm ${settings.aiProvider === p.id ? 'active' : 'btn-secondary'}`}
                 onClick={() => handleProviderChange(p.id)}
               >
-                {p.name}
+                {providerName(p)}
               </button>
             ))}
           </div>
 
           {/* API Key */}
           <div style={{ marginBottom: 16 }}>
-            <label className="settings-label">API Key</label>
+            <label className="settings-label">{t('settings.ai.apiKey')}</label>
             <div className="settings-desc" style={{ marginBottom: 6 }}>
-              仅存储在本地，不会上传到任何服务器
+              {t('settings.ai.apiKey.localOnly')}
             </div>
             <input
               type="password"
@@ -179,11 +213,11 @@ export default function SettingsPage() {
 
           {/* API Base URL */}
           <div style={{ marginBottom: 16 }}>
-            <label className="settings-label">API 地址</label>
+            <label className="settings-label">{t('settings.ai.baseUrl')}</label>
             <div className="settings-desc" style={{ marginBottom: 6 }}>
               {settings.aiProvider === 'custom'
-                ? '输入你的 API 兼容接口地址'
-                : `${currentProvider?.name} 接口地址（通常无需修改）`}
+                ? t('settings.ai.model.customUrl')
+                : `${providerName(currentProvider!)} ${t('settings.ai.model.providerDefault')}`}
             </div>
             <input
               style={{ width: '100%' }}
@@ -198,13 +232,13 @@ export default function SettingsPage() {
 
           {/* 模型名称 — 统一文本输入 */}
           <div style={{ marginBottom: 16 }}>
-            <label className="settings-label">模型名称</label>
+            <label className="settings-label">{t('settings.ai.model')}</label>
             <div className="settings-desc" style={{ marginBottom: 6 }}>
-              填写你要使用的模型 ID
+              {t('settings.ai.model.desc')}
             </div>
             <input
               style={{ width: '100%' }}
-              placeholder={currentProvider?.placeholder || '模型名称'}
+              placeholder={currentProvider?.placeholder || t('settings.ai.model.placeholder')}
               value={settings.aiModel}
               onChange={(e) => {
                 setSettings((prev) => ({ ...prev, aiModel: e.target.value.trim() }))
@@ -214,7 +248,7 @@ export default function SettingsPage() {
             {/* 快捷填写提示 */}
             {settings.aiProvider !== 'custom' && (
               <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                常用模型：
+                {t('settings.ai.model.commonModels')}
                 {settings.aiProvider === 'openai' && 'gpt-4o、gpt-4o-mini、o3'}
                 {settings.aiProvider === 'deepseek' && 'deepseek-chat、deepseek-reasoner'}
               </div>
@@ -228,7 +262,7 @@ export default function SettingsPage() {
               onClick={handleVerify}
               disabled={verifyStatus === 'testing'}
             >
-              {verifyStatus === 'testing' ? '⏳ 验证中...' : '🔍 验证连接'}
+              {verifyStatus === 'testing' ? `⏳ ${t('settings.ai.testing')}` : `🔍 ${t('settings.ai.test')}`}
             </button>
             {verifyMsg && (
               <span
@@ -250,7 +284,7 @@ export default function SettingsPage() {
 
         {/* ── R 环境 ── */}
         <div className="settings-section">
-          <div className="settings-section-title">📊 R 环境</div>
+          <div className="settings-section-title">📊 {t('settings.section.r')}</div>
 
           <div className="settings-row">
             <div>
@@ -259,12 +293,12 @@ export default function SettingsPage() {
                   className={`status-dot ${rStatus.found ? 'success' : 'error'}`}
                   style={{ marginRight: 8 }}
                 />
-                R 环境状态
+                {t('settings.r.status')}
               </div>
               <div className="settings-desc">
                 {rStatus.found
-                  ? `已检测到 R ${rStatus.version} (${rStatus.path})`
-                  : '未检测到 R 环境，请先安装 R'}
+                  ? t('settings.r.detectedWith', { version: rStatus.version, path: rStatus.path })
+                  : t('settings.r.notDetectedHint')}
               </div>
             </div>
             <button
@@ -272,7 +306,7 @@ export default function SettingsPage() {
               onClick={rDetect}
               disabled={rDetecting}
             >
-              {rDetecting ? '检测中...' : '重新检测'}
+              {rDetecting ? t('settings.r.detecting') : t('settings.r.redetect')}
             </button>
           </div>
 
@@ -287,9 +321,9 @@ export default function SettingsPage() {
                 fontSize: 13
               }}
             >
-              ⚠️ R Workbench 需要本地安装 R 环境才能执行统计分析。
+              {t('settings.r.noEnvWarning')}
               <br />
-              请访问{' '}
+              {t('settings.r.noEnvDesc', { url: '' })}
               <a
                 href="https://cran.r-project.org/bin/windows/base/"
                 target="_blank"
@@ -297,8 +331,7 @@ export default function SettingsPage() {
                 style={{ color: 'var(--primary)' }}
               >
                 CRAN
-              </a>{' '}
-              下载安装 R。
+              </a>
             </div>
           )}
         </div>
@@ -306,9 +339,9 @@ export default function SettingsPage() {
         {/* ── R 包管理 ── */}
         {rStatus.found && (
           <div className="settings-section">
-            <div className="settings-section-title">📦 R 包管理</div>
+            <div className="settings-section-title">📦 {t('settings.r.packages')}</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-              部分分析方法需要额外安装 R 包。首次使用时会自动检测并提示安装。
+              {t('settings.r.packages.desc')}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {[
@@ -328,7 +361,7 @@ export default function SettingsPage() {
         {/* 保存按钮 */}
         <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
           <button className="btn btn-primary" onClick={handleSave}>
-            {saved ? '✅ 已保存' : '💾 保存设置'}
+            {saved ? t('settings.ai.saved') : `💾 ${t('settings.ai.save')}`}
           </button>
         </div>
       </div>
@@ -338,6 +371,7 @@ export default function SettingsPage() {
 
 /** R 包状态卡片 */
 function RPackageCard({ name, desc }: { name: string; desc: string }) {
+  const { t } = useTranslation()
   const [status, setStatus] = useState<'unknown' | 'installed' | 'missing' | 'installing'>('unknown')
   const [checking, setChecking] = useState(false)
 
@@ -383,7 +417,7 @@ function RPackageCard({ name, desc }: { name: string; desc: string }) {
         {status === 'installed' && <span style={{ color: 'var(--success)' }}>✓</span>}
         {status === 'missing' && (
           <button className="btn btn-sm btn-secondary" onClick={handleInstall} style={{ padding: '2px 8px', fontSize: 12 }}>
-            安装
+            {t('settings.r.install')}
           </button>
         )}
         {status === 'installing' && <span style={{ color: 'var(--text-tertiary)' }}>⏳</span>}

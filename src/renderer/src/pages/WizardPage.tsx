@@ -1,4 +1,5 @@
 ﻿import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useData } from '../contexts/DataContext'
 import { useAI } from '../contexts/AIContext'
 import { RService, type AnalysisResult } from '../services/rService'
@@ -15,9 +16,12 @@ type WizardStep = 'select' | 'configure' | 'execute' | 'result'
 interface AnalysisMethod {
   id: string
   name: string
+  nameKey?: string
   icon: string
   description: string
+  descKey?: string
   category: string
+  categoryKey?: string
   needsGroup: boolean
   minVars: number
   maxVars: number
@@ -28,9 +32,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'descriptive',
     name: '描述性统计',
+    nameKey: 'wizard.method.descriptive',
     icon: '📈',
     description: '计算均值、中位数、标准差、最大最小值',
+    descKey: 'wizard.method.descriptive.desc',
     category: '基础分析',
+    categoryKey: 'wizard.category.basic',
     needsGroup: false,
     minVars: 1,
     maxVars: 20,
@@ -39,9 +46,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'ttest_independent',
     name: '独立样本 t 检验',
+    nameKey: 'wizard.method.ttest_independent',
     icon: '⚖️',
     description: '比较两组独立样本的均值差异',
+    descKey: 'wizard.method.ttest_independent.desc',
     category: '差异检验',
+    categoryKey: 'wizard.category.diff',
     needsGroup: true,
     minVars: 1,
     maxVars: 1,
@@ -50,9 +60,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'ttest_paired',
     name: '配对样本 t 检验',
+    nameKey: 'wizard.method.ttest_paired',
     icon: '🔄',
     description: '比较同一组对象前后两次测量的差异',
+    descKey: 'wizard.method.ttest_paired.desc',
     category: '差异检验',
+    categoryKey: 'wizard.category.diff',
     needsGroup: false,
     minVars: 2,
     maxVars: 2,
@@ -61,9 +74,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'anova',
     name: '单因素方差分析',
+    nameKey: 'wizard.method.anova',
     icon: '📊',
     description: '比较多组样本的均值差异',
+    descKey: 'wizard.method.anova.desc',
     category: '差异检验',
+    categoryKey: 'wizard.category.diff',
     needsGroup: true,
     minVars: 1,
     maxVars: 1,
@@ -72,9 +88,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'chisquare',
     name: '卡方检验',
+    nameKey: 'wizard.method.chi_square',
     icon: '🎲',
     description: '检验两个分类变量之间是否独立',
+    descKey: 'wizard.method.chi_square.desc',
     category: '差异检验',
+    categoryKey: 'wizard.category.diff',
     needsGroup: false,
     minVars: 2,
     maxVars: 2,
@@ -83,9 +102,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'correlation',
     name: '相关分析',
+    nameKey: 'wizard.method.correlation',
     icon: '🔗',
     description: '分析两个变量之间的线性关系',
+    descKey: 'wizard.method.correlation.desc',
     category: '关系分析',
+    categoryKey: 'wizard.category.relation',
     needsGroup: false,
     minVars: 2,
     maxVars: 2,
@@ -94,9 +116,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'regression',
     name: '线性回归',
+    nameKey: 'wizard.method.regression',
     icon: '📉',
     description: '建立因变量与自变量的回归方程',
+    descKey: 'wizard.method.regression.desc',
     category: '关系分析',
+    categoryKey: 'wizard.category.relation',
     needsGroup: false,
     minVars: 2,
     maxVars: 10,
@@ -105,9 +130,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'reliability',
     name: '信度分析',
+    nameKey: 'wizard.method.reliability',
     icon: '✅',
     description: "计算问卷量表的 Cronbach's α",
+    descKey: 'wizard.method.reliability.desc',
     category: '问卷分析',
+    categoryKey: 'wizard.category.survey',
     needsGroup: false,
     minVars: 2,
     maxVars: 50,
@@ -116,9 +144,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'ttest_one',
     name: '单样本 t 检验',
+    nameKey: 'wizard.method.ttest_one',
     icon: '🎯',
     description: '检验样本均值是否等于某个指定值',
+    descKey: 'wizard.method.ttest_one.desc',
     category: '差异检验',
+    categoryKey: 'wizard.category.diff',
     needsGroup: false,
     minVars: 1,
     maxVars: 1,
@@ -127,9 +158,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'normality',
     name: '正态性检验',
+    nameKey: 'wizard.method.normality',
     icon: '🔔',
     description: 'Shapiro-Wilk 检验数据是否服从正态分布',
+    descKey: 'wizard.method.normality.desc',
     category: '基础分析',
+    categoryKey: 'wizard.category.basic',
     needsGroup: false,
     minVars: 1,
     maxVars: 10,
@@ -138,9 +172,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'nonparametric',
     name: '非参数检验',
+    nameKey: 'wizard.method.nonparametric',
     icon: '📊',
     description: 'Mann-Whitney U 检验，数据不满足正态假设时使用',
+    descKey: 'wizard.method.nonparametric.desc',
     category: '差异检验',
+    categoryKey: 'wizard.category.diff',
     needsGroup: true,
     minVars: 1,
     maxVars: 1,
@@ -149,9 +186,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'frequency',
     name: '频数统计',
+    nameKey: 'wizard.method.frequency',
     icon: '📋',
     description: '统计分类变量各类别的频数和百分比',
+    descKey: 'wizard.method.frequency.desc',
     category: '基础分析',
+    categoryKey: 'wizard.category.basic',
     needsGroup: false,
     minVars: 1,
     maxVars: 10,
@@ -160,9 +200,12 @@ const METHODS: AnalysisMethod[] = [
   {
     id: 'summary_by',
     name: '分类汇总',
+    nameKey: 'wizard.method.summary',
     icon: '📊',
     description: '按分组变量计算均值、标准差等汇总统计',
+    descKey: 'wizard.method.summary.desc',
     category: '基础分析',
+    categoryKey: 'wizard.category.basic',
     needsGroup: true,
     minVars: 1,
     maxVars: 1,
@@ -171,6 +214,7 @@ const METHODS: AnalysisMethod[] = [
 ]
 
 export default function WizardPage() {
+  const { t } = useTranslation()
   const { dataset, hasData, getNumericColumns, getStringColumns, getAllColumns } = useData()
   const { isConfigured } = useAI()
 
@@ -294,22 +338,27 @@ export default function WizardPage() {
     return acc
   }, {})
 
+  // 解析方法/描述/类别的本地化文本
+  const methodName = (m: AnalysisMethod) => (m.nameKey ? t(m.nameKey) : m.name)
+  const methodDesc = (m: AnalysisMethod) => (m.descKey ? t(m.descKey) : m.description)
+  const categoryLabel = (c: string, m?: AnalysisMethod) => (m?.categoryKey ? t(m.categoryKey) : c)
+
   return (
     <div className="wizard-page">
       <div className="page-header">
         <h1>
-          📊 向导式分析
+          📊 {t('wizard.title')}
           {selectedMethod && step !== 'select' && (
             <span style={{ fontWeight: 400, fontSize: 16, color: 'var(--text-secondary)', marginLeft: 12 }}>
-              / {selectedMethod.icon} {selectedMethod.name}
+              / {selectedMethod.icon} {methodName(selectedMethod)}
             </span>
           )}
         </h1>
         <p>
-          {step === 'select' && '选择适合你研究问题的统计分析方法'}
-          {step === 'configure' && '选择要分析的变量'}
-          {step === 'execute' && '正在执行分析...'}
-          {step === 'result' && '分析结果'}
+          {step === 'select' && t('wizard.step.select')}
+          {step === 'configure' && t('wizard.step.configure')}
+          {step === 'execute' && t('wizard.step.execute')}
+          {step === 'result' && t('wizard.step.result')}
         </p>
       </div>
 
@@ -328,13 +377,13 @@ export default function WizardPage() {
                   fontSize: 13
                 }}
               >
-                ⚠️ 请先在「数据管理」页面导入数据后再进行分析
+                ⚠️ {t('wizard.noData')}
               </div>
             )}
             {Object.entries(categories).map(([cat, methods]) => (
               <div key={cat} style={{ marginBottom: 28 }}>
                 <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {cat}
+                  {categoryLabel(cat, methods[0])}
                 </h3>
                 <div className="wizard-grid">
                   {methods.map((m) => (
@@ -345,8 +394,8 @@ export default function WizardPage() {
                       style={{ opacity: hasData ? 1 : 0.6 }}
                     >
                       <div className="wizard-card-icon">{m.icon}</div>
-                      <div className="wizard-card-name">{m.name}</div>
-                      <div className="wizard-card-desc">{m.description}</div>
+                      <div className="wizard-card-name">{methodName(m)}</div>
+                      <div className="wizard-card-desc">{methodDesc(m)}</div>
                     </div>
                   ))}
                 </div>
@@ -359,7 +408,7 @@ export default function WizardPage() {
         {step === 'configure' && selectedMethod && (
           <div className="animate-slide-up">
             <button className="btn btn-ghost btn-sm" onClick={resetWizard} style={{ marginBottom: 16 }}>
-              ← 返回选择
+              ← {t('wizard.backToSelect')}
             </button>
 
             <div className="var-section">
@@ -368,12 +417,12 @@ export default function WizardPage() {
               </div>
               <div className="var-section-desc">
                 {selectedMethod.id === 'regression'
-                  ? '第一个变量为因变量，其余为自变量'
+                  ? t('wizard.depVarHint')
                   : selectedMethod.id === 'ttest_paired'
-                  ? '选择两个配对变量'
+                  ? t('wizard.pairedHint')
                   : selectedMethod.id === 'correlation'
-                  ? '选择两个变量分析相关性'
-                  : '点击选择或取消变量'}
+                  ? t('wizard.corrHint')
+                  : t('wizard.clickSelect')}
               </div>
               <div className="var-tags">
                 {getAvailableVars().map((v) => (
@@ -387,12 +436,12 @@ export default function WizardPage() {
                 ))}
                 {getAvailableVars().length === 0 && (
                   <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
-                    没有符合条件的变量，请检查数据
+                    {t('wizard.noVarMatch')}
                   </span>
                 )}
               </div>
               <div className="var-count">
-                已选 {depVars.length} / {selectedMethod.maxVars} 个变量
+                {t('wizard.selectedCount', { selected: depVars.length, max: selectedMethod.maxVars })}
                 {depVars.length > 0 && (
                   <span>：{depVars.join('、')}</span>
                 )}
@@ -401,9 +450,9 @@ export default function WizardPage() {
 
             {selectedMethod.needsGroup && (
               <div className="var-section">
-                <div className="var-section-title">选择分组变量</div>
+                <div className="var-section-title">{t('wizard.selectGroupVar')}</div>
                 <div className="var-section-desc">
-                  选择一个分类变量作为分组依据（该变量应有2个或多个水平）
+                  {t('wizard.selectGroupVar.desc')}
                 </div>
                 <div className="var-tags">
                   {getStringColumns().map((v) => (
@@ -428,7 +477,7 @@ export default function WizardPage() {
                     ))}
                 </div>
                 {groupVar && (
-                  <div className="var-count">分组变量：{groupVar}</div>
+                  <div className="var-count">{t('wizard.groupVarLabel', { name: groupVar })}</div>
                 )}
               </div>
             )}
@@ -436,8 +485,8 @@ export default function WizardPage() {
             {/* S9: 单样本 t 检验需要指定检验值 */}
             {selectedMethod.id === 'ttest_one' && (
               <div className="var-section">
-                <div className="var-section-title">指定检验值 (μ₀)</div>
-                <div className="var-section-desc">检验样本均值是否等于该值（如 0、60、3.5）</div>
+                <div className="var-section-title">{t('wizard.specifyMu')}</div>
+                <div className="var-section-desc">{t('wizard.specifyMu.desc')}</div>
                 <input
                   type="number"
                   value={mu}
@@ -453,10 +502,10 @@ export default function WizardPage() {
                 onClick={handleExecute}
                 disabled={!canProceed()}
               >
-                🚀 开始分析
+                🚀 {t('wizard.start')}
               </button>
               <button className="btn btn-ghost" onClick={resetWizard}>
-                取消
+                {t('wizard.cancel')}
               </button>
             </div>
           </div>
@@ -466,8 +515,8 @@ export default function WizardPage() {
         {step === 'execute' && (
           <div className="empty-state animate-fade-in">
             <div style={{ fontSize: 48, marginBottom: 16, animation: 'spin 1s linear infinite' }}>⏳</div>
-            <div className="empty-state-text">正在执行 {selectedMethod?.name}...</div>
-            <div className="empty-state-hint">R 正在分析你的数据</div>
+            <div className="empty-state-text">{t('wizard.executing', { name: selectedMethod ? methodName(selectedMethod) : '' })}</div>
+            <div className="empty-state-hint">{t('wizard.executingHint')}</div>
           </div>
         )}
 
@@ -477,19 +526,19 @@ export default function WizardPage() {
             {/* 操作按钮 */}
             <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
               <button className="btn btn-ghost btn-sm" onClick={resetWizard}>
-                ← 重新分析
+                ← {t('wizard.reanalyze')}
               </button>
               <button className="btn btn-secondary btn-sm" onClick={() => handleExecute()}>
-                🔄 重新执行
+                🔄 {t('wizard.reexecute')}
               </button>
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => {
                   const output = result.output || result.errors.join('\n')
-                  navigator.clipboard.writeText(output).then(() => alert('✅ 已复制原始输出'))
+                  navigator.clipboard.writeText(output).then(() => alert(t('wizard.copied.raw')))
                 }}
               >
-                📋 复制原始输出
+                📋 {t('wizard.copyOutput')}
               </button>
               <button
                 className="btn btn-secondary btn-sm"
@@ -503,13 +552,13 @@ export default function WizardPage() {
                   }).join('\n\n') + (interpretation ? '\n\n' + interpretation : '')
                   try {
                     await window.api.clipboard.writeHtml(html, plainText)
-                    alert('✅ 已复制，直接粘贴到 Word 即可保留三线表排版')
+                    alert(t('wizard.copied.word'))
                   } catch {
-                    navigator.clipboard.writeText(plainText).then(() => alert('已复制纯文本'))
+                    navigator.clipboard.writeText(plainText).then(() => alert(t('wizard.copied.plain')))
                   }
                 }}
               >
-                📄 复制到 Word
+                📄 {t('wizard.copyToWord')}
               </button>
               <button
                 className="btn btn-secondary btn-sm"
@@ -520,20 +569,20 @@ export default function WizardPage() {
                     const cli = await window.api.officecli.detect()
                     if (cli.found) {
                       const savePath = await window.api.dialog.saveFile({
-                        defaultName: `${selectedMethod.name}_分析报告.docx`,
-                        filters: [{ name: 'Word 文档', extensions: ['docx'] }]
+                        defaultName: t('wizard.report.defaultName', { method: methodName(selectedMethod) }),
+                        filters: [{ name: t('wizard.report.filterWord'), extensions: ['docx'] }]
                       })
                       if (savePath) {
                         const res = await window.api.officecli.generateDocx({
-                          title: selectedMethod.name + ' 分析报告',
+                          title: t('wizard.report.title', { method: methodName(selectedMethod) }),
                           tables: parsed.tables,
                           interpretation,
                           savePath
                         })
                         if (res.success) {
-                          alert('✅ Word 报告已生成：' + res.path)
+                          alert(t('wizard.report.saved', { path: res.path }))
                         } else {
-                          alert('❌ 生成失败：' + res.error)
+                          alert(t('wizard.report.failed', { error: res.error }))
                         }
                       }
                       return
@@ -545,13 +594,13 @@ export default function WizardPage() {
                   const url = URL.createObjectURL(blob)
                   const a = document.createElement('a')
                   a.href = url
-                  a.download = `${selectedMethod.name}_分析报告.html`
+                  a.download = t('wizard.report.defaultName', { method: methodName(selectedMethod) }).replace('.docx', '.html')
                   a.click()
                   URL.revokeObjectURL(url)
-                  alert('⚠️ OfficeCLI 未安装，已导出 HTML 格式。运行 download-officecli.bat 安装后可导出 Word 格式。')
+                  alert(t('wizard.report.officecliOffline'))
                 }}
               >
-                📥 导出报告
+                📥 {t('wizard.exportReport')}
               </button>
             </div>
 
@@ -567,7 +616,7 @@ export default function WizardPage() {
                 fontWeight: 500
               }}
             >
-              {result.success ? '✅ 分析完成' : '❌ 分析失败'}
+              {result.success ? t('wizard.analyzeDone') : t('wizard.analyzeFailed')}
             </div>
 
             {/* 三线表展示 */}
@@ -594,7 +643,7 @@ export default function WizardPage() {
             {/* 图表可视化 */}
             {selectedMethod && depVars.length > 0 && (
               <div style={{ marginTop: 16 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>📊 可视化图表</h3>
+                <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{t('wizard.chart.title')}</h3>
                 <PlotViewer
                   methodId={selectedMethod.id}
                   variables={depVars}
@@ -606,13 +655,13 @@ export default function WizardPage() {
             {/* AI 结果解读 */}
             {interpretLoading && (
               <div className="result-interpretation">
-                <h4>📝 结果解读</h4>
-                <p style={{ opacity: 0.6 }}>AI 正在生成结果解读...</p>
+                <h4>{t('wizard.interpretation.title')}</h4>
+                <p style={{ opacity: 0.6 }}>{t('wizard.interpretation.generating')}</p>
               </div>
             )}
             {interpretation && !interpretLoading && (
               <div className="result-interpretation">
-                <h4>📝 结果解读</h4>
+                <h4>{t('wizard.interpretation.title')}</h4>
                 <p>{interpretation}</p>
               </div>
             )}
@@ -627,7 +676,7 @@ export default function WizardPage() {
                   fontSize: 13
                 }}
               >
-                💡 配置 AI API Key 后，可自动生成符合论文风格的结果解读
+                💡 {t('wizard.interpretation.hint')}
               </div>
             )}
 
@@ -641,7 +690,7 @@ export default function WizardPage() {
                   marginBottom: 8
                 }}
               >
-                查看 R 原始输出
+                {t('wizard.viewROutput')}
               </summary>
               <div
                 style={{
@@ -652,7 +701,7 @@ export default function WizardPage() {
                 }}
               >
                 <pre style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
-                  <code>{result.output || result.errors.join('\n') || '(无输出)'}</code>
+                  <code>{result.output || result.errors.join('\n') || t('wizard.noOutput')}</code>
                 </pre>
               </div>
             </details>
@@ -668,8 +717,8 @@ export default function WizardPage() {
                 fontSize: 13
               }}
             >
-              💡 <strong>提示：</strong>「📄 复制到 Word」可将三线表和解读直接粘贴到论文中；
-              「📥 导出报告」可生成 Word 格式的完整分析报告。
+              💡 <strong>{t('common.tip')}:</strong>{t('wizard.tip.copy')}
+              {t('wizard.tip.export')}
             </div>
           </div>
         )}

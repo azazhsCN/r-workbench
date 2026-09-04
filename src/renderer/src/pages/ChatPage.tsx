@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAI } from '../contexts/AIContext'
 import { useData } from '../contexts/DataContext'
 import { useR } from '../contexts/RContext'
@@ -25,30 +26,9 @@ interface Message {
   timestamp: number
 }
 
-const WELCOME_MESSAGE: Message = {
-  id: 'welcome',
-  role: 'assistant',
-  content: `你好！我是 R Workbench 的 AI 数据分析助手。🎯
-
-**我能帮你完成：**
-• 描述性统计 — 均值、标准差、频数分布
-• t 检验 — 独立样本 / 配对样本
-• 方差分析 — 单因素 ANOVA
-• 卡方检验 — 独立性 / 拟合度检验
-• 相关分析 — Pearson / Spearman
-• 线性回归 — 简单 / 多元回归
-• 信效度分析 — Cronbach's α
-
-**如何开始：**
-1. 先在「数据管理」页面导入数据
-2. 然后用自然语言描述你的分析需求
-
-试试说：**帮我做一个描述性统计分析**`,
-  timestamp: Date.now()
-}
-
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE])
+  const { t } = useTranslation()
+  const [messages, setMessages] = useState<Message[]>([{ id: 'welcome', role: 'assistant', content: t('chat.welcome'), timestamp: Date.now() }])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -66,10 +46,10 @@ export default function ChatPage() {
   const getDataContext = useCallback((): string | undefined => {
     if (!dataset) return undefined
     const colDescs = dataset.columnInfo.map(
-      (c) => `  - ${c.name} (${c.type === 'numeric' ? '数值' : '分类'}, ${c.total - c.missing}个有效值)`
+      (c) => `  - ${c.name} (${c.type === 'numeric' ? t('chat.typed.numeric') : t('chat.typed.categorical')}, ${t('chat.validCount', { n: c.total - c.missing })})`
     )
     return `数据集: ${dataset.dataset.name}\n行数: ${dataset.rows.length}\n列数: ${dataset.headers.length}\n变量:\n${colDescs.join('\n')}`
-  }, [dataset])
+  }, [dataset, t])
 
   const handleSend = async () => {
     const trimmed = input.trim()
@@ -91,7 +71,7 @@ export default function ChatPage() {
       const sysMsg: Message = {
         id: `sys-${Date.now()}`,
         role: 'system',
-        content: '⚠️ 请先在「设置」页面配置 AI API Key 后再使用对话功能。',
+        content: t('chat.needConfig'),
         timestamp: Date.now()
       }
       setMessages((prev) => [...prev, sysMsg])
@@ -127,7 +107,7 @@ export default function ChatPage() {
         )
       }
     } catch {
-      fullContent = '抱歉，发生了错误。请检查网络连接和 API 配置。'
+      fullContent = t('chat.error')
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantMsg.id ? { ...m, content: fullContent } : m
@@ -162,7 +142,7 @@ export default function ChatPage() {
                   output: '',
                   tables: [],
                   plots: [],
-                  errors: ['请先在「数据管理」页面导入数据']
+                  errors: [t('chat.needData')]
                 }
               }
             : m
@@ -230,13 +210,13 @@ export default function ChatPage() {
         }}
       >
         <span>
-          🤖 AI: {isConfigured ? '✅ 已配置' : '❌ 未配置'}
+          🤖 AI: {isConfigured ? t('chat.configured') : t('chat.notConfigured')}
         </span>
         <span>
-          📊 数据: {hasData ? `✅ ${dataset!.dataset.name}` : '❌ 未加载'}
+          📊 数据: {hasData ? `✅ ${dataset!.dataset.name}` : `❌ ${t('chat.notLoaded')}`}
         </span>
         <span>
-          ⚙️ R: {rStatus.found ? `✅ R ${rStatus.version}` : '❌ 未检测'}
+          ⚙️ R: {rStatus.found ? `✅ R ${rStatus.version}` : `❌ ${t('chat.notLoaded')}`}
         </span>
       </div>
 
@@ -245,7 +225,7 @@ export default function ChatPage() {
         {messages.map((msg) => (
           <div key={msg.id} className={`chat-message ${msg.role}`}>
             <div className={`chat-avatar ${msg.role}`}>
-              {msg.role === 'assistant' ? 'R' : msg.role === 'user' ? '我' : '⚡'}
+              {msg.role === 'assistant' ? 'R' : msg.role === 'user' ? t('chat.me') : '⚡'}
             </div>
             <div className={`chat-bubble ${msg.role}`}>
               {/* 安全文本渲染 — 不使用 dangerouslySetInnerHTML（修复 #4） */}
@@ -273,14 +253,14 @@ export default function ChatPage() {
                         fontWeight: 600
                       }}
                     >
-                      📝 R 代码
+                      📝 {t('chat.code.title').replace('📝 ', '')}
                     </span>
                     <button
                       className="btn btn-primary btn-sm"
                       onClick={() => handleExecuteR(msg.id, msg.rCode!)}
                       disabled={msg.isExecuting}
                     >
-                      {msg.isExecuting ? '⏳ 执行中...' : '▶️ 执行代码'}
+                      {msg.isExecuting ? `⏳ ${t('chat.code.executing')}` : `▶️ ${t('chat.code.execute')}`}
                     </button>
                   </div>
                   <pre>
@@ -300,7 +280,7 @@ export default function ChatPage() {
                       color: msg.rResult.success ? 'var(--success)' : 'var(--error)'
                     }}
                   >
-                    {msg.rResult.success ? '✅ 分析结果' : '❌ 执行失败'}
+                    {msg.rResult.success ? t('chat.analyzeDone') : t('chat.analyzeFailed')}
                   </div>
 
                   {/* 三线表展示 */}
@@ -321,13 +301,13 @@ export default function ChatPage() {
                   {/* AI 解读 */}
                   {msg.interpretLoading && (
                     <div className="result-interpretation" style={{ marginTop: 8 }}>
-                      <h4>📝 AI 解读</h4>
-                      <p style={{ opacity: 0.6 }}>正在生成结果解读...</p>
+                      <h4>{t('chat.ai.title')}</h4>
+                      <p style={{ opacity: 0.6 }}>{t('chat.ai.generating')}</p>
                     </div>
                   )}
                   {msg.interpretation && !msg.interpretLoading && (
                     <div className="result-interpretation" style={{ marginTop: 8 }}>
-                      <h4>📝 结果解读</h4>
+                      <h4>{t('chat.interpretation.title')}</h4>
                       <p>{msg.interpretation}</p>
                     </div>
                   )}
@@ -336,7 +316,7 @@ export default function ChatPage() {
                   {msg.rResult.output && (
                     <details style={{ marginTop: 8 }}>
                       <summary style={{ cursor: 'pointer', fontSize: 12, color: 'var(--text-tertiary)' }}>
-                        查看原始输出
+                        {t('chat.viewOutput')}
                       </summary>
                       <pre
                         style={{
@@ -366,7 +346,7 @@ export default function ChatPage() {
           <div className="chat-message assistant">
             <div className="chat-avatar assistant">R</div>
             <div className="chat-bubble assistant">
-              <span style={{ opacity: 0.6 }}>正在思考...</span>
+              <span style={{ opacity: 0.6 }}>{t('chat.thinking')}</span>
             </div>
           </div>
         )}
@@ -381,8 +361,8 @@ export default function ChatPage() {
             className="chat-input"
             placeholder={
               isConfigured
-                ? '描述你的数据分析需求... (Enter 发送, Shift+Enter 换行)'
-                : '请先在设置页面配置 API Key...'
+                ? t('chat.inputPlaceholder')
+                : t('chat.inputPlaceholderNoConfig')
             }
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -394,7 +374,7 @@ export default function ChatPage() {
             className="chat-send-btn"
             onClick={handleSend}
             disabled={!input.trim() || isStreaming || !isConfigured}
-            title="发送"
+            title={t('chat.send')}
           >
             →
           </button>
