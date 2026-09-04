@@ -124,7 +124,7 @@ npm run dev
 # Build for production
 npm run build
 
-# Build Windows installer
+# Build the Windows portable/zip package
 npm run build:win
 ```
 

@@ -28,7 +28,7 @@
   "win": {
     "target": [
       {
-        "target": "nsis",
+        "target": "zip",
         "arch": ["x64"]
       }
     ],
@@ -43,18 +43,6 @@
     "target": ["AppImage"],
     "icon": "resources/icon.png",
     "category": "Education"
-  },
-  "nsis": {
-    "oneClick": false,
-    "perMachine": false,
-    "allowToChangeInstallationDirectory": true,
-    "deleteAppDataOnUninstall": false,
-    "createDesktopShortcut": true,
-    "createStartMenuShortcut": true,
-    "shortcutName": "R Workbench",
-    "installerIcon": "resources/icon.ico",
-    "uninstallerIcon": "resources/icon.ico",
-    "installerHeaderIcon": "resources/icon.ico"
   },
   "asar": true,
   "asarUnpack": ["resources/**"]

@@ -124,7 +124,7 @@ npm run dev
 # 构建生产版本
 npm run build
 
-# 打包 Windows 安装程序
+# 打包 Windows 绿色版（zip）
 npm run build:win
 ```
 
