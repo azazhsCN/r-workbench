@@ -27,15 +27,25 @@ interface Message {
 }
 
 export default function ChatPage() {
-  const { t } = useTranslation()
-  const [messages, setMessages] = useState<Message[]>([{ id: 'welcome', role: 'assistant', content: t('chat.welcome'), timestamp: Date.now() }])
+  const { t, i18n } = useTranslation()
+  const [messages, setMessages] = useState<Message[]>(() => [
+    { id: 'welcome', role: 'assistant', content: t('chat.welcome'), timestamp: Date.now() }
+  ])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const { service: ai, isConfigured } = useAI()
   const { dataset, hasData } = useData()
-  const { status: rStatus } = useR()
+  const { status: rStatus, error: rError } = useR()
+
+  // 欢迎语不能冻结在 useState 初值里：切换语言后必须重新翻译
+  useEffect(() => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === 'welcome' ? { ...m, content: t('chat.welcome') } : m))
+    )
+  }, [i18n.language, t])
 
   // 自动滚动到底部
   useEffect(() => {
@@ -94,10 +104,12 @@ export default function ChatPage() {
     }
     setMessages((prev) => [...prev, assistantMsg])
 
-    // 流式获取 AI 响应
+    // 流式获取 AI 响应（可中止 + 60 秒超时，见 aiService.chatStream）
     let fullContent = ''
+    const controller = new AbortController()
+    abortRef.current = controller
     try {
-      const stream = ai.chatStream(chatHistory, getDataContext())
+      const stream = ai.chatStream(chatHistory, getDataContext(), controller.signal)
       for await (const chunk of stream) {
         fullContent += chunk
         setMessages((prev) =>
@@ -113,6 +125,9 @@ export default function ChatPage() {
           m.id === assistantMsg.id ? { ...m, content: fullContent } : m
         )
       )
+    } finally {
+      abortRef.current = null
+      setIsStreaming(false)
     }
 
     // 解析 R 代码块
@@ -125,8 +140,11 @@ export default function ChatPage() {
         )
       )
     }
+  }
 
-    setIsStreaming(false)
+  /** 停止生成 */
+  const handleStop = () => {
+    abortRef.current?.abort()
   }
 
   // 执行 R 代码
@@ -158,34 +176,56 @@ export default function ChatPage() {
 
     // 通过 dataCsv 参数传递数据（不在代码中嵌入）
     const csv = datasetToCSV(dataset!.headers, dataset!.rows)
-    const result = await RService.execute(code, csv)
+
+    // RService.execute 会 reject（IPC 异常 / R 未检测到等），旧实现没有 try/finally
+    // → isExecuting 永远为 true，按钮永久停在"⏳ 执行中..."且异常无人处理。
+    let result: AnalysisResult
+    try {
+      result = await RService.execute(code, csv)
+    } catch (err) {
+      const message = (err as { message?: string } | null)?.message || String(err)
+      result = {
+        success: false,
+        output: '',
+        tables: [],
+        plots: [],
+        errors: [t('chat.executeError', { error: message })]
+      }
+    }
 
     // 解析为三线表
     let parsedTables: Message['parsedTables'] = undefined
     let interpretation = ''
 
-    if (result.success && result.output) {
-      const parsed = parseROutput(result.output)
-      if (parsed.tables.length > 0) {
-        parsedTables = parsed.tables
+    try {
+      if (result.success && result.output) {
+        const parsed = parseROutput(result.output)
+        if (parsed.tables.length > 0) {
+          parsedTables = parsed.tables
 
-        // 自动触发 AI 解读
-        if (isConfigured) {
-          setMessages((prev) =>
-            prev.map((m) => (m.id === msgId ? { ...m, rResult: result, isExecuting: false, parsedTables, interpretLoading: true } : m))
-          )
-          interpretation = await generateInterpretation(parsed)
+          // 自动触发 AI 解读
+          if (isConfigured) {
+            setMessages((prev) =>
+              prev.map((m) => (m.id === msgId ? { ...m, rResult: result, isExecuting: false, parsedTables, interpretLoading: true } : m))
+            )
+            try {
+              interpretation = await generateInterpretation(parsed)
+            } catch {
+              interpretation = ''
+            }
+          }
         }
       }
-    }
-
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === msgId
-          ? { ...m, rResult: result, isExecuting: false, parsedTables, interpretation, interpretLoading: false }
-          : m
+    } finally {
+      // 无论解析或 AI 解读是否抛异常，都必须复位执行状态
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msgId
+            ? { ...m, rResult: result, isExecuting: false, parsedTables, interpretation, interpretLoading: false }
+            : m
+        )
       )
-    )
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -210,13 +250,17 @@ export default function ChatPage() {
         }}
       >
         <span>
-          🤖 AI: {isConfigured ? t('chat.configured') : t('chat.notConfigured')}
+          🤖 {t('chat.status.ai')}: {isConfigured ? t('chat.configured') : t('chat.notConfigured')}
         </span>
         <span>
-          📊 数据: {hasData ? `✅ ${dataset!.dataset.name}` : `❌ ${t('chat.notLoaded')}`}
+          📊 {t('chat.status.data')}: {hasData ? `✅ ${dataset!.dataset.name}` : `❌ ${t('chat.notLoaded')}`}
         </span>
         <span>
-          ⚙️ R: {rStatus.found ? `✅ R ${rStatus.version}` : `❌ ${t('chat.notLoaded')}`}
+          ⚙️ {t('chat.status.r')}: {rStatus.found
+            ? `✅ R ${rStatus.version}`
+            : rError
+            ? `⚠️ ${rError}`
+            : `❌ ${t('chat.notLoaded')}`}
         </span>
       </div>
 
@@ -337,6 +381,26 @@ export default function ChatPage() {
                       <code>{msg.rResult.errors.join('\n')}</code>
                     </pre>
                   )}
+
+                  {/* R 警告：v0.2.6 起从 stderr 上浮（"卡方近似可能不正确"、
+                      "存在结点，无法计算精确 p 值" 等统计警告必须让用户看到） */}
+                  {msg.rResult.warnings && msg.rResult.warnings.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 12, color: 'var(--warning)', fontWeight: 600 }}>
+                        ⚠️ {t('chat.warnings', { count: msg.rResult.warnings.length })}
+                      </div>
+                      <pre
+                        style={{
+                          background: 'var(--warning-bg)',
+                          fontSize: 12,
+                          whiteSpace: 'pre-wrap',
+                          marginTop: 4
+                        }}
+                      >
+                        <code>{msg.rResult.warnings.join('\n')}</code>
+                      </pre>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -370,6 +434,16 @@ export default function ChatPage() {
             rows={1}
             disabled={!isConfigured}
           />
+          {isStreaming && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleStop}
+              title={t('chat.stop')}
+              style={{ whiteSpace: 'nowrap' }}
+            >
+              ⏹️ {t('chat.stop')}
+            </button>
+          )}
           <button
             className="chat-send-btn"
             onClick={handleSend}

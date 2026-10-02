@@ -10,6 +10,17 @@ export interface RExecuteResult {
   output: string
   errors: string[]
   stderr: string
+  /**
+   * R 运行期间产生的 warning（v0.2.6 起上浮）。
+   * v0.2.5 之前 warning 走 stderr 被静默丢弃，导致
+   * "卡方近似可能不正确"、"无法计算精确 p 值（存在结点）" 等
+   * 统计警告永远到不了用户面前。
+   */
+  warnings?: string[]
+  /** 因超时被中断（此时 output 可能仍有部分结果） */
+  timedOut?: boolean
+  /** 输出被 maxBuffer 截断 */
+  truncated?: boolean
 }
 
 // R 环境检测状态

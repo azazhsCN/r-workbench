@@ -21,8 +21,23 @@
       "to": "rScripts"
     },
     {
+      // ⚠ 必须与 src/main/ipc.ts 中 detectOfficeCli() 的首选候选保持一致：
+      //   join(process.resourcesPath, 'bin', 'officecli.exe')
+      // v0.2.5 曾写成 "officecli.exe"（落到 resources/officecli.exe），而检测代码找的是
+      // resources/bin/officecli.exe → 打包后 Word 导出 100% 失效（仅 dev 模式可用）。
+      // 注意 resources/bin/ 在 .gitignore 中：新克隆缺少该二进制时 electron-builder 只会
+      // 告警（fileMatcher.js:273）不会失败，因此构建入口已加显式存在性检查：
+      //   package.json → "build:win": "npm run check:officecli && ..."
+      //   scripts/validate/check-officecli.cjs
       "from": "resources/bin/officecli.exe",
-      "to": "officecli.exe"
+      "to": "bin/officecli.exe"
+    },
+    {
+      // 窗口图标：src/main/index.ts 的 resolveWindowIcon() 会读
+      // join(process.resourcesPath, 'icon.png')。旧代码引用 asar 内的
+      // resources/icon.png（asar 里没有该目录）→ 打包后是死引用。
+      "from": "resources/icon.png",
+      "to": "icon.png"
     }
   ],
   "win": {
@@ -44,6 +59,5 @@
     "icon": "resources/icon.png",
     "category": "Education"
   },
-  "asar": true,
-  "asarUnpack": ["resources/**"]
+  "asar": true
 }

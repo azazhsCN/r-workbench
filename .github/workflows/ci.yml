@@ -1,0 +1,56 @@
+name: CI
+
+# 工程质量门禁（T11）：每个 typecheck 目标单独一步，避免 `typecheck:node && typecheck:web`
+# 短路导致 web 目标的错误被隐藏（这正是 13 个错误累积至今的直接原因）。
+#
+# `npm test` 是纯 Vitest（不需要安装 R），因此两个 runner 上都能跑。
+# 统计正确性验证另有 stat-validation.yml。
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: gates (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # 两个 typecheck 目标必须是独立步骤：一个失败不能掩盖另一个
+      - name: Typecheck — main/preload target (tsconfig.node.json)
+        run: npm run typecheck:node
+
+      - name: Typecheck — renderer target (tsconfig.web.json)
+        run: npm run typecheck:web
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (Vitest; no R required)
+        run: npm test
+
+      - name: Build (typecheck + electron-vite build)
+        run: npm run build

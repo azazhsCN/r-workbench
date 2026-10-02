@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from 'react'
 import { aiService, type AIService } from '../services/aiService'
 
 interface AIContextValue {
@@ -22,11 +22,13 @@ export function AIProvider({ children }: { children: ReactNode }) {
     refreshConfig()
   }, [refreshConfig])
 
-  return (
-    <AIContext.Provider value={{ service: aiService, isConfigured, refreshConfig }}>
-      {children}
-    </AIContext.Provider>
+  // memo provider value，避免每次渲染让所有消费者重渲染
+  const value = useMemo<AIContextValue>(
+    () => ({ service: aiService, isConfigured, refreshConfig }),
+    [isConfigured, refreshConfig]
   )
+
+  return <AIContext.Provider value={value}>{children}</AIContext.Provider>
 }
 
 export function useAI(): AIContextValue {

@@ -4,6 +4,8 @@
  * 支持 OpenAI / DeepSeek / 通义千问 / 自定义接口
  */
 
+import i18n from '../i18n'
+
 /** AI 配置 */
 interface AIConfig {
   provider: string
@@ -26,46 +28,77 @@ interface AIResponse {
   error?: string
 }
 
-/** 系统提示词 */
-const SYSTEM_PROMPT = `你是 R Workbench 的 AI 数据分析助手。你的任务是帮助用户使用 R 语言进行统计分析。
+/** 单次请求超时（毫秒）—— 连接挂起时不能永久锁死发送按钮 */
+export const REQUEST_TIMEOUT_MS = 60_000
 
-## 你的能力
+/** 取当前语言的文案（i18n 可能在初始化完成前被调用，故统一 String() 兜底） */
+function tr(key: string, options?: Record<string, unknown>): string {
+  return String(i18n.t(key, options))
+}
 
-1. **理解用户需求**：用户会用自然语言描述分析需求，你需要理解并转化为 R 代码
-2. **生成 R 代码**：编写正确、高效的 R 代码来完成分析
-3. **解读结果**：用通俗易懂的中文解释统计结果
+/**
+ * 语言感知的系统提示词。
+ *
+ * 旧实现把「始终用中文回复」硬编码在 Prompt 里：英文界面下用户用英文提问，
+ * 模型仍被指令用中文回答。现在按当前界面语言取提示词。
+ */
+function systemPrompt(): string {
+  return tr('ai.systemPrompt')
+}
 
-## 输出格式
+function dataContextMessage(dataContext: string): string {
+  return tr('ai.dataContext', { context: dataContext })
+}
 
-当需要执行 R 代码时，请使用以下格式：
+/** 把响应体里的服务商错误消息解析出来（流式与非流式共用） */
+async function parseErrorBody(response: Response): Promise<string> {
+  const fallback = tr('ai.error.apiFailed', { status: response.status })
+  const body = await response.text().catch(() => '')
+  if (!body) return fallback
+  try {
+    const json = JSON.parse(body) as { error?: { message?: string }; message?: string }
+    return json.error?.message || json.message || fallback
+  } catch {
+    return body.length > 300 ? `${fallback} — ${body.slice(0, 300)}` : `${fallback} — ${body}`
+  }
+}
 
-\`\`\`r-execute
-# R 代码
-\`\`\`
+interface RequestSignal {
+  signal: AbortSignal
+  cleanup: () => void
+  /** 超时触发的 abort（用于区分用户点击"停止生成"） */
+  didTimeOut: () => boolean
+}
 
-当只需解释概念时，直接用中文回复即可。
+/**
+ * 组合外部取消信号与 60 秒超时。
+ *
+ * 旧实现的流式请求没有任何 AbortSignal/超时：连接一旦挂起，
+ * `isStreaming` 永远为 true，发送按钮永久禁用且无法取消。
+ */
+function createRequestSignal(external?: AbortSignal): RequestSignal {
+  const controller = new AbortController()
+  let timedOut = false
+  const timer: ReturnType<typeof setTimeout> = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, REQUEST_TIMEOUT_MS)
 
-## 注意事项
+  const onAbort = (): void => controller.abort()
+  if (external) {
+    if (external.aborted) controller.abort()
+    else external.addEventListener('abort', onAbort, { once: true })
+  }
 
-- 始终用中文回复
-- R 代码要添加充分的中文注释
-- 统计结论要通俗易懂，适合本科生理解
-- 如果用户没有提供数据，提醒用户先导入数据
-- 对于假设检验，要说明零假设和备择假设
-- p 值要精确到小数点后4位
-- APA 格式报告统计结果
-
-## 支持的分析方法
-
-- 描述性统计（均值、标准差、频数等）
-- t 检验（独立样本、配对样本）
-- 方差分析（单因素 ANOVA）
-- 卡方检验
-- 相关分析（Pearson、Spearman）
-- 线性回归
-- 信度分析（Cronbach's α）
-- 数据可视化（ggplot2）
-`
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer)
+      external?.removeEventListener('abort', onAbort)
+    },
+    didTimeOut: () => timedOut
+  }
+}
 
 export class AIService {
   private config: AIConfig | null = null
@@ -94,9 +127,14 @@ export class AIService {
           if (window.api?.config) {
             await window.api.config.saveApiKey(provider, apiKey)
           }
-          // S6: 迁移完成后从 localStorage 删除明文 key，避免永久残留
-          delete rest.aiApiKey
-          localStorage.setItem('rworkbench_settings', JSON.stringify(rest))
+          // S6: 迁移完成后从 localStorage 删除明文 key，避免永久残留。
+          // 注意：`rest` 必须在这里解构出来，否则 delete 抛 ReferenceError，
+          // 被下面的 catch 静默吞掉 → this.config 永不赋值 + 明文 key 永久残留。
+          const { aiApiKey: migratedApiKey, ...rest } = settings as Record<string, unknown>
+          if (migratedApiKey) {
+            delete rest.aiApiKey
+            localStorage.setItem('rworkbench_settings', JSON.stringify(rest))
+          }
         }
 
         if (!apiKey) return null
@@ -129,7 +167,7 @@ export class AIService {
     if (!this.isConfigured()) {
       return {
         content: '',
-        error: '请先在设置页面配置 AI API Key'
+        error: tr('ai.error.needConfig')
       }
     }
 
@@ -137,19 +175,20 @@ export class AIService {
 
     // 构建完整消息列表
     const fullMessages: ChatMsg[] = [
-      { role: 'system', content: SYSTEM_PROMPT }
+      { role: 'system', content: systemPrompt() }
     ]
 
     // 添加数据上下文
     if (dataContext) {
       fullMessages.push({
         role: 'system',
-        content: `当前已加载的数据集信息：\n${dataContext}\n\n请基于这些数据生成分析代码。数据文件名为 "data.csv"。`
+        content: dataContextMessage(dataContext)
       })
     }
 
     fullMessages.push(...messages)
 
+    const request = createRequestSignal()
     try {
       const response = await fetch(`${config.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -162,19 +201,12 @@ export class AIService {
           messages: fullMessages,
           temperature: 0.3,
           max_tokens: 4096
-        })
+        }),
+        signal: request.signal
       })
 
       if (!response.ok) {
-        const errorBody = await response.text()
-        let errorMsg = `API 请求失败 (${response.status})`
-        try {
-          const errJson = JSON.parse(errorBody)
-          errorMsg = errJson.error?.message || errorMsg
-        } catch {
-          // use default error
-        }
-        return { content: '', error: errorMsg }
+        return { content: '', error: await parseErrorBody(response) }
       }
 
       const data = await response.json()
@@ -195,38 +227,41 @@ export class AIService {
         explanation: explanation || undefined
       }
     } catch (error: unknown) {
-      const err = error as { message?: string }
       return {
         content: '',
-        error: `网络请求失败: ${err.message || '请检查网络连接和 API 配置'}`
+        error: describeFetchError(error, request)
       }
+    } finally {
+      request.cleanup()
     }
   }
 
   /** 流式对话请求 */
   async *chatStream(
     messages: ChatMsg[],
-    dataContext?: string
+    dataContext?: string,
+    signal?: AbortSignal
   ): AsyncGenerator<string, void, unknown> {
     if (!this.isConfigured()) {
-      yield '❌ 请先在设置页面配置 AI API Key'
+      yield `❌ ${tr('ai.error.needConfig')}`
       return
     }
 
     const config = this.config!
     const fullMessages: ChatMsg[] = [
-      { role: 'system', content: SYSTEM_PROMPT }
+      { role: 'system', content: systemPrompt() }
     ]
 
     if (dataContext) {
       fullMessages.push({
         role: 'system',
-        content: `当前已加载的数据集信息：\n${dataContext}\n\n请基于这些数据生成分析代码。数据文件名为 "data.csv"。`
+        content: dataContextMessage(dataContext)
       })
     }
 
     fullMessages.push(...messages)
 
+    const request = createRequestSignal(signal)
     try {
       const response = await fetch(`${config.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -240,17 +275,19 @@ export class AIService {
           temperature: 0.3,
           max_tokens: 4096,
           stream: true
-        })
+        }),
+        signal: request.signal
       })
 
       if (!response.ok) {
-        yield `❌ API 请求失败 (${response.status})`
+        // 复用非流式路径的错误体解析（旧实现只显示状态码）
+        yield `❌ ${await parseErrorBody(response)}`
         return
       }
 
       const reader = response.body?.getReader()
       if (!reader) {
-        yield '❌ 无法读取响应流'
+        yield `❌ ${tr('ai.error.noStream')}`
         return
       }
 
@@ -267,8 +304,9 @@ export class AIService {
 
         for (const line of lines) {
           const trimmed = line.trim()
-          if (!trimmed || !trimmed.startsWith('data: ')) continue
-          const data = trimmed.slice(6)
+          // 宽容匹配：部分服务商返回 `data:{...}`（无空格）
+          if (!trimmed || !/^data:\s?/.test(trimmed)) continue
+          const data = trimmed.replace(/^data:\s?/, '')
           if (data === '[DONE]') return
 
           try {
@@ -281,10 +319,20 @@ export class AIService {
         }
       }
     } catch (error: unknown) {
-      const err = error as { message?: string }
-      yield `❌ 网络请求失败: ${err.message || '请检查网络连接'}`
+      yield `❌ ${describeFetchError(error, request)}`
+    } finally {
+      request.cleanup()
     }
   }
+}
+
+/** 把 fetch 异常翻译成当前语言的说明（区分超时 / 用户取消 / 网络错误） */
+function describeFetchError(error: unknown, request: RequestSignal): string {
+  const err = error as { name?: string; message?: string }
+  if (err?.name === 'AbortError') {
+    return request.didTimeOut() ? tr('ai.error.timeout') : tr('ai.error.aborted')
+  }
+  return tr('ai.error.network', { message: err?.message || tr('ai.error.checkNetwork') })
 }
 
 /** 导出单例 */

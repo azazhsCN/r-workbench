@@ -1,4 +1,4 @@
-﻿import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useData } from '../contexts/DataContext'
 import { useAI } from '../contexts/AIContext'
@@ -12,8 +12,8 @@ import PlotViewer from '../components/PlotViewer'
 /** 向导步骤 */
 type WizardStep = 'select' | 'configure' | 'execute' | 'result'
 
-/** 分析方法定义 */
-interface AnalysisMethod {
+/** 分析方法定义（导出供测试与其它模块复用） */
+export interface AnalysisMethod {
   id: string
   name: string
   nameKey?: string
@@ -26,9 +26,11 @@ interface AnalysisMethod {
   minVars: number
   maxVars: number
   varType: 'numeric' | 'string' | 'any'
+  /** 该方法的可选参数（v0.2.6：相关分析可选择 Pearson / Spearman） */
+  options?: { id: string; labelKey: string; label: string; values: { value: string; labelKey: string; label: string }[] }[]
 }
 
-const METHODS: AnalysisMethod[] = [
+export const METHODS: AnalysisMethod[] = [
   {
     id: 'descriptive',
     name: '描述性统计',
@@ -213,6 +215,27 @@ const METHODS: AnalysisMethod[] = [
   }
 ]
 
+/**
+ * 回退标签：仅在语言包缺少对应键时使用。
+ * 注意这里已是英文，避免中文界面以外的用户看到中文
+ * （v0.2.6 起 i18n 覆盖向导全部配置区）。
+ */
+const FALLBACK_LABELS: Record<string, { name: string; desc: string; category: string }> = {
+  descriptive: { name: 'Descriptive Statistics', desc: 'Mean, median, SD, min, max', category: 'Basic' },
+  ttest_independent: { name: 'Independent-samples t-test', desc: 'Compare means of two independent groups', category: 'Difference tests' },
+  ttest_paired: { name: 'Paired-samples t-test', desc: 'Compare two measurements on the same subjects', category: 'Difference tests' },
+  anova: { name: 'One-way ANOVA', desc: 'Compare means across multiple groups', category: 'Difference tests' },
+  chi_square: { name: 'Chi-square test', desc: 'Test independence of two categorical variables', category: 'Difference tests' },
+  correlation: { name: 'Correlation', desc: 'Linear association between two variables', category: 'Relationship' },
+  regression: { name: 'Linear regression', desc: 'Model a dependent variable from predictors', category: 'Relationship' },
+  reliability: { name: 'Reliability', desc: "Cronbach's alpha for a scale", category: 'Survey' },
+  ttest_one: { name: 'One-sample t-test', desc: 'Test a sample mean against a value', category: 'Difference tests' },
+  normality: { name: 'Normality test', desc: 'Shapiro-Wilk test for normality', category: 'Basic' },
+  nonparametric: { name: 'Nonparametric test', desc: 'Mann-Whitney U when normality fails', category: 'Difference tests' },
+  frequency: { name: 'Frequency', desc: 'Counts and percentages of categories', category: 'Basic' },
+  summary: { name: 'Summary by group', desc: 'Group-wise means and SDs', category: 'Basic' }
+}
+
 export default function WizardPage() {
   const { t } = useTranslation()
   const { dataset, hasData, getNumericColumns, getStringColumns, getAllColumns } = useData()
@@ -223,6 +246,8 @@ export default function WizardPage() {
   const [depVars, setDepVars] = useState<string[]>([])
   const [groupVar, setGroupVar] = useState<string>('')
   const [mu, setMu] = useState<number>(0) // S9: 单样本 t 检验的检验值
+  /** 相关分析的相关系数类型（v0.2.6：Spearman 此前在后端已支持但 UI 无法选择） */
+  const [correlationMethod, setCorrelationMethod] = useState<'pearson' | 'spearman'>('pearson')
   const [, setIsExecuting] = useState(false) // S8: 无 getter，步骤切换已覆盖加载状态
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [interpretation, setInterpretation] = useState<string>('')
@@ -270,32 +295,38 @@ export default function WizardPage() {
     let code = ''
     const method = selectedMethod.id
 
-    if (method === 'descriptive') {
-      code = RService.descriptiveCode(depVars, dataFile)
-    } else if (method === 'ttest_independent') {
-      code = RService.tTestIndependentCode(depVars[0], groupVar, dataFile)
-    } else if (method === 'ttest_paired') {
-      code = RService.tTestPairedCode(depVars[0], depVars[1], dataFile)
-    } else if (method === 'correlation') {
-      code = RService.correlationCode(depVars[0], depVars[1], 'pearson', dataFile)
-    } else if (method === 'regression') {
-      code = RService.regressionCode(depVars[0], depVars.slice(1), dataFile)
-    } else if (method === 'reliability') {
-      code = RService.reliabilityCode(depVars, dataFile)
-    } else if (method === 'chisquare') {
-      code = RService.chiSquareCode(depVars[0], depVars[1], dataFile)
-    } else if (method === 'anova') {
-      code = RService.anovaCode(depVars[0], groupVar, dataFile)
-    } else if (method === 'ttest_one') {
-      code = RService.tTestOneSampleCode(depVars[0], mu, dataFile)
-    } else if (method === 'normality') {
-      code = RService.normalityTestCode(depVars, dataFile)
-    } else if (method === 'nonparametric') {
-      code = RService.nonparametricCode(depVars[0], groupVar, dataFile)
-    } else if (method === 'frequency') {
-      code = RService.frequencyCode(depVars, dataFile)
-    } else if (method === 'summary_by') {
-      code = RService.summaryByCode(groupVar, depVars[0], dataFile)
+    // 生成器分发表：新增方法只需在此注册一行，避免 13 分支 if-else 链
+    // （v0.2.6 技术债 #1：长 if-else 链是新增方法时的回归高发点）
+    const generators: Record<string, () => string> = {
+      descriptive: () => RService.descriptiveCode(depVars, dataFile),
+      ttest_independent: () => RService.tTestIndependentCode(depVars[0], groupVar, dataFile),
+      ttest_paired: () => RService.tTestPairedCode(depVars[0], depVars[1], dataFile),
+      ttest_one: () => RService.tTestOneSampleCode(depVars[0], mu, dataFile),
+      anova: () => RService.anovaCode(depVars[0], groupVar, dataFile),
+      chisquare: () => RService.chiSquareCode(depVars[0], depVars[1], dataFile),
+      correlation: () => RService.correlationCode(depVars[0], depVars[1], correlationMethod, dataFile),
+      regression: () => RService.regressionCode(depVars[0], depVars.slice(1), dataFile),
+      reliability: () => RService.reliabilityCode(depVars, dataFile),
+      normality: () => RService.normalityTestCode(depVars, dataFile),
+      nonparametric: () => RService.nonparametricCode(depVars[0], groupVar, dataFile),
+      frequency: () => RService.frequencyCode(depVars, dataFile),
+      summary_by: () => RService.summaryByCode(groupVar, depVars[0], dataFile)
+    }
+    const generate = generators[method]
+    code = generate ? generate() : ''
+
+    if (!code) {
+      setResult({
+        success: false,
+        output: '',
+        tables: [],
+        plots: [],
+        errors: [t('wizard.noGenerator', { method })],
+        warnings: []
+      })
+      setIsExecuting(false)
+      setStep('result')
+      return
     }
 
     // 通过 IPC 传递 CSV，不在代码中内嵌（修复 #3）
@@ -331,17 +362,35 @@ export default function WizardPage() {
     return getAllColumns()
   }
 
-  // 按类别分组方法
-  const categories = METHODS.reduce<Record<string, AnalysisMethod[]>>((acc, m) => {
-    if (!acc[m.category]) acc[m.category] = []
-    acc[m.category].push(m)
-    return acc
-  }, {})
+  // 按类别分组方法（技术债 #2：原实现每次渲染重复计算，改为 useMemo）
+  const categories = useMemo(
+    () =>
+      METHODS.reduce<Record<string, AnalysisMethod[]>>((acc, m) => {
+        if (!acc[m.category]) acc[m.category] = []
+        acc[m.category].push(m)
+        return acc
+      }, {}),
+    []
+  )
 
-  // 解析方法/描述/类别的本地化文本
-  const methodName = (m: AnalysisMethod) => (m.nameKey ? t(m.nameKey) : m.name)
-  const methodDesc = (m: AnalysisMethod) => (m.descKey ? t(m.descKey) : m.description)
-  const categoryLabel = (c: string, m?: AnalysisMethod) => (m?.categoryKey ? t(m.categoryKey) : c)
+  // 解析 R 输出一次，供三线表与诊断面板复用（避免重复解析）
+  const parsedResult = useMemo(
+    () => (result?.success && result.output ? parseROutput(result.output) : null),
+    [result]
+  )
+
+  // 解析方法/描述/类别的本地化文本。
+  // 语言包缺键时回退到英文标签（而不是中文 name/description），
+  // 否则英文界面会出现中文方法名。
+  const fallbackFor = (m: AnalysisMethod) => FALLBACK_LABELS[m.nameKey?.split('.').pop() ?? m.id]
+  const methodName = (m: AnalysisMethod) =>
+    m.nameKey ? t(m.nameKey, { defaultValue: fallbackFor(m)?.name ?? m.name }) : m.name
+  const methodDesc = (m: AnalysisMethod) =>
+    m.descKey ? t(m.descKey, { defaultValue: fallbackFor(m)?.desc ?? m.description }) : m.description
+  const categoryLabel = (c: string, m?: AnalysisMethod) => {
+    const fb = m ? fallbackFor(m)?.category : undefined
+    return m?.categoryKey ? t(m.categoryKey, { defaultValue: fb ?? c }) : c
+  }
 
   return (
     <div className="wizard-page">
@@ -496,6 +545,28 @@ export default function WizardPage() {
               </div>
             )}
 
+            {/* v0.2.6: 相关系数类型选择（后端早已支持 Spearman，此前 UI 无法选择） */}
+            {selectedMethod.id === 'correlation' && (
+              <div className="var-section">
+                <div className="var-section-title">{t('wizard.corrMethod')}</div>
+                <div className="var-section-desc">{t('wizard.corrMethod.desc')}</div>
+                <div className="var-tags">
+                  <span
+                    className={`var-tag ${correlationMethod === 'pearson' ? 'selected' : ''}`}
+                    onClick={() => setCorrelationMethod('pearson')}
+                  >
+                    Pearson
+                  </span>
+                  <span
+                    className={`var-tag ${correlationMethod === 'spearman' ? 'selected' : ''}`}
+                    onClick={() => setCorrelationMethod('spearman')}
+                  >
+                    Spearman
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: 12 }}>
               <button
                 className="btn btn-primary btn-lg"
@@ -620,24 +691,44 @@ export default function WizardPage() {
             </div>
 
             {/* 三线表展示 */}
-            {result.success && result.output && (() => {
-              const parsed = parseROutput(result.output)
-              if (parsed.tables.length > 0) {
-                return (
-                  <div style={{ marginBottom: 20 }}>
-                    {parsed.tables.map((table, i) => (
-                      <ThreeLineTable
-                        key={i}
-                        title={table.title}
-                        headers={table.headers}
-                        rows={table.rows}
-                        note={table.note}
-                      />
+            {parsedResult && parsedResult.tables.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                {parsedResult.tables.map((table, i) => (
+                  <ThreeLineTable
+                    key={i}
+                    title={table.title}
+                    headers={table.headers}
+                    rows={table.rows}
+                    note={table.note}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* 诊断信息（v0.2.6 新增）：假设检验、效应量、反向计分、R 警告 */}
+            {(() => {
+              const diags = parsedResult?.diagnostics ?? []
+              const rWarnings = result.warnings ?? []
+              if (diags.length === 0 && rWarnings.length === 0) return null
+              return (
+                <div className="result-diagnostics">
+                  <h4>{t('wizard.diagnostics.title')}</h4>
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8 }}>
+                    {diags.map((d, i) => (
+                      <li key={`d${i}`} className={`diag-${d.kind}`}>
+                        <strong>{d.label}：</strong>
+                        <span>{d.value}</span>
+                      </li>
                     ))}
-                  </div>
-                )
-              }
-              return null
+                    {rWarnings.map((w, i) => (
+                      <li key={`w${i}`} className="diag-warning">
+                        <strong>{t('wizard.diagnostics.rWarning')}：</strong>
+                        <span>{w}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )
             })()}
 
             {/* 图表可视化 */}

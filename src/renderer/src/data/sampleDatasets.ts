@@ -1,20 +1,34 @@
 /**
  * 内置示例数据集
  * 用于演示和测试，用户无需导入即可体验功能
+ *
+ * v0.2.6：名称/描述改为语言感知。数据内容本身仍是中文（示例成绩单/问卷），
+ * 英文界面下的描述已注明这一点（避免英文用户以为导入出了编码问题）。
  */
+
+import i18n from '../i18n'
 
 export interface SampleDataset {
   id: string
+  /** 本地化显示名（每次访问按当前界面语言解析） */
   name: string
+  /** 本地化描述 */
   description: string
   csv: string
 }
 
-export const SAMPLE_DATASETS: SampleDataset[] = [
+interface SampleDatasetDef {
+  id: string
+  nameKey: string
+  descKey: string
+  csv: string
+}
+
+const SAMPLE_DEFS: SampleDatasetDef[] = [
   {
     id: 'exam_scores',
-    name: '考试成绩数据',
-    description: '包含不同教学方法下学生的数学和英语成绩，适合练习 t 检验和方差分析',
+    nameKey: 'sample.exam_scores.name',
+    descKey: 'sample.exam_scores.desc',
     csv: `学生ID,教学方法,性别,数学成绩,英语成绩,总分
 1,传统,男,78,82,160
 2,传统,男,85,79,164
@@ -49,8 +63,8 @@ export const SAMPLE_DATASETS: SampleDataset[] = [
   },
   {
     id: 'survey_data',
-    name: '问卷调查数据',
-    description: '包含量表题目数据，适合练习信度分析、描述性统计和相关分析',
+    nameKey: 'sample.survey_data.name',
+    descKey: 'sample.survey_data.desc',
     csv: `ID,性别,年龄,学历,满意度1,满意度2,满意度3,满意度4,满意度5,使用频率,推荐意愿
 1,女,22,本科,4,5,4,3,4,5,4
 2,男,24,本科,3,3,4,3,3,3,3
@@ -75,8 +89,8 @@ export const SAMPLE_DATASETS: SampleDataset[] = [
   },
   {
     id: 'correlation_data',
-    name: '学习投入与成绩',
-    description: '包含学习时长、课堂参与、复习次数与考试成绩数据，适合相关和回归分析',
+    nameKey: 'sample.correlation_data.name',
+    descKey: 'sample.correlation_data.desc',
     csv: `学生ID,学习时长,课堂参与,复习次数,考试成绩,自评信心
 1,3.5,7,4,75,3
 2,5.2,8,6,85,4
@@ -100,6 +114,23 @@ export const SAMPLE_DATASETS: SampleDataset[] = [
 20,3.0,6,3,68,3`
   }
 ]
+
+/**
+ * 示例数据集（标签随语言切换）。
+ *
+ * 用 getter 而非快照值：现有消费者（WelcomePage）直接读 `sample.name`，
+ * 不改一行代码即可在切换语言后立即拿到新文案。
+ */
+export const SAMPLE_DATASETS: SampleDataset[] = SAMPLE_DEFS.map((def) => ({
+  id: def.id,
+  csv: def.csv,
+  get name(): string {
+    return String(i18n.t(def.nameKey))
+  },
+  get description(): string {
+    return String(i18n.t(def.descKey))
+  }
+}))
 
 /** 获取示例数据集（解析为标准格式） */
 export function getSampleData(id: string) {

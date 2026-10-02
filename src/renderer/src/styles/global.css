@@ -146,14 +146,41 @@ button:disabled {
   border: none;
 }
 
-/* 交替行底色（可选，增加可读性） */
-.three-line-table tbody tr:nth-child(even) {
-  background: var(--bg-secondary);
-}
+/* 注意：APA 三线表只有三条横线、不应有底纹。
+   v0.2.6 移除了此前的 nth-child(even) 交替底色——它只出现在屏幕上，
+   Word 导出（threeLineTableToHTML）并没有，导致"所见非所得"。 */
 
 /* 表底线 */
 .three-line-table tbody tr:last-child {
   border-bottom: 2px solid var(--text-primary);
+}
+
+/* ── 统计诊断卡片（v0.2.6 新增）── */
+.result-diagnostics {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+
+.result-diagnostics h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.result-diagnostics .diag-warning {
+  color: var(--error);
+}
+
+.result-diagnostics .diag-assumption {
+  color: var(--text-secondary);
+}
+
+.result-diagnostics .diag-effect {
+  color: var(--text-primary);
 }
 
 /* ── 结果解读卡片 ── */

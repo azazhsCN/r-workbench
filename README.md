@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/version-v0.2.5-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-v0.2.6-blue.svg)]()
 [![Languages](https://img.shields.io/badge/languages-中文%20%7C%20English-brightgreen.svg)]()
 
 **中文** | [English](README.en.md)
@@ -61,7 +61,7 @@ R Workbench 是一款面向统计学初学者的 AI 驱动数据分析桌面应�
   - 折线图（趋势展示）
   - 核密度图
 - 学术主题模板（APA 规范）
-- 导出 PNG 图片（300/600 DPI）
+- 导出 PNG 图片（300 DPI，适合论文印刷）
 
 ### 📁 数据管理
 - 支持 CSV、Excel (.xlsx/.xls)、SPSS (.sav) 格式
@@ -166,18 +166,25 @@ r-workbench/
 
 ## 统计正确性验证
 
-R Workbench 内置一组可复现的统计正确性验证脚本，用于验证系统实现的分析方法
-（描述统计、t 检验、ANOVA、相关、回归、卡方、非参数、信度、正态性等）在
-标准 R 数据集上产生与 R 参考实现一致的结果。
+R Workbench 内置一组可复现的统计正确性验证脚本。脚本会先用 esbuild 加载**真实的
+`rService.ts`**，把 13 个方法生成器实际产出的 R 代码写入 fixtures，再交给 R 执行，
+并用**独立 oracle**（手算闭式解、精确置换分布、矩阵代数、第二 R 包）复算关键统计量，
+逐项比对。共 **282 项断言**，覆盖 13/13 个方法。
 
 ```bash
-# 运行验证（需 R >= 4.2，纯 base R，无额外依赖）
+# 运行验证（需 R >= 4.2；base R 即可，装有 psych 时会额外用 psych::alpha 交叉验证）
 Rscript scripts/validate/run_validation.R
 ```
 
-- 脚本：`scripts/validate/run_validation.R`
+脚本在断言失败时**以非 0 退出码结束**（可直接作为 CI 门禁），并会捕获 R 的 stderr，
+把 `sprintf` 参数不匹配这类"只发 warning、静默丢字段"的问题判为失败。
+自 v0.2.6 起，验证的是应用真实生成的代码，而不再是与参考实现逐字符相同的副本。
+
+- 脚本：`scripts/validate/run_validation.R`（fixtures 由 `generate_fixtures.mjs` 生成）
 - 结果：`scripts/validate/VALIDATION_RESULTS.md`
 - 运行说明与验证边界：`scripts/validate/README.md`
+- 打包产物验收（按需运行，需先 `npm run build:win`）：
+  `npm run verify:sav` / `verify:ipc` / `verify:lazy` / `verify:negcache` / `verify:packaged`
 - 发布说明：`docs/validation-release.md`
 
 ## 开源许可

@@ -32,12 +32,48 @@ i18n
     supportedLngs: ['zh-CN', 'en-US'],
     detection: detectorOptions,
     interpolation: {
-      escapeValue: false // React 已做 XSS 防护
+      escapeValue: false, // React 已做 XSS 防护
+      // i18next 默认插值分隔符是 {{ }}，但本项目全部 locale 值使用单花括号
+      // （共 12 个键 × 2 种语言）。不设置这两项时界面会直接显示字面量
+      // "显示前 200 行，共 {total} 行数据" / "不支持的文件格式: .{ext}"。
+      prefix: '{',
+      suffix: '}'
     },
     react: {
       useSuspense: false
     }
   })
+
+/**
+ * 同步 <html lang>，供屏幕阅读器、断词与 CSS `:lang()` 选择器使用。
+ * index.html 里硬编码的 `lang="zh-CN"` 不会随语言切换更新。
+ */
+function applyDocumentLang(lng: string): void {
+  if (typeof document === 'undefined') return
+  document.documentElement.setAttribute('lang', lng)
+  notifyMainProcessLanguage(lng)
+}
+
+/**
+ * 通知主进程重建应用菜单（T8：主菜单文案硬编码中文）。
+ *
+ * 通道 `app:setLanguage` 由 mainprocess 提供；这里用可选调用，通道尚未实现时
+ * 静默跳过，不影响启动。菜单键见 locales 里的顶层 "menu" 段。
+ */
+function notifyMainProcessLanguage(lng: string): void {
+  if (typeof window === 'undefined') return
+  const api = window.api as unknown as
+    | { app?: { setLanguage?: (lng: string) => void } }
+    | undefined
+  try {
+    api?.app?.setLanguage?.(lng)
+  } catch {
+    // 菜单语言同步失败不影响界面
+  }
+}
+
+i18n.on('languageChanged', applyDocumentLang)
+applyDocumentLang(i18n.language || 'zh-CN')
 
 /** 设置语言（持久化 + 应用） */
 export function setLanguage(lang: AppLanguage | 'system'): void {

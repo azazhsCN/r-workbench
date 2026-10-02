@@ -13,12 +13,19 @@
     "isolatedModules": true,
     "target": "ESNext",
     "lib": ["ESNext"],
-    "types": ["node"]
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@preload/*": ["src/preload/*"],
+      "sav-reader": ["./node_modules/sav-reader/dist/index.d.ts"]
+    }
   },
   "include": [
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
     "src/shared/**/*.ts",
-    "electron.vite.config.ts"
+    "electron.vite.config.ts",
+    "vitest.config.ts"
   ]
 }

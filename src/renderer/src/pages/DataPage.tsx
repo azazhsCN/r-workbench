@@ -1,8 +1,50 @@
 import { useState, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { parseCSV, parseExcel, datasetToCSV, type ParseResult } from '../services/dataService'
+import {
+  parseCSV,
+  parseCSVBytes,
+  parseExcel,
+  datasetToCSV,
+  type ParseResult,
+  type ParseWarning
+} from '../services/dataService'
+import { toUint8Array, SUPPORTED_ENCODINGS, type SupportedEncoding } from '../services/decode'
 import { useData } from '../contexts/DataContext'
-import type { ColumnInfo } from '../../shared/types'
+import type { ColumnInfo } from '@shared/types'
+
+/** 已本地化的警告代码（其余代码回退显示 papaparse 的原始英文消息） */
+const KNOWN_WARNING_CODES = new Set([
+  'moreWarnings',
+  'csv.TooManyFields',
+  'csv.TooFewFields',
+  'csv.UndetectableDelimiter',
+  'csv.MissingQuotes',
+  'csv.InvalidQuotes',
+  'csv.encodingLossy',
+  'csv.emptyFile',
+  'excel.blankHeader',
+  'excel.duplicateHeader',
+  'excel.formulaNoCache',
+  'excel.errorCells',
+  'excel.emptySheet',
+  'excel.noRows',
+  'excel.sheetNotFound'
+])
+
+/** 重新解析所需的原始输入（编码/工作表/缺失值选项变化时复用，无需重新选文件） */
+interface RawSource {
+  kind: 'csv' | 'excel' | 'manual' | 'sav'
+  fileName: string
+  bytes?: Uint8Array
+  text?: string
+  filePath?: string
+}
+
+/** 把异常翻译成可展示文案（主进程的"文件过大"等拒绝原因会原样附上） */
+function errorText(err: unknown, fallback: string): string {
+  const message = (err as { message?: string } | null)?.message
+  return message ? `${fallback} (${message})` : fallback
+}
 
 export default function DataPage() {
   const { t } = useTranslation()
@@ -12,7 +54,11 @@ export default function DataPage() {
   const [error, setError] = useState<string>('')
   const [manualInput, setManualInput] = useState(false)
   const [manualText, setManualText] = useState('')
+  const [encoding, setEncoding] = useState<SupportedEncoding | ''>('')
+  const [sheetName, setSheetName] = useState('')
+  const [spssSentinels, setSpssSentinels] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const rawSourceRef = useRef<RawSource | null>(null)
 
   /** 更新本地和全局状态 */
   const updateData = useCallback((result: ParseResult | null) => {
@@ -20,54 +66,136 @@ export default function DataPage() {
     setSharedDataset(result)
   }, [setSharedDataset])
 
-  const handleFileSelect = useCallback(async () => {
-    if (window.api) {
-      setIsLoading(true)
-      setError('')
-      try {
-        // 一次性完成：选文件 + 读内容，路径不限
-        const result = await window.api.dialog.readFile()
-        if (!result) {
-          setIsLoading(false)
-          return
-        }
+  /** 本地化导入警告 */
+  const warningText = useCallback((warning: ParseWarning): string => {
+    if (!KNOWN_WARNING_CODES.has(warning.code)) {
+      return warning.message || warning.code
+    }
+    const params: Record<string, string | number> = {
+      ...(warning.details ?? {}),
+      row: warning.row ?? 0,
+      count: warning.count ?? 0
+    }
+    if (typeof params.encoding === 'string') {
+      params.encoding = t(`data.encoding.${params.encoding}`, { defaultValue: params.encoding })
+    }
+    return t(`data.warn.${warning.code}`, params)
+  }, [t])
 
-        const { fileName, ext, content, buffer } = result
+  /**
+   * 用新的导入选项重新解析同一份原始数据。
+   * 编码 / 工作表 / 缺失值哨兵的变化都不需要再选一次文件。
+   */
+  const reprocess = useCallback(async (overrides: {
+    encoding?: SupportedEncoding | ''
+    sheetName?: string
+    spssSentinels?: boolean
+  }) => {
+    const source = rawSourceRef.current
+    if (!source || source.kind === 'sav') return
 
-        if (ext === 'csv' && content) {
-          updateData(parseCSV(content, fileName))
-        } else if ((ext === 'xlsx' || ext === 'xls') && buffer) {
-          updateData(parseExcel(buffer.buffer, fileName))
-        } else if (ext === 'sav') {
-          const savResult = await window.api.data.parseSav(result.filePath)
-          if (savResult.success && savResult.headers && savResult.rows && savResult.columnInfo) {
-            updateData({
-              headers: savResult.headers,
-              rows: savResult.rows as Record<string, unknown>[],
-              columnInfo: savResult.columnInfo as ColumnInfo[],
-              dataset: {
-                name: savResult.meta?.name || fileName,
-                columns: savResult.columnInfo as ColumnInfo[],
-                rowCount: savResult.rows.length
-              }
-            })
-          } else {
-            setError(savResult.error || t('data.error.savParse'))
-          }
-        } else {
-          setError(t('data.error.unsupported', { ext }))
-        }
-      } catch (err) {
-        console.error('文件加载失败:', err)
-        setError(t('data.error.loadFailed'))
-      } finally {
-        setIsLoading(false)
+    const nextEncoding = overrides.encoding !== undefined ? overrides.encoding : encoding
+    const nextSheet = overrides.sheetName !== undefined ? overrides.sheetName : sheetName
+    const nextSpss = overrides.spssSentinels !== undefined ? overrides.spssSentinels : spssSentinels
+
+    setIsLoading(true)
+    setError('')
+    try {
+      let next: ParseResult | null = null
+      if (source.kind === 'csv' && source.bytes) {
+        next = parseCSVBytes(source.bytes, source.fileName, {
+          encoding: nextEncoding || undefined,
+          spssSentinels: nextSpss
+        })
+      } else if (source.kind === 'excel' && source.bytes) {
+        next = await parseExcel(source.bytes, source.fileName, {
+          sheetName: nextSheet || undefined,
+          spssSentinels: nextSpss
+        })
+      } else if (source.kind === 'manual' && source.text !== undefined) {
+        next = parseCSV(source.text, source.fileName, { spssSentinels: nextSpss })
       }
+      if (next) {
+        updateData(next)
+        if (next.sheets && next.sheets.length > 0) setSheetName(next.sheetName ?? '')
+      }
+    } catch (err) {
+      setError(errorText(err, t('data.error.loadFailed')))
+    } finally {
+      setIsLoading(false)
+    }
+  }, [encoding, sheetName, spssSentinels, updateData, t])
+
+  /** 导入 .sav（解析在主进程完成） */
+  const applySav = useCallback(async (filePath: string, fileName: string) => {
+    const savResult = await window.api.data.parseSav(filePath)
+    if (savResult.success && savResult.headers && savResult.rows && savResult.columnInfo) {
+      const columns = savResult.columnInfo as ColumnInfo[]
+      updateData({
+        headers: savResult.headers,
+        rows: savResult.rows as Record<string, unknown>[],
+        columnInfo: columns,
+        dataset: {
+          name: savResult.meta?.name || fileName,
+          columns,
+          rowCount: savResult.rows.length
+        }
+      })
     } else {
-      fileInputRef.current?.click()
+      setError(savResult.error || t('data.error.savParse'))
     }
   }, [updateData, t])
 
+  const handleFileSelect = useCallback(async () => {
+    if (!window.api) {
+      fileInputRef.current?.click()
+      return
+    }
+    setIsLoading(true)
+    setError('')
+    try {
+      // 始终取原始字节：编码探测在渲染进程完成（GBK/GB18030 CSV 不能用
+      // 主进程的 readFile(path, 'utf-8')，那会直接产生 U+FFFD 破坏列名）。
+      const result = await window.api.dialog.readFile()
+      if (!result) return
+
+      const { fileName, ext, buffer, filePath } = result
+      const bytes = toUint8Array(buffer)
+
+      setEncoding('')
+      setSheetName('')
+
+      if (ext === 'csv') {
+        if (!bytes) {
+          setError(t('data.error.readFailed'))
+          return
+        }
+        rawSourceRef.current = { kind: 'csv', fileName, bytes }
+        updateData(parseCSVBytes(bytes, fileName, { spssSentinels }))
+      } else if (ext === 'xlsx' || ext === 'xls') {
+        if (!bytes) {
+          setError(t('data.error.readFailed'))
+          return
+        }
+        rawSourceRef.current = { kind: 'excel', fileName, bytes }
+        const parsed = await parseExcel(bytes, fileName, { spssSentinels })
+        updateData(parsed)
+        setSheetName(parsed.sheetName ?? '')
+      } else if (ext === 'sav') {
+        rawSourceRef.current = { kind: 'sav', fileName, filePath }
+        await applySav(filePath, fileName)
+      } else {
+        setError(t('data.error.unsupported', { ext }))
+      }
+    } catch (err) {
+      console.error('文件加载失败:', err)
+      setError(errorText(err, t('data.error.loadFailed')))
+    } finally {
+      setIsLoading(false)
+    }
+  }, [updateData, t, spssSentinels, applySav])
+
+  /** 浏览器回退路径（无 window.api 时）——同样按字节解码 */
   const handleLocalFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -75,17 +203,23 @@ export default function DataPage() {
     setError('')
     try {
       const ext = file.name.split('.').pop()?.toLowerCase()
+      setEncoding('')
+      setSheetName('')
       if (ext === 'csv') {
-        const text = await file.text()
-        updateData(parseCSV(text, file.name))
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        rawSourceRef.current = { kind: 'csv', fileName: file.name, bytes }
+        updateData(parseCSVBytes(bytes, file.name, { spssSentinels }))
       } else if (ext === 'xlsx' || ext === 'xls') {
-        const buffer = await file.arrayBuffer()
-        updateData(parseExcel(buffer, file.name))
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        rawSourceRef.current = { kind: 'excel', fileName: file.name, bytes }
+        const parsed = await parseExcel(bytes, file.name, { spssSentinels })
+        updateData(parsed)
+        setSheetName(parsed.sheetName ?? '')
       } else {
         setError(t('data.error.unsupported', { ext }))
       }
-    } catch {
-      setError(t('data.error.readFailed'))
+    } catch (err) {
+      setError(errorText(err, t('data.error.readFailed')))
     } finally {
       setIsLoading(false)
     }
@@ -94,7 +228,9 @@ export default function DataPage() {
   const handleManualImport = () => {
     if (!manualText.trim()) return
     try {
-      updateData(parseCSV(manualText, t('data.manualInput.title')))
+      const name = t('data.manualInput.title')
+      rawSourceRef.current = { kind: 'manual', fileName: name, text: manualText }
+      updateData(parseCSV(manualText, name, { spssSentinels }))
       setManualInput(false)
       setManualText('')
     } catch {
@@ -113,6 +249,23 @@ export default function DataPage() {
     a.click()
     URL.revokeObjectURL(url)
   }
+
+  const encodingLabel = (value: string): string =>
+    t(`data.encoding.${value}`, { defaultValue: value })
+
+  /** 列类型徽章文案（注意 ColumnInfo 的 'string' 对应界面上的"分类"） */
+  const typeLabel = (type: ColumnInfo['type']): string => {
+    if (type === 'numeric') return t('data.colInfo.numeric')
+    if (type === 'unknown') return t('data.colInfo.unknown')
+    return t('data.colInfo.categorical')
+  }
+
+  const warnings = parseResult?.warnings ?? []
+  const unknownColumns = parseResult?.columnInfo.filter((c) => c.type === 'unknown') ?? []
+  const source = rawSourceRef.current
+  const showImportOptions = parseResult !== null && source !== null && source.kind !== 'sav'
+  const isExcelSource = source?.kind === 'excel'
+  const isCsvSource = source?.kind === 'csv'
 
   return (
     <div className="data-page">
@@ -195,6 +348,149 @@ export default function DataPage() {
           </div>
         )}
 
+        {/* 导入选项：编码 / 工作表 / 缺失值哨兵 */}
+        {showImportOptions && (
+          <div
+            style={{
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-lg)',
+              padding: 16,
+              marginBottom: 20
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 12 }}>
+              {t('data.import.title')}
+            </div>
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
+              {isCsvSource && (
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>{t('data.import.encoding')}</span>
+                  <select
+                    value={encoding}
+                    onChange={(e) => {
+                      const value = e.target.value as SupportedEncoding | ''
+                      setEncoding(value)
+                      void reprocess({ encoding: value })
+                    }}
+                  >
+                    <option value="">{t('data.import.encoding.auto')}</option>
+                    {SUPPORTED_ENCODINGS.map((enc) => (
+                      <option key={enc} value={enc}>
+                        {encodingLabel(enc)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {isExcelSource && (parseResult?.sheets?.length ?? 0) > 1 && (
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>{t('data.import.sheet')}</span>
+                  <select
+                    value={sheetName}
+                    onChange={(e) => {
+                      setSheetName(e.target.value)
+                      void reprocess({ sheetName: e.target.value })
+                    }}
+                  >
+                    {(parseResult?.sheets ?? []).map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={spssSentinels}
+                  onChange={() => {
+                    const next = !spssSentinels
+                    setSpssSentinels(next)
+                    void reprocess({ spssSentinels: next })
+                  }}
+                />
+                <span>{t('data.import.sentinels.spss')}</span>
+              </label>
+            </div>
+
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 10, lineHeight: 1.6 }}>
+              {isCsvSource && parseResult?.encodingInfo && (
+                <div>
+                  {t('data.import.encoding.detected', {
+                    encoding: encodingLabel(parseResult.encodingInfo.encoding)
+                  })}
+                  {' · '}
+                  {t('data.import.encoding.hint')}
+                </div>
+              )}
+              {isExcelSource && parseResult?.sheetName && (
+                <div>{t('data.import.sheet.hint', { name: parseResult.sheetName })}</div>
+              )}
+              <div>{t('data.import.sentinels.hint')}</div>
+            </div>
+
+            {/* 按列列出被当作缺失值的真实取值：勾选 SPSS 惯例（99/999）后
+                绝不能静默丢弃，否则用户不会发现自己的 99 分被吃掉了 */}
+            {parseResult?.sentinelHits && parseResult.sentinelHits.length > 0 && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 12, color: 'var(--warning)', fontWeight: 600 }}>
+                  {t('data.import.sentinels.hits')}
+                </div>
+                <ul
+                  style={{
+                    margin: '4px 0 0',
+                    paddingLeft: 18,
+                    fontSize: 12,
+                    color: 'var(--text-secondary)',
+                    lineHeight: 1.7
+                  }}
+                >
+                  {parseResult.sentinelHits.slice(0, 50).map((hit) => (
+                    <li key={`${hit.column}-${hit.sentinel}`}>
+                      {t('data.import.sentinels.hit', {
+                        column: hit.column,
+                        count: hit.count,
+                        value: hit.sentinel
+                      })}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 导入警告 */}
+        {warnings.length > 0 && (
+          <div
+            style={{
+              background: 'var(--warning-bg)',
+              border: '1px solid var(--warning)',
+              borderRadius: 'var(--radius-md)',
+              padding: 12,
+              marginBottom: 16,
+              fontSize: 13
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>
+              ⚠️ {t('data.warnings.title', { count: warnings.length })}
+            </div>
+            <div style={{ color: 'var(--text-secondary)', marginBottom: 8 }}>
+              {t('data.warnings.hint')}
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+              {warnings.map((warning, i) => (
+                <li key={`${warning.code}-${i}`}>{warningText(warning)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* 隐藏文件输入 */}
         <input
           ref={fileInputRef}
@@ -231,6 +527,16 @@ export default function DataPage() {
                   .filter((c) => c.type === 'string')
                   .length.toString()}
               />
+              <InfoCard
+                label={t('data.info.unknownCols')}
+                value={unknownColumns.length.toString()}
+              />
+              {parseResult.encodingInfo && (
+                <InfoCard
+                  label={t('data.info.encoding')}
+                  value={encodingLabel(parseResult.encodingInfo.encoding)}
+                />
+              )}
             </div>
 
             {/* 列信息 */}
@@ -269,14 +575,18 @@ export default function DataPage() {
                             background:
                               col.type === 'numeric'
                                 ? 'var(--primary-bg)'
+                                : col.type === 'unknown'
+                                ? 'var(--warning-bg)'
                                 : 'var(--success-bg)',
                             color:
                               col.type === 'numeric'
                                 ? 'var(--primary)'
+                                : col.type === 'unknown'
+                                ? 'var(--warning)'
                                 : 'var(--success)'
                           }}
                         >
-                          {col.type === 'numeric' ? t('data.colInfo.numeric') : t('data.colInfo.categorical')}
+                          {typeLabel(col.type)}
                         </span>
                       </td>
                       <td>{col.total - col.missing}</td>
@@ -293,6 +603,24 @@ export default function DataPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* 未识别列说明：这类列不会出现在向导的变量选择中 */}
+            {unknownColumns.length > 0 && (
+              <div
+                style={{
+                  background: 'var(--warning-bg)',
+                  border: '1px solid var(--warning)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 12,
+                  marginBottom: 20,
+                  fontSize: 13
+                }}
+              >
+                {t('data.colInfo.unknownHint', {
+                  names: unknownColumns.map((c) => c.name).join('、')
+                })}
+              </div>
+            )}
 
             {/* 数据表格 */}
             <h3

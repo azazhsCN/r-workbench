@@ -1,13 +1,44 @@
 /**
  * AI 结果解读服务
  * 将统计分析结果发送给 LLM，生成符合学术论文风格的文字解读
+ *
+ * v0.2.6：Prompt 改为语言感知。旧实现把"撰写一段符合**中文**学术期刊风格的
+ * 结果解读"硬编码在 Prompt 里，英文界面下用户提问英文、AI 解读卡片仍输出中文。
  */
 
+import i18n from '../i18n'
 import { aiService } from './aiService'
 import type { ParsedAnalysis } from './resultParser'
 
+/** 已知分析方法 id（与 resultParser.detectAnalysisType 的返回值对齐） */
+const KNOWN_METHODS = new Set([
+  'descriptive',
+  'ttest_independent',
+  'ttest_paired',
+  'ttest_one',
+  'anova',
+  'chi_square',
+  'correlation',
+  'regression',
+  'reliability',
+  'normality',
+  'nonparametric',
+  'frequency',
+  'summary'
+])
+
+/** 取当前语言的文案 */
+function tr(key: string, options?: Record<string, unknown>): string {
+  return String(i18n.t(key, options))
+}
+
+/** 分析方法显示名（复用向导页已有的 wizard.method.* 文案） */
+function methodLabel(type: string): string {
+  return KNOWN_METHODS.has(type) ? tr(`wizard.method.${type}`) : type
+}
+
 /** 生成解读 Prompt */
-function buildInterpretPrompt(analysis: ParsedAnalysis): string {
+export function buildInterpretPrompt(analysis: ParsedAnalysis): string {
   const tableText = analysis.tables
     .map((t) => {
       const header = t.headers.join('\t')
@@ -20,26 +51,20 @@ function buildInterpretPrompt(analysis: ParsedAnalysis): string {
     .map(([k, v]) => `${k} = ${v}`)
     .join(', ')
 
-  return `你是一位学术论文写作专家。请根据以下统计分析结果，撰写一段符合中文学术期刊风格的结果解读文字。
+  // 假设检验诊断（正态性、方差齐性、效应量等）——v0.2.6 由解析器带内提供，
+  // 送进 Prompt 能让解读明确写出"是否满足 t 检验前提"这类关键判断。
+  const diagnosticsText =
+    analysis.diagnostics && analysis.diagnostics.length > 0
+      ? analysis.diagnostics.map((d) => `${d.label}: ${d.value}`).join('\n')
+      : tr('ai.interpretPrompt.none')
 
-要求：
-1. 使用第三人称、过去时态（如"结果显示"、"数据分析表明"）
-2. 按照 APA 格式报告统计量（如 t(28) = 2.45, p = 0.021）
-3. 先报告统计结果，再给出结论性解读
-4. 如果 p < 0.05，明确指出差异/关联"显著"；如果 p ≥ 0.05，指出"不显著"
-5. 语言简洁专业，适合直接粘贴到毕业论文的"结果"章节
-6. 不要添加主观臆测，只基于数据说话
-7. 输出纯文本，不要 Markdown 格式
-
-分析类型：${analysis.type}
-
-关键数值：${kvText}
-
-三线表数据：
-${tableText}
-
-原始 R 输出：
-${analysis.rawOutput.substring(0, 2000)}`
+  return tr('ai.interpretPrompt', {
+    method: methodLabel(analysis.type),
+    keyValues: kvText || tr('ai.interpretPrompt.none'),
+    diagnostics: diagnosticsText,
+    tables: tableText || tr('ai.interpretPrompt.none'),
+    rawOutput: analysis.rawOutput.substring(0, 2000)
+  })
 }
 
 /** 调用 AI 生成解读 */

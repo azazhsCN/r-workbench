@@ -1,7 +1,10 @@
 name: Stat-Correctness-Validation
 
-# 统计正确性验证：对新提交/PR 运行 R Workbench 的统计验证脚本，
-# 并作为论文 Table 2 声称的可复现证据。
+# 统计正确性验证（T10）：
+#   1) 用 node + esbuild 打包 src/renderer/src/services/rService.ts 并调用**真实生成器**，
+#      把产出的 R 代码与配套数据写到 scripts/validate/generated/（不再手抄副本）；
+#   2) 用 R 执行这些真实生成的脚本，并与**独立 oracle**（手算闭式解/精确零分布/第二个包）比较；
+#   3) 任何 FAIL 都会让脚本 quit(status = 1)，因此本 job 具备真实的拦截能力（修复 F7）。
 on:
   push:
     branches: [master, main]
@@ -9,11 +12,14 @@ on:
       - 'src/renderer/src/services/rService.ts'
       - 'src/renderer/src/services/resultParser.ts'
       - 'src/renderer/src/services/plotService.ts'
+      # 生成器依赖 utils.ts 的 rEscape，改动同样需要重跑验证
+      - 'src/renderer/src/services/utils.ts'
       - 'scripts/validate/**'
   pull_request:
     paths:
       - 'src/renderer/src/services/rService.ts'
       - 'src/renderer/src/services/resultParser.ts'
+      - 'src/renderer/src/services/utils.ts'
       - 'scripts/validate/**'
   workflow_dispatch: {}   # 允许手动触发
 
@@ -24,25 +30,53 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
-      # GitHub runner 默认无 R，用 r-lib 官方 action 安装（纯净 base R 即可，无需额外包）
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      # run_validation.R 会调用 node scripts/validate/generate_fixtures.mjs，
+      # 该脚本依赖 node_modules 里的 esbuild 来打包 rService.ts
+      - name: 安装 npm 依赖（提供 esbuild）
+        run: npm ci
+
+      # GitHub runner 默认无 R，用 r-lib 官方 action 安装（本脚本仅需 base R）
       - name: 安装 R
         uses: r-lib/actions/setup-r@v2
         with:
-          r-version: 'release'   # 或固定 '4.3.1'
+          r-version: 'release'
 
-      - name: 运行统计验证（base R，无需额外依赖）
+      - name: 运行统计验证（真实生成器 + 独立 oracle；失败即非 0 退出）
         run: Rscript scripts/validate/run_validation.R
 
       - name: 上传验证输出（作为补充材料 / 论文证据）
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: validation-results
           path: |
             scripts/validate/VALIDATION_RESULTS.md
-            scripts/validate/*.txt
+            scripts/validate/generated/**
           if-no-files-found: ignore
 
-  # 兜底：若 R 环境安装失败（离线/镜像问题），至少校验脚本语法与结构
+  # 编译门禁：R 脚本绿了但应用编译不过，正是 13 个 typecheck 错误累积至今的直接原因（T11）
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: 安装依赖
+        run: npm ci
+      - name: 构建应用（build 脚本先跑两个 typecheck 目标）
+        run: npm run build
+
+  # 兜底：若 R / Node 环境安装失败（离线/镜像问题），至少校验脚本结构
   syntax-check:
     runs-on: ubuntu-latest
     steps:
@@ -50,4 +84,6 @@ jobs:
       - name: 校验脚本存在
         run: |
           test -f scripts/validate/run_validation.R && echo "run_validation.R 存在" || (echo "缺少 run_validation.R" && exit 1)
+          test -f scripts/validate/generate_fixtures.mjs && echo "generate_fixtures.mjs 存在" || (echo "缺少 generate_fixtures.mjs" && exit 1)
+          test -f scripts/validate/check-officecli.cjs && echo "check-officecli.cjs 存在" || (echo "缺少 check-officecli.cjs" && exit 1)
           test -f scripts/validate/README.md && echo "README.md 存在" || exit 1

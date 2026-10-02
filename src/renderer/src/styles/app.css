@@ -325,6 +325,20 @@
   color: var(--text-inverse);
 }
 
+/* 系统提示气泡（"请先配置 API Key" / "请先导入数据"）。
+   v0.2.6 之前没有任何规则，只能靠 .chat-bubble 基础样式勉强显示，与普通消息难以区分。 */
+.chat-bubble.system {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning);
+  border-left-width: 3px;
+  color: var(--text-primary);
+}
+
+.chat-avatar.system {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
 .chat-input-area {
   padding: 16px 28px;
   background: var(--bg-primary);

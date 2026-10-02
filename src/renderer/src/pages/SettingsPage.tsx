@@ -34,9 +34,11 @@ type VerifyStatus = 'idle' | 'testing' | 'success' | 'fail'
 export default function SettingsPage() {
   const { t } = useTranslation()
   const { refreshConfig } = useAI()
-  const { status: rStatus, detecting: rDetecting, detect: rDetect } = useR()
+  const { status: rStatus, detecting: rDetecting, error: rError, detect: rDetect } = useR()
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS)
   const [saved, setSaved] = useState(false)
+  /** 输入框里的 Key 是否来自本机安全存储（而非用户刚刚输入） */
+  const [keyLoaded, setKeyLoaded] = useState(false)
 
   // 验证状态
   const [verifyStatus, setVerifyStatus] = useState<VerifyStatus>('idle')
@@ -50,13 +52,38 @@ export default function SettingsPage() {
   ]
 
   useEffect(() => {
-    const saved = localStorage.getItem('rworkbench_settings')
-    if (saved) {
-      try {
-        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(saved) })
-      } catch {
-        // ignore
+    let cancelled = false
+    const loadStoredSettings = async () => {
+      let stored: AppSettings = DEFAULT_SETTINGS
+      const raw = localStorage.getItem('rworkbench_settings')
+      if (raw) {
+        try {
+          stored = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
+        } catch {
+          // ignore
+        }
       }
+      if (cancelled) return
+      setSettings(stored)
+
+      // handleSave 不会把 API Key 写进 localStorage（只进 safeStorage），
+      // 因此这里必须主动读回来：否则每次重启后「验证连接」都必定失败，
+      // 提示"请先填写完整的 API Key"，即使 key 已安全保存。
+      if (!stored.aiApiKey && window.api?.config) {
+        try {
+          const key = await window.api.config.loadApiKey(stored.aiProvider)
+          if (!cancelled && key) {
+            setSettings((prev) => ({ ...prev, aiApiKey: key }))
+            setKeyLoaded(true)
+          }
+        } catch {
+          // safeStorage 不可用（如缺少密钥环）时静默回退到手动输入
+        }
+      }
+    }
+    void loadStoredSettings()
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -77,16 +104,34 @@ export default function SettingsPage() {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const handleProviderChange = (providerId: string) => {
+  const handleProviderChange = async (providerId: string) => {
     const provider = PROVIDERS.find((p) => p.id === providerId)
+    const isCustom = providerId === 'custom'
     setSettings((prev) => ({
       ...prev,
       aiProvider: providerId,
-      aiBaseUrl: provider?.baseUrl || prev.aiBaseUrl,
+      // 自定义服务商必须清空地址：保留上一服务商的 URL（旧的
+      // `provider?.baseUrl || prev.aiBaseUrl`）会让用户以为指向本地服务，
+      // 实际仍把 API Key 发往 DeepSeek。
+      aiBaseUrl: isCustom ? '' : provider?.baseUrl ?? '',
       aiModel: '' // 切换服务商清空模型名，让用户重新填写
     }))
     setVerifyStatus('idle')
     setVerifyMsg('')
+    setKeyLoaded(false)
+
+    // 换服务商后重新载入该服务商自己的 Key（不同服务商的 Key 不通用）
+    if (window.api?.config) {
+      try {
+        const key = await window.api.config.loadApiKey(providerId)
+        setSettings((prev) => ({ ...prev, aiApiKey: key || '' }))
+        setKeyLoaded(Boolean(key))
+      } catch {
+        setSettings((prev) => ({ ...prev, aiApiKey: '' }))
+      }
+    } else {
+      setSettings((prev) => ({ ...prev, aiApiKey: '' }))
+    }
   }
 
   /** 验证 AI 连接是否可用 */
@@ -206,9 +251,15 @@ export default function SettingsPage() {
               value={settings.aiApiKey}
               onChange={(e) => {
                 setSettings((prev) => ({ ...prev, aiApiKey: e.target.value }))
+                setKeyLoaded(false)
                 setVerifyStatus('idle')
               }}
             />
+            {keyLoaded && (
+              <div style={{ fontSize: 12, color: 'var(--success)', marginTop: 4 }}>
+                {t('settings.ai.apiKey.loaded')}
+              </div>
+            )}
           </div>
 
           {/* API Base URL */}
@@ -296,7 +347,9 @@ export default function SettingsPage() {
                 {t('settings.r.status')}
               </div>
               <div className="settings-desc">
-                {rStatus.found
+                {rError
+                  ? `⚠️ ${t('settings.r.detectError', { error: rError })}`
+                  : rStatus.found
                   ? t('settings.r.detectedWith', { version: rStatus.version, path: rStatus.path })
                   : t('settings.r.notDetectedHint')}
               </div>
@@ -310,7 +363,24 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          {!rStatus.found && (
+          {/* R 检测过程失败：与"未安装 R"区分开，否则会误导用户重装一个正常的 R */}
+          {rError && (
+            <div
+              style={{
+                background: 'var(--error-bg)',
+                border: '1px solid var(--error)',
+                borderRadius: 'var(--radius-md)',
+                padding: 12,
+                marginTop: 12,
+                fontSize: 13,
+                color: 'var(--error)'
+              }}
+            >
+              {t('settings.r.detectError', { error: rError })}
+            </div>
+          )}
+
+          {!rStatus.found && !rError && (
             <div
               style={{
                 background: 'var(--warning-bg)',
@@ -345,14 +415,14 @@ export default function SettingsPage() {
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {[
-                { name: 'ggplot2', desc: '图表绘制' },
-                { name: 'psych', desc: '信效度分析' },
-                { name: 'lavaan', desc: '结构方程模型' },
-                { name: 'mediation', desc: '中介效应' },
-                { name: 'pROC', desc: 'ROC 曲线' },
-                { name: 'survival', desc: '生存分析' },
+                { name: 'ggplot2', descKey: 'settings.r.package.ggplot2' },
+                { name: 'psych', descKey: 'settings.r.package.psych' },
+                { name: 'lavaan', descKey: 'settings.r.package.lavaan' },
+                { name: 'mediation', descKey: 'settings.r.package.mediation' },
+                { name: 'pROC', descKey: 'settings.r.package.pROC' },
+                { name: 'survival', descKey: 'settings.r.package.survival' },
               ].map((pkg) => (
-                <RPackageCard key={pkg.name} name={pkg.name} desc={pkg.desc} />
+                <RPackageCard key={pkg.name} name={pkg.name} desc={t(pkg.descKey)} />
               ))}
             </div>
           </div>

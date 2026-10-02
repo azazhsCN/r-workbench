@@ -14,11 +14,20 @@
     "isolatedModules": true,
     "target": "ESNext",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"]
+    "types": ["vite/client", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@renderer/*": ["src/renderer/src/*"],
+      "@preload/*": ["src/preload/*"],
+      "sav-reader": ["./node_modules/sav-reader/dist/index.d.ts"]
+    }
   },
   "include": [
     "src/renderer/**/*.ts",
     "src/renderer/**/*.tsx",
-    "src/shared/**/*.ts"
+    "src/renderer/**/*.json",
+    "src/shared/**/*.ts",
+    "src/preload/**/*.ts"
   ]
 }

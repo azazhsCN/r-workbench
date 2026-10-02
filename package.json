@@ -1,6 +1,6 @@
 {
   "name": "r-workbench",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "R Workbench - AI驱动的R语言数据分析工作台，替代SPSS的开源方案",
   "main": "./out/main/index.js",
   "keywords": [
@@ -25,17 +25,26 @@
   "homepage": "https://github.com/azazhsCN/r-workbench#readme",
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "build": "npm run typecheck:node && npm run typecheck:web && electron-vite build",
+    "build:only": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
-    "build:unpack": "npm run build && electron-builder --dir",
-    "build:win": "npm run build && electron-builder --win",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux",
+    "check:officecli": "node scripts/validate/check-officecli.cjs",
+    "build:unpack": "npm run check:officecli && npm run build && electron-builder --dir",
+    "build:win": "npm run check:officecli && npm run build && electron-builder --win",
+    "build:mac": "npm run check:officecli && npm run build && electron-builder --mac",
+    "build:linux": "npm run check:officecli && npm run build && electron-builder --linux",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "lint": "eslint src/"
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify:sav": "node scripts/validate/verify.cjs",
+    "verify:ipc": "node scripts/validate/verify_ipc.cjs",
+    "verify:lazy": "node scripts/validate/lazy_r_check.cjs",
+    "verify:negcache": "node scripts/validate/negcache_r_check.cjs",
+    "verify:packaged": "node scripts/validate/packaged_app_check.cjs"
   },
   "dependencies": {
     "i18next": "^26.4.2",
@@ -64,7 +73,8 @@
     "prettier": "^3.8.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.61.0",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^3.2.7"
   },
   "build": {
     "extends": "./electron-builder.json5"

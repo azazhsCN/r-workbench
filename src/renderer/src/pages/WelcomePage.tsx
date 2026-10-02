@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { PageType } from '../App'
 import { SAMPLE_DATASETS } from '../data/sampleDatasets'
@@ -11,6 +12,24 @@ interface WelcomePageProps {
 export default function WelcomePage({ onNavigate }: WelcomePageProps) {
   const { t } = useTranslation()
   const { setDataset } = useData()
+
+  // 版本号从主进程动态读取：此前语言包里硬编码 "v0.2.5"，
+  // 每次发版都会与实际版本漂移。
+  const [appVersion, setAppVersion] = useState<string>('')
+  useEffect(() => {
+    let cancelled = false
+    window.api?.app
+      ?.getInfo()
+      .then((info) => {
+        if (!cancelled && info?.version) setAppVersion(info.version)
+      })
+      .catch(() => {
+        /* 读取失败时退化为不显示版本号，而不是显示错误版本 */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const quickActions = [
     {
@@ -113,7 +132,7 @@ export default function WelcomePage({ onNavigate }: WelcomePageProps) {
           textAlign: 'center'
         }}
       >
-        {t('app.version')}
+        {appVersion ? t('app.version', { version: appVersion }) : 'R Workbench'}
       </div>
     </div>
   )
