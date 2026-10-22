@@ -174,6 +174,54 @@ const normNormal = [-1.83, -1.42, -1.25, -1.01, -0.84, -0.62, -0.51, -0.33, -0.1
 const normSkewed = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.9, 1.0, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 4.0, 5.0, 6.2, 7.8, 9.5, 12.0]
 const normRows = normNormal.map((v, i) => [String(v), String(normSkewed[i])])
 
+/**
+ * EFA 数据：6 个题项、已知 2 因子结构。
+ *
+ * 构造方式（确定性，不依赖随机数，保证 fixtures 可复现）：
+ *   - 因子 1 驱动 q1-q3（载荷约 0.8）
+ *   - 因子 2 驱动 q4-q6（载荷约 0.8）
+ *   - 两因子正交，题项带独立噪声
+ *
+ * 期望结果：Kaiser 准则抽出 2 个因子；q1-q3 归入同一因子、q4-q6 归入另一因子；
+ * 且**任一同题项在另一因子上的载荷接近 0**（区分效度的直接证据）。
+ *
+ * 数据用"确定性三角波 + 相位"生成，避免随机的不可复现性：
+ *   f1(i) = sin(2πi/13), f2(i) = cos(2πi/7 + 0.5)
+ */
+const efaCols = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6']
+const efaN = 120
+const efaRows = Array.from({ length: efaN }, (_, i) => {
+  const f1 = Math.sin((2 * Math.PI * i) / 13)
+  const f2 = Math.cos((2 * Math.PI * i) / 7 + 0.5)
+  // 确定性"噪声"：高频三角波，与两个因子的周期互质，避免共线
+  const noise = (k) => 0.45 * Math.sin((2 * Math.PI * i * (k + 3)) / 29 + k)
+  const v = (loading, factor, k) => (4 + loading * factor + noise(k)).toFixed(4)
+  return [v(0.8, f1, 0), v(0.78, f1, 1), v(0.75, f1, 2), v(0.8, f2, 3), v(0.77, f2, 4), v(0.74, f2, 5)]
+})
+
+/**
+ * EFA 3 因子数据（9 题项）。
+ *
+ * 为什么需要它：只有 2 因子数据时，即便实现把因子数硬编码成 2 也照样通过——
+ * 测试不具判别力。这份数据要求实现**真正按 Kaiser 准则选出 3 个因子**。
+ *   a1-a3 → 因子 1；b1-b3 → 因子 2；c1-c3 → 因子 3
+ */
+const efa9Cols = ['a1', 'a2', 'a3', 'b1', 'b2', 'b3', 'c1', 'c2', 'c3']
+const efa9N = 150
+const efa9Rows = Array.from({ length: efa9N }, (_, i) => {
+  const f1 = Math.sin((2 * Math.PI * i) / 11)
+  const f2 = Math.cos((2 * Math.PI * i) / 7 + 0.3)
+  const f3 = Math.sin((2 * Math.PI * i) / 5 + 1.1)
+  const noise = (k) => 0.4 * Math.sin((2 * Math.PI * i * (k + 2)) / 31 + k)
+  const v = (loading, factor, k) => (4 + loading * factor + noise(k)).toFixed(4)
+  return [
+    v(0.82, f1, 0), v(0.79, f1, 1), v(0.76, f1, 2),
+    v(0.81, f2, 3), v(0.78, f2, 4), v(0.75, f2, 5),
+    v(0.8, f3, 6), v(0.77, f3, 7), v(0.74, f3, 8)
+  ]
+})
+
+
 const freqCols = ['edu']
 // 注意：R 的 read.csv(blank.lines.skip=TRUE) 会整行丢弃全空行，因此缺失值用
 // 字面量 "NA"（read.csv 默认 na.strings="NA" → NA），保证那一行仍然存在。
@@ -272,6 +320,21 @@ const scenarios = [
     rows: relRows,
     desc: "Cronbach's α（5 个项目，含 1 个缺失值）",
     code: (R, csv) => R.reliabilityCode(['q1', 'q2', 'q3', 'q4', 'q5'], csv)
+  },
+  {
+    method: 'efa',
+    cols: efaCols,
+    rows: efaRows,
+    desc: '探索性因子分析（6 题项、已知 2 因子结构、纯 base R 实现）',
+    code: (R, csv) => R.efaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'], undefined, csv)
+  },
+  {
+    method: 'efa',
+    dataset: 'efa_3factors',
+    cols: efa9Cols,
+    rows: efa9Rows,
+    desc: '探索性因子分析（9 题项、已知 3 因子结构 —— 用于验证因子数不是碰巧等于 2）',
+    code: (R, csv) => R.efaCode(['a1', 'a2', 'a3', 'b1', 'b2', 'b3', 'c1', 'c2', 'c3'], undefined, csv)
   },
   {
     method: 'normality',

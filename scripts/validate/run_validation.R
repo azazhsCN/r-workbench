@@ -81,11 +81,12 @@ manifest <- do.call(rbind, lapply(strsplit(mf, "|", fixed = TRUE), function(p) {
              desc = if (length(p) >= 5) p[5] else "", stringsAsFactors = FALSE)
 }))
 
-## 期望覆盖的 13 个方法（少一个即 FAIL，防止验证范围被悄悄缩小）
+## 期望覆盖的方法（少一个即 FAIL，防止验证范围被悄悄缩小）
 CANONICAL_METHODS <- c(
   "descriptive", "ttest_independent", "ttest_paired", "anova", "chisquare",
   "correlation", "regression", "reliability", "ttest_one", "normality",
-  "nonparametric", "frequency", "summary_by"
+  "nonparametric", "frequency", "summary_by",
+  "efa"
 )
 
 ## ---- 2. 报告与断言工具 ----------------------------------------------------
@@ -696,6 +697,127 @@ check_banner <- function(method, dataset, out, expected_banner) {
           length(got) > 0 && startsWith(got[1], expected_banner))
 }
 
+## 4.16 探索性因子分析（v0.3.0，纯 base R 实现）
+##
+## 独立 oracle 策略：**从另一条等价路径复算**，不复用被测实现的代码：
+##   - Bartlett：被测用 `log(det(R))`，oracle 用 `determinant(R, logarithm=TRUE)`
+##   - KMO：被测用 `solve(R)`，oracle 用 `chol2inv(chol(R))`（Cholesky 求逆）
+##   - 特征值：oracle 独立调用 eigen，检查不变量 Σλ = p
+##   - 载荷：oracle 独立做 eigen + varimax，逐值比对
+##   - 共同度：正交旋转不变量（旋转前后必须一致）
+##   - 结构效度：已知数据下 q1-q3 与 q4-q6 必须分属不同因子
+oracle_efa <- function(method, dataset, kv, out, data) {
+  kmo_got <- gfn(kv, "KMO")
+  chi_got <- gfn(kv, "BARTLETT", 1, 1)
+  df_got <- gfn(kv, "BARTLETT", 1, 2)
+  nfac_got <- gfn(kv, "NFACTOR")
+
+  if (is.na(kmo_got) || is.na(chi_got) || is.na(nfac_got)) {
+    add_row(method, dataset, "output_present", 1, 0, FALSE)
+    return(invisible(NULL))
+  }
+
+  # 按数据集确定题项列与"真实"因子结构（用于结构效度断言）
+  spec <- if (dataset == "efa_3factors") {
+    list(items = c("a1", "a2", "a3", "b1", "b2", "b3", "c1", "c2", "c3"),
+         true_k = 3L,
+         groups = list(1:3, 4:6, 7:9))
+  } else {
+    list(items = c("q1", "q2", "q3", "q4", "q5", "q6"),
+         true_k = 2L,
+         groups = list(1:3, 4:6))
+  }
+
+  # ---- 独立复算：从 fixtures 数据重新读，走完全不同的求逆路径 ----
+  X <- data[, spec$items, drop = FALSE]
+  X <- X[complete.cases(X), , drop = FALSE]
+  n <- nrow(X)
+  p <- ncol(X)
+  R <- cor(X)
+  ev <- eigen(R, symmetric = TRUE, only.values = TRUE)$values
+
+  # KMO via Cholesky（与被测的 solve() 不同路径）
+  Rinv_c <- chol2inv(chol(R))
+  dq <- diag(Rinv_c)
+  Qc <- -Rinv_c / sqrt(outer(dq, dq))
+  diag(Qc) <- 0
+  R2 <- R^2
+  diag(R2) <- 0
+  kmo_exp <- sum(R2) / (sum(R2) + sum(Qc^2))
+  chk_num(method, dataset, "kmo", kmo_exp, kmo_got)
+
+  # Bartlett via determinant()（与被测的 log(det()) 不同路径）
+  chi_exp <- -(n - 1 - (2 * p + 5) / 6) * as.numeric(determinant(R, logarithm = TRUE)$modulus)
+  chk_num(method, dataset, "bartlett_chisq", chi_exp, chi_got)
+  chk_eq(method, dataset, "bartlett_df", p * (p - 1) / 2, df_got)
+
+  # 不变量：Σλ = p
+  chk_num(method, dataset, "eigen_sum_equals_p", p, sum(ev), tol = 1e-8)
+
+  # Kaiser 准则
+  nfac_exp <- sum(ev > 1)
+  chk_eq(method, dataset, "n_factors_kaiser", nfac_exp, nfac_got)
+
+  # ---- 载荷：独立 eigendecomposition + varimax，逐值比对 ----
+  nf <- as.integer(nfac_got)
+  eig_full <- eigen(R, symmetric = TRUE)
+  L_raw <- eig_full$vectors[, seq_len(nf), drop = FALSE] %*% diag(sqrt(ev[seq_len(nf)]), nf)
+  L_exp <- if (nf > 1) unclass(stats::varimax(L_raw)$loadings) else L_raw
+  rownames(L_exp) <- spec$items
+  # 符号规范（数据无关的约定，与实现同一规则）
+  for (j in seq_len(ncol(L_exp))) {
+    k <- which.max(abs(L_exp[, j]))
+    if (L_exp[k, j] < 0) L_exp[, j] <- -L_exp[, j]
+  }
+
+  # 共同度不变量：正交旋转不改变 Σ(载荷²)
+  comm_before <- rowSums(L_raw^2)
+  comm_after <- rowSums(L_exp^2)
+  chk_num(method, dataset, "communality_invariant",
+          max(abs(comm_before - comm_after)), 0, tol = 1e-8)
+
+  # 逐题项载荷比对
+  load_lines <- kv[["LOAD"]]
+  if (!is.null(load_lines) && length(load_lines) == p) {
+    max_diff <- 0
+    for (i in seq_len(p)) {
+      # LOAD|item|v1..vnf|communality
+      got <- suppressWarnings(as.numeric(unlist(load_lines[[i]][2:(nf + 1)])))
+      exp <- as.numeric(L_exp[i, ])
+      if (all(is.finite(got))) max_diff <- max(max_diff, max(abs(got - exp)))
+    }
+    chk_num(method, dataset, "loadings_max_abs_diff", 0, max_diff, tol = 1e-3)
+  }
+
+  # ---- 结构效度：已知因子结构须被恢复 ----
+  # 对 2 因子数据：q1-q3 同因子、q4-q6 同因子、两因子不同
+  # 对 3 因子数据：a/b/c 三组各自同因子、三组互不相同
+  # 关键：同时断言**因子数等于真实因子数**——否则"因子数硬编码为 2"这类
+  # 实现缺陷会在 2 因子数据上蒙混过关（本审查实测发现过这个盲点）。
+  prim_lines <- kv[["PRIMARY"]]
+  if (!is.null(prim_lines) && length(prim_lines) == p) {
+    prim <- suppressWarnings(as.integer(unlist(lapply(prim_lines, function(z) z[2]))))
+    if (all(is.finite(prim))) {
+      groups_ok <- all(vapply(spec$groups, function(g) length(unique(prim[g])) == 1, logical(1)))
+      # 各组的主因子互不相同
+      group_reps <- vapply(spec$groups, function(g) prim[g[1]], integer(1))
+      distinct_ok <- length(unique(group_reps)) == length(spec$groups)
+      ok_struct <- groups_ok && distinct_ok
+      chk_eq(method, dataset, "structure_recovered", "TRUE", if (ok_struct) "TRUE" else "FALSE")
+    }
+  }
+
+  # ---- 因子数须等于真实结构（防止实现硬编码因子数）----
+  chk_eq(method, dataset, "n_factors_matches_truth", spec$true_k, nf)
+
+  # ---- 载荷表列数 = 因子数 + 2（item + nf + communality）----
+  head_fields <- kv[["LOAD_HEAD"]]
+  if (!is.null(head_fields) && length(head_fields) >= 1) {
+    cols <- length(head_fields[[1]])
+    chk_eq(method, dataset, "loading_table_cols", nf + 2, cols)
+  }
+}
+
 ## ---- 5. 主循环 ------------------------------------------------------------
 # 生成器产出的代码用相对文件名 read.csv("xxx.csv")，因此执行期间必须把工作目录
 # 切到 fixtures 目录。脚本自身所有读写都用绝对路径，不受影响。
@@ -722,7 +844,9 @@ oracle_map <- list(  descriptive = oracle_descriptive,
   normality = oracle_normality,
   nonparametric = oracle_nonparametric,
   frequency = oracle_frequency,
-  summary_by = oracle_summary_by
+  summary_by = oracle_summary_by,
+  efa = oracle_efa,
+  efa_3factors = oracle_efa
 )
 banner_map <- c(
   descriptive = "=== 描述性统计 ===",
@@ -738,7 +862,9 @@ banner_map <- c(
   normality = "=== 正态性检验 (Shapiro-Wilk) ===",
   nonparametric = "=== 非参数检验 (Mann-Whitney U) ===",
   frequency = "=== 频数统计 ===",
-  summary_by = "=== 分类汇总 ==="
+  summary_by = "=== 分类汇总 ===",
+  efa = "=== 探索性因子分析 (EFA) ===",
+  efa_3factors = "=== 探索性因子分析 (EFA) ==="
 )
 
 for (i in seq_len(nrow(manifest))) {
@@ -821,7 +947,7 @@ for (r in report) {
 cat("\n==========================================================\n")
 cat("验证汇总\n")
 cat("==========================================================\n")
-cat(sprintf("方法覆盖（canonical 13 个）：%d / %d\n",
+cat(sprintf("方法覆盖（canonical）：%d / %d\n",
             length(intersect(CANONICAL_METHODS, covered)), length(CANONICAL_METHODS)))
 cat(sprintf("断言总数：%d（PASS %d / FAIL %d）\n", n_tot, n_ok, n_tot - n_ok))
 if (length(missing_methods) > 0) {

@@ -42,8 +42,13 @@ const READ_CSV =
  * 定义 fmt_p / num 两个助手，供各生成器复用。
  *   fmt_p(p) -> "p < 0.001" 或 "p = 0.026"
  *   num(x, d) -> 定长数值字符串，NA 输出 "NA"
+ *
+ * ⚠️ 必须用 String.raw：本常量含大量 R 的反斜杠转义（"\\n"、"\\\\"）。
+ * 普通模板字符串会把 `\n` 变成真实换行、把 `\"` 变成引号，导致生成的 R
+ * 脚本语法错乱——曾实测 `gsub("\\\\", ...)` 被降级成 `gsub("\\", ...)`，
+ * R 报 `unexpected string constant`。R_COMMON 内**不要**写 ${} 插值。
  */
-const R_COMMON = `
+const R_COMMON = String.raw`
 # APA 风格 p 值：p < .001 时输出 "p < 0.001"，否则保留 3 位小数。
 # 注意：formatC 宽度为 0 时不会补前导空格，避免出现 "p =        0" 这种
 # 让解析器与用户都困惑的输出。
@@ -80,6 +85,109 @@ p_of_test <- function(t) {
 try_num <- function(expr) {
   tryCatch(suppressWarnings(as.numeric(expr)), error = function(e) NA_real_)
 }
+
+# ─────────────────────────────────────────────────────────────
+# 结构化输出（v0.3.0 / T41）
+#
+# 用于根治"文本 + 固定下标"接口的脆弱性。v0.2.x 中解析器用 split('|')
+# 后按硬编码下标取值，已造成四次真实事故（ANOVA 读错列、负数被删、
+# 独立样本 t 的均值差取成 CI 下限、单样本 t 的 CI 下限取成 p 值）。
+#
+# 这里刻意**不依赖 jsonlite**：它不在 R 的 base/recommended 集合里，
+# 装不上的机器会让整条 JSON 通道不可用。base R 手工构造完全够用，
+# 且能精确控制数值精度（jsonlite 默认会做 digits 截断）。
+# ─────────────────────────────────────────────────────────────
+
+# 字符串 -> JSON 字符串。
+# 不用 gsub：gsub 的 replacement 参数会把反斜杠再解释一遍，多层转义极难写对，
+# 实测曾生成无法解析的 JSON（引号与反斜杠嵌套错位）。
+# 逐字符显式映射一目了然，且不需要考虑正则元字符。
+#
+# 注意：本项目的 R 代码规范要求 if/else 一律用花括号包裹（见 generator-parse 契约
+# 测试），因此这里用嵌套 if 而非 else-if 链——后者会让上一行不以 } 结尾。
+jstr <- function(s) {
+  if (is.null(s) || length(s) == 0) {
+    return("null")
+  }
+  s <- as.character(s)[1]
+  if (is.na(s)) {
+    return("null")
+  }
+  ch <- strsplit(s, "", fixed = TRUE)[[1]]
+  if (length(ch) == 0) {
+    return("\"\"")
+  }
+  esc <- vapply(ch, function(c1) {
+    if (c1 == "\\") {
+      "\\\\"
+    } else {
+      if (c1 == "\"") {
+        "\\\""
+      } else {
+        if (c1 == "\n") {
+          "\\n"
+        } else {
+          if (c1 == "\r") {
+            "\\r"
+          } else {
+            if (c1 == "\t") {
+              "\\t"
+            } else {
+              c1
+            }
+          }
+        }
+      }
+    }
+  }, character(1), USE.NAMES = FALSE)
+  paste0("\"", paste(esc, collapse = ""), "\"")
+}
+
+# 数值 → JSON 数字。NA/NaN/Inf 一律 null（JSON 无这些字面量）。
+# 用 15 位有效数字的科学计数，确保 1.67e-31 这类 p 值不丢精度。
+jnum <- function(x) {
+  if (is.null(x) || length(x) == 0) return("null")
+  v <- suppressWarnings(as.numeric(x[1]))
+  if (is.na(v) || !is.finite(v)) return("null")
+  format(v, scientific = TRUE, digits = 15)
+}
+
+# 逻辑值 → JSON 布尔；NA 为 null
+jbool <- function(x) {
+  if (is.null(x) || length(x) == 0) return("null")
+  if (isTRUE(x)) return("true")
+  if (identical(x, FALSE)) return("false")
+  "null"
+}
+
+# 数值向量 → JSON 数组
+jarr_num <- function(xs) {
+  if (is.null(xs) || length(xs) == 0) return("[]")
+  paste0("[", paste(vapply(xs, jnum, character(1)), collapse = ","), "]")
+}
+
+# 字符串向量 → JSON 数组
+jarr_str <- function(xs) {
+  if (is.null(xs) || length(xs) == 0) return("[]")
+  paste0("[", paste(vapply(xs, jstr, character(1)), collapse = ","), "]")
+}
+
+# p 值对象：原始值供程序判断，display 供论文引用
+jp <- function(p) {
+  sprintf('{"value":%s,"display":%s}', jnum(p), jstr(fmt_p(p)))
+}
+
+# 诊断对象
+jdiag <- function(id, label, value, ok, hint = NULL) {
+  sprintf('{"id":%s,"label":%s,"value":%s,"ok":%s%s}',
+    jstr(id), jstr(label), jstr(value), jbool(ok),
+    if (is.null(hint)) "" else sprintf(',"hint":%s', jstr(hint)))
+}
+
+# 输出结构化结果。R 侧统一在正文末尾打印一行 __RWB_JSON__<json>，
+# 主进程按哨兵切分，前端优先走 JSON、失败则回退文本解析。
+# 用 on.exit 之外的显式调用，便于生成器按需附加字段。
+jemit <- function(json) cat("__RWB_JSON__", json, "\n", sep = "")
 `
 
 /** APA 风格 p 值行：`p < 0.001` / `p = 0.026` */
@@ -627,6 +735,204 @@ for (lv in levels_g) {
   }
 }
 cat(sprintf("TOTAL|%d|%s|%s\\n", length(v), num(mean(v)), num(sd(v))))
+`
+  }
+
+  /**
+   * 探索性因子分析（EFA）—— 纯 base R 实现，**不依赖 psych / GPArotation**
+   *
+   * 为什么不用 psych::fa / KMO：
+   *   psych 是编译型重包（依赖 mnormt 等），装不上的机器会让整个问卷效度线不可用。
+   *   EFA 的全部计算（相关矩阵、Bartlett、KMO、特征值分解、varimax 旋转）都能用
+   *   base R + stats 完成，且 `stats::varimax` 本身就是 base R 自带的。
+   *   实测（300 样本、2 因子已知结构）载荷完美恢复，主因子归属逐题正确。
+   *
+   * 方法学说明：
+   *   - 因子抽取用**主成分法**（PCA on correlation matrix）：载荷 = 特征向量 × √特征值。
+   *     这与 SPSS 的"主成分"抽取一致；不用主轴因子法（PAF）的迭代，因为 PAF 在
+   *     小样本/ Heywood case 下不收敛，且我们优先保证"能算出来且可解释"。
+   *   - 旋转用 `stats::varimax`（正交最大方差法），Kaiser 标准化。
+   *   - **载荷符号统一**：特征向量符号是任意的，若不处理会出现整列负载荷，
+   *     用户无法解释。这里按"列内绝对值最大者为正"翻转（与 psych 一致）。
+   *   - 因子数默认按 Kaiser 准则（特征值 > 1），也可由用户指定。
+   */
+  static efaCode(items: string[], nFactors?: number, dataFile = 'data.csv'): string {
+    const itemVec = items.map((v) => `"${rEscape(v)}"`).join(', ')
+    const forcedN = nFactors && nFactors > 0 ? String(Math.round(nFactors)) : 'NA'
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+${R_COMMON}
+cat("=== 探索性因子分析 (EFA) ===\\n")
+items <- c(${itemVec})
+forced_n <- ${forcedN}
+
+# 只保留全部题项都有效的样本（listwise 删除），并报告剔除量
+X_raw <- data[, items, drop = FALSE]
+ok <- complete.cases(X_raw)
+X <- X_raw[ok, , drop = FALSE]
+n_dropped <- sum(!ok)
+n <- nrow(X)
+if (n < 30) {
+  stop("有效样本不足（", n, " 行），因子分析至少需要 30 个完整样本")
+}
+p <- length(items)
+if (p < 3) {
+  stop("题项过少（", p, " 个），因子分析至少需要 3 个题项")
+}
+# 题项必须是数值
+for (nm in items) {
+  if (!is.numeric(X[[nm]])) {
+    stop("题项 ", nm, " 不是数值型，无法做因子分析")
+  }
+}
+
+R <- cor(X)
+# 相关矩阵必须可逆（无完全共线的题项）
+if (any(!is.finite(R))) {
+  stop("相关矩阵含非有限值，可能存在常量题项")
+}
+if (abs(det(R)) < 1e-12) {
+  stop("相关矩阵接近奇异（存在完全共线或重复的题项），无法求逆")
+}
+
+# ── Bartlett 球形检验（闭式解）──
+# H0: 相关矩阵为单位阵（变量间无相关）。显著则适合做因子分析。
+chi_sq <- -(n - 1 - (2 * p + 5) / 6) * log(det(R))
+df_b <- p * (p - 1) / 2
+p_b <- pchisq(chi_sq, df_b, lower.tail = FALSE)
+cat(sprintf("BARTLETT|%s|%d|%s|%s\\n", num(chi_sq, 4), df_b, fmt_p(p_b), num_p(p_b)))
+
+# ── KMO 取样适切性度量 ──
+# 基于相关矩阵的逆：对角置零后，整体 KMO = Σr² / (Σr² + Σq²)
+Rinv <- solve(R)
+dinv <- diag(Rinv)
+Q <- -Rinv / sqrt(outer(dinv, dinv))
+diag(Q) <- 0
+R2 <- R^2
+diag(R2) <- 0
+kmo_overall <- sum(R2) / (sum(R2) + sum(Q^2))
+# 逐题 KMO：该题的 r² 之和 / (r² 之和 + q² 之和)
+kmo_item <- rep(NA_real_, p)
+for (i in seq_len(p)) {
+  r2i <- sum(R2[i, ])
+  q2i <- sum(Q[i, ]^2)
+  kmo_item[i] <- r2i / (r2i + q2i)
+}
+cat(sprintf("KMO|%s\\n", num(kmo_overall, 4)))
+for (i in seq_len(p)) {
+  cat(sprintf("KMO_ITEM|%s|%s\\n", items[i], num(kmo_item[i], 4)))
+}
+
+# ── 特征值分解（相关矩阵对称，eigen 稳定）──
+eig <- eigen(R, symmetric = TRUE)
+ev <- eig$values
+# 显著负特征值说明相关矩阵病态（数据不满足因子分析前提），直接报错。
+if (any(ev < -1e-8)) {
+  stop("相关矩阵存在显著负特征值（最小 ", format(min(ev), digits = 4),
+       "），数据可能存在共线或重复题项，无法进行因子分析")
+}
+# 数值噪声级别的微小负值（如 -1e-16）必须截断为 0：
+# 否则 sqrt(负值) 会产生 NaN，而 NaN 会沿载荷矩阵扩散，最终让整张表变成 NaN，
+# 且**全程不报错**——用户拿到的是废数据却以为分析成功。
+# 这在小样本、题项多、或用户指定因子数接近 p-1 时真实可复现。
+n_neg_clipped <- sum(ev < 0)
+if (n_neg_clipped > 0) {
+  ev[ev < 0] <- 0
+}
+# 因子数：用户指定优先，否则 Kaiser 准则（>1），且至少 1 个、至多 p-1 个
+n_fac <- if (is.na(forced_n)) sum(ev > 1) else forced_n
+n_fac <- max(1L, min(as.integer(n_fac), p - 1L))
+# 防御：若所选范围内出现非正特征值，说明指定因子数超出数据支撑，
+# 自动收缩到"正特征值个数"，并明确告知用户而不是静默产出 NaN。
+n_positive <- sum(ev > 1e-10)
+if (n_fac > n_positive) {
+  cat(sprintf("NOTE_SHRINK|指定因子数 %d 超出数据支撑，已收缩为 %d（正特征值个数）\\n",
+    n_fac, max(1L, n_positive)))
+  n_fac <- max(1L, n_positive)
+}
+cat(sprintf("NFACTOR|%d\\n", n_fac))
+if (n_neg_clipped > 0) {
+  cat(sprintf("NOTE_CLIPPED|相关矩阵有 %d 个数值噪声级负特征值已截断为 0，结果不受影响\\n",
+    n_neg_clipped))
+}
+
+# 方差解释：每个因子的方差 = 特征值；占总方差比例 = 特征值 / p
+cum <- 0
+for (k in seq_len(n_fac)) {
+  vp <- ev[k] / p * 100
+  cum <- cum + vp
+  cat(sprintf("EIGEN|%d|%s|%s|%s\\n", k, num(ev[k], 4), num(vp, 2), num(cum, 2)))
+}
+
+# ── 主成分法载荷 ──
+L <- eig$vectors[, seq_len(n_fac), drop = FALSE] %*% diag(sqrt(ev[seq_len(n_fac)]), n_fac)
+rownames(L) <- items
+
+# ── varimax 正交旋转（stats 自带）──
+if (n_fac > 1) {
+  vr <- stats::varimax(L)
+  L_rot <- unclass(vr$loadings)
+} else {
+  L_rot <- L
+}
+rownames(L_rot) <- items
+colnames(L_rot) <- paste0("F", seq_len(n_fac))
+
+# ── 载荷符号统一 ──
+# 特征向量的整体符号是任意的。若不处理，可能整列都是负值，用户无法解释。
+# 规则：每列若绝对值最大的载荷为负，则整列取反（与 psych 的惯例一致）。
+for (j in seq_len(ncol(L_rot))) {
+  idx <- which.max(abs(L_rot[, j]))
+  if (L_rot[idx, j] < 0) {
+    L_rot[, j] <- -L_rot[, j]
+  }
+}
+
+# ── 输出载荷表 ──
+LOAD_HEAD <- paste0("LOAD_HEAD|item|", paste(colnames(L_rot), collapse = "|"), "|communality")
+cat(LOAD_HEAD, "\\n")
+for (i in seq_len(p)) {
+  vals <- vapply(L_rot[i, ], function(z) num(z, 4), character(1))
+  comm <- sum(L_rot[i, ]^2)
+  cat(sprintf("LOAD|%s|%s|%s\\n", items[i], paste(vals, collapse = "|"), num(comm, 4)))
+}
+
+# ── 主因子归属与聚类检查 ──
+prim <- apply(abs(L_rot), 1, which.max)
+for (i in seq_len(p)) {
+  cat(sprintf("PRIMARY|%s|%d\\n", items[i], prim[i]))
+}
+
+if (n_dropped > 0) {
+  cat(sprintf("NOTE_DROPPED|因缺失值采用整列删除，剔除 %d 行，有效样本 %d\\n", n_dropped, n))
+}
+
+# ── 结论（KMO + Bartlett 组合判断）──
+kmo_txt <- if (kmo_overall >= 0.9) {
+  "非常适合"
+} else {
+  if (kmo_overall >= 0.8) {
+    "适合"
+  } else {
+    if (kmo_overall >= 0.7) {
+      "尚可"
+    } else {
+      if (kmo_overall >= 0.6) {
+        "勉强"
+      } else {
+        "不适合"
+      }
+    }
+  }
+}
+if (p_b < 0.05 && kmo_overall >= 0.6) {
+  cat(sprintf("CONCL|KMO = %s（%s），Bartlett 检验显著（%s），数据%s做因子分析\\n",
+    num(kmo_overall, 3), kmo_txt, fmt_p(p_b), "适合"))
+} else {
+  cat(sprintf("CONCL|KMO = %s（%s），Bartlett 检验 %s，数据可能不适合做因子分析\\n",
+    num(kmo_overall, 3), kmo_txt, fmt_p(p_b)))
+}
 `
   }
 }

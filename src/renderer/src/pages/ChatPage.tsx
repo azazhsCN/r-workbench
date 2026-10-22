@@ -39,6 +39,29 @@ export default function ChatPage() {
   const { service: ai, isConfigured } = useAI()
   const { dataset, hasData } = useData()
   const { status: rStatus, error: rError } = useR()
+  /**
+   * AI 自动执行（v0.3.0 / T39）。
+   *
+   * 产品定位：AI 生成 R 代码后**默认直接执行**，用户无需再点一次「执行」。
+   * 但这不是黑箱——代码块、三线表、原始输出始终展开可见，且随时可关闭此开关
+   * 回到"先看代码再执行"的教学模式（Settings 页可配置）。
+   *
+   * 旧行为（v0.2.x）：AI 只生成代码，执行必须由用户点击。这一处差异是
+   * "AI 辅助工具"与"AI 执行者"的分界点。
+   */
+  const [autoRun, setAutoRun] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem('rworkbench_settings')
+      if (raw) {
+        const s = JSON.parse(raw) as { aiAutoRun?: boolean }
+        // 默认开启；只有显式设为 false 才关闭
+        return s.aiAutoRun !== false
+      }
+    } catch {
+      /* 配置损坏时按默认值走 */
+    }
+    return true
+  })
 
   // 欢迎语不能冻结在 useState 初值里：切换语言后必须重新翻译
   useEffect(() => {
@@ -139,6 +162,11 @@ export default function ChatPage() {
           m.id === assistantMsg.id ? { ...m, rCode } : m
         )
       )
+      // v0.3.0 / T39：自动执行，无需用户再点一次「执行」。
+      // 关闭 autoRun 即回到 v0.2.x 的"先看代码再执行"教学流程。
+      if (autoRun && hasData && isConfigured) {
+        await handleExecuteR(assistantMsg.id, rCode)
+      }
     }
   }
 
@@ -262,6 +290,30 @@ export default function ChatPage() {
             ? `⚠️ ${rError}`
             : `❌ ${t('chat.notLoaded')}`}
         </span>
+        {/* v0.3.0 / T39：自动执行开关。默认开启（AI 执行者），可关闭回到
+            "先看代码再手动执行"的教学模式。切换即时生效并持久化。 */}
+        <label
+          style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+          title={t('chat.autoRun.hint')}
+        >
+          <input
+            type="checkbox"
+            checked={autoRun}
+            onChange={(e) => {
+              const next = e.target.checked
+              setAutoRun(next)
+              try {
+                const raw = localStorage.getItem('rworkbench_settings')
+                const s = raw ? (JSON.parse(raw) as Record<string, unknown>) : {}
+                s.aiAutoRun = next
+                localStorage.setItem('rworkbench_settings', JSON.stringify(s))
+              } catch {
+                /* 持久化失败不影响本次会话 */
+              }
+            }}
+          />
+          {t('chat.autoRun')}
+        </label>
       </div>
 
       {/* 消息列表 */}

@@ -36,27 +36,40 @@ const CASES: Array<{ name: string; gen: () => string }> = [
   { name: 'summary_by', gen: () => RService.summaryByCode('dept', 'salary') }
 ]
 
-/** 把 R 字符串字面量（含转义）替换为空格，避免其中的括号/`#` 干扰结构检查 */
+/**
+ * 把 R 字符串字面量（含转义）替换为空格，避免其中的括号/`#` 干扰结构检查。
+ *
+ * v0.3.0 加固：旧实现遇到 `\` 时无条件 `i += 2`。这在 `"\\\""`（转义反斜杠 +
+ * 转义引号）这类连续转义里会错位——R 的字符串结束判定必须按"反斜杠消解下一个
+ * 字符"逐字符推进，否则会把闭合引号当成转义内容，导致后续文本被误当作代码，
+ * 报出假的"多余的 }"。实测：JSON 转义辅助函数（含 `"\\\""`）触发了该误判。
+ */
 function stripRStrings(code: string): string {
   let out = ''
-  for (let i = 0; i < code.length; i++) {
+  let i = 0
+  while (i < code.length) {
     const c = code[i]
     if (c === '"' || c === "'") {
       out += ' '
       i++
+      // 逐字符推进：遇到反斜杠则连同下一个字符一起吃掉
       while (i < code.length) {
         if (code[i] === '\\') {
           out += '  '
           i += 2
           continue
         }
-        if (code[i] === c) break
+        if (code[i] === c) {
+          i++
+          break
+        }
         out += ' '
         i++
       }
       continue
     }
     out += c
+    i++
   }
   return out
 }

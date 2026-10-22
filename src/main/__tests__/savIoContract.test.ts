@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   peekNextSavDataByte,
-  readNextSavRow,
   createSavRowReader,
   SAV_COMPRESSED_EOF_CODE,
   SAV_TYPE_NUMERIC,

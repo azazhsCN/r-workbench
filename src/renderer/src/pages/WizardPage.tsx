@@ -6,214 +6,15 @@ import { RService, type AnalysisResult } from '../services/rService'
 import { datasetToCSV } from '../services/dataService'
 import { parseROutput } from '../services/resultParser'
 import { generateInterpretation } from '../services/interpretService'
-import ThreeLineTable, { threeLineTableToHTML } from '../components/ThreeLineTable'
+import ThreeLineTable from '../components/ThreeLineTable'
+import { threeLineTableToHTML } from '../components/threeLineTableUtils'
 import PlotViewer from '../components/PlotViewer'
+import { METHODS, type AnalysisMethod } from '../data/methodRegistry'
 
 /** 向导步骤 */
 type WizardStep = 'select' | 'configure' | 'execute' | 'result'
 
-/** 分析方法定义（导出供测试与其它模块复用） */
-export interface AnalysisMethod {
-  id: string
-  name: string
-  nameKey?: string
-  icon: string
-  description: string
-  descKey?: string
-  category: string
-  categoryKey?: string
-  needsGroup: boolean
-  minVars: number
-  maxVars: number
-  varType: 'numeric' | 'string' | 'any'
-  /** 该方法的可选参数（v0.2.6：相关分析可选择 Pearson / Spearman） */
-  options?: { id: string; labelKey: string; label: string; values: { value: string; labelKey: string; label: string }[] }[]
-}
 
-export const METHODS: AnalysisMethod[] = [
-  {
-    id: 'descriptive',
-    name: '描述性统计',
-    nameKey: 'wizard.method.descriptive',
-    icon: '📈',
-    description: '计算均值、中位数、标准差、最大最小值',
-    descKey: 'wizard.method.descriptive.desc',
-    category: '基础分析',
-    categoryKey: 'wizard.category.basic',
-    needsGroup: false,
-    minVars: 1,
-    maxVars: 20,
-    varType: 'numeric'
-  },
-  {
-    id: 'ttest_independent',
-    name: '独立样本 t 检验',
-    nameKey: 'wizard.method.ttest_independent',
-    icon: '⚖️',
-    description: '比较两组独立样本的均值差异',
-    descKey: 'wizard.method.ttest_independent.desc',
-    category: '差异检验',
-    categoryKey: 'wizard.category.diff',
-    needsGroup: true,
-    minVars: 1,
-    maxVars: 1,
-    varType: 'numeric'
-  },
-  {
-    id: 'ttest_paired',
-    name: '配对样本 t 检验',
-    nameKey: 'wizard.method.ttest_paired',
-    icon: '🔄',
-    description: '比较同一组对象前后两次测量的差异',
-    descKey: 'wizard.method.ttest_paired.desc',
-    category: '差异检验',
-    categoryKey: 'wizard.category.diff',
-    needsGroup: false,
-    minVars: 2,
-    maxVars: 2,
-    varType: 'numeric'
-  },
-  {
-    id: 'anova',
-    name: '单因素方差分析',
-    nameKey: 'wizard.method.anova',
-    icon: '📊',
-    description: '比较多组样本的均值差异',
-    descKey: 'wizard.method.anova.desc',
-    category: '差异检验',
-    categoryKey: 'wizard.category.diff',
-    needsGroup: true,
-    minVars: 1,
-    maxVars: 1,
-    varType: 'numeric'
-  },
-  {
-    id: 'chisquare',
-    name: '卡方检验',
-    nameKey: 'wizard.method.chi_square',
-    icon: '🎲',
-    description: '检验两个分类变量之间是否独立',
-    descKey: 'wizard.method.chi_square.desc',
-    category: '差异检验',
-    categoryKey: 'wizard.category.diff',
-    needsGroup: false,
-    minVars: 2,
-    maxVars: 2,
-    varType: 'string'
-  },
-  {
-    id: 'correlation',
-    name: '相关分析',
-    nameKey: 'wizard.method.correlation',
-    icon: '🔗',
-    description: '分析两个变量之间的线性关系',
-    descKey: 'wizard.method.correlation.desc',
-    category: '关系分析',
-    categoryKey: 'wizard.category.relation',
-    needsGroup: false,
-    minVars: 2,
-    maxVars: 2,
-    varType: 'numeric'
-  },
-  {
-    id: 'regression',
-    name: '线性回归',
-    nameKey: 'wizard.method.regression',
-    icon: '📉',
-    description: '建立因变量与自变量的回归方程',
-    descKey: 'wizard.method.regression.desc',
-    category: '关系分析',
-    categoryKey: 'wizard.category.relation',
-    needsGroup: false,
-    minVars: 2,
-    maxVars: 10,
-    varType: 'numeric'
-  },
-  {
-    id: 'reliability',
-    name: '信度分析',
-    nameKey: 'wizard.method.reliability',
-    icon: '✅',
-    description: "计算问卷量表的 Cronbach's α",
-    descKey: 'wizard.method.reliability.desc',
-    category: '问卷分析',
-    categoryKey: 'wizard.category.survey',
-    needsGroup: false,
-    minVars: 2,
-    maxVars: 50,
-    varType: 'numeric'
-  },
-  {
-    id: 'ttest_one',
-    name: '单样本 t 检验',
-    nameKey: 'wizard.method.ttest_one',
-    icon: '🎯',
-    description: '检验样本均值是否等于某个指定值',
-    descKey: 'wizard.method.ttest_one.desc',
-    category: '差异检验',
-    categoryKey: 'wizard.category.diff',
-    needsGroup: false,
-    minVars: 1,
-    maxVars: 1,
-    varType: 'numeric'
-  },
-  {
-    id: 'normality',
-    name: '正态性检验',
-    nameKey: 'wizard.method.normality',
-    icon: '🔔',
-    description: 'Shapiro-Wilk 检验数据是否服从正态分布',
-    descKey: 'wizard.method.normality.desc',
-    category: '基础分析',
-    categoryKey: 'wizard.category.basic',
-    needsGroup: false,
-    minVars: 1,
-    maxVars: 10,
-    varType: 'numeric'
-  },
-  {
-    id: 'nonparametric',
-    name: '非参数检验',
-    nameKey: 'wizard.method.nonparametric',
-    icon: '📊',
-    description: 'Mann-Whitney U 检验，数据不满足正态假设时使用',
-    descKey: 'wizard.method.nonparametric.desc',
-    category: '差异检验',
-    categoryKey: 'wizard.category.diff',
-    needsGroup: true,
-    minVars: 1,
-    maxVars: 1,
-    varType: 'numeric'
-  },
-  {
-    id: 'frequency',
-    name: '频数统计',
-    nameKey: 'wizard.method.frequency',
-    icon: '📋',
-    description: '统计分类变量各类别的频数和百分比',
-    descKey: 'wizard.method.frequency.desc',
-    category: '基础分析',
-    categoryKey: 'wizard.category.basic',
-    needsGroup: false,
-    minVars: 1,
-    maxVars: 10,
-    varType: 'any'
-  },
-  {
-    id: 'summary_by',
-    name: '分类汇总',
-    nameKey: 'wizard.method.summary',
-    icon: '📊',
-    description: '按分组变量计算均值、标准差等汇总统计',
-    descKey: 'wizard.method.summary.desc',
-    category: '基础分析',
-    categoryKey: 'wizard.category.basic',
-    needsGroup: true,
-    minVars: 1,
-    maxVars: 1,
-    varType: 'numeric'
-  }
-]
 
 /**
  * 回退标签：仅在语言包缺少对应键时使用。
@@ -307,6 +108,7 @@ export default function WizardPage() {
       correlation: () => RService.correlationCode(depVars[0], depVars[1], correlationMethod, dataFile),
       regression: () => RService.regressionCode(depVars[0], depVars.slice(1), dataFile),
       reliability: () => RService.reliabilityCode(depVars, dataFile),
+      efa: () => RService.efaCode(depVars, undefined, dataFile),
       normality: () => RService.normalityTestCode(depVars, dataFile),
       nonparametric: () => RService.nonparametricCode(depVars[0], groupVar, dataFile),
       frequency: () => RService.frequencyCode(depVars, dataFile),

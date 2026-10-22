@@ -160,6 +160,7 @@ export function detectAnalysisType(output: string): string {
     if (name.startsWith('非参数检验')) return 'nonparametric'
     if (name.startsWith('频数统计')) return 'frequency'
     if (name.startsWith('分类汇总')) return 'summary_by'
+    if (name.startsWith('探索性因子分析')) return 'efa'
   }
   return 'unknown'
 }
@@ -199,6 +200,23 @@ function collectDiagnostics(output: string): Diagnostic[] {
   }
   for (const line of tagged(output, 'NOTE_DROPPED')) {
     out.push({ kind: 'warning', label: '缺失值处理', value: fields(line)[1] ?? '' })
+  }
+  // EFA 的前提诊断：KMO 与 Bartlett 决定"能不能做因子分析"
+  for (const line of tagged(output, 'KMO')) {
+    const v = fields(line)[1] ?? ''
+    out.push({ kind: 'assumption', label: 'KMO 取样适切性', value: v })
+  }
+  for (const line of tagged(output, 'BARTLETT')) {
+    const f = fields(line)
+    const p = pPair(f[3], f[4])
+    out.push({
+      kind: 'assumption',
+      label: 'Bartlett 球形检验',
+      value: p.display || (f[3] ?? '')
+    })
+  }
+  for (const line of tagged(output, 'NFACTOR')) {
+    out.push({ kind: 'note', label: '抽取因子数', value: fields(line)[1] ?? '' })
   }
   return out
 }
@@ -248,6 +266,9 @@ export function parseROutput(output: string): ParsedAnalysis {
       break
     case 'summary_by':
       parseSummaryBy(output, tables, keyValues)
+      break
+    case 'efa':
+      parseEfa(output, tables, keyValues)
       break
     default:
       break
@@ -329,6 +350,11 @@ function parseTTestIndependent(output: string, tables: TableData[], kv: Record<s
   if (res) {
     const f = fields(res)
     const p = pPair(f[3], f[4])
+    // 字段契约（与 rService.tTestIndependentCode 的 sprintf 一一对应）：
+    //   f[0]=TAG f[1]=t f[2]=df f[3]=p展示串 f[4]=p原始值
+    //   f[5]=均值差 f[6]=CI下限 f[7]=CI上限 f[8]=Cohen's d f[9]=合并方差p
+    // v0.2.7 修复：均值差曾误取 f[6]（=CI下限），导致表里显示 "-11.2805"
+    // 而 keyValues['均值差'] 用的是正确的 f[5]（-7.2449）——表与值互相矛盾。
     tables.push({
       title: `表${tables.length + 1}  独立样本 t 检验结果`,
       headers: ['t', 'df', 'p', '均值差', '95% CI 下限', '95% CI 上限', "Cohen's d"],
@@ -336,7 +362,7 @@ function parseTTestIndependent(output: string, tables: TableData[], kv: Record<s
         toNum(f[1]) ?? '—',
         toNum(f[2]) ?? '—',
         p.display || '—',
-        toNum(f[6]) ?? '—',
+        toNum(f[5]) ?? '—',
         toNum(f[6]) ?? '—',
         toNum(f[7]) ?? '—',
         toNum(f[8]) ?? '—'
@@ -427,6 +453,11 @@ function parseTTestOneSample(output: string, tables: TableData[], kv: Record<str
   if (res) {
     const f = fields(res)
     const p = pPair(f[3], f[4])
+    // 字段契约（与 rService.tTestOneSampleCode 的 sprintf 一一对应）：
+    //   f[0]=TAG f[1]=t f[2]=df f[3]=p展示串 f[4]=p原始值
+    //   f[5]=CI下限 f[6]=CI上限 f[7]=Cohen's d
+    // v0.2.7 修复：CI下限曾误取 f[4]（=p原始值，显示成 0.9328），
+    // Cohen's d 曾误取 f[6]（=CI上限，显示成 2.2636）。
     tables.push({
       title: `表${tables.length + 1}  单样本 t 检验结果`,
       headers: ['t', 'df', 'p', '95% CI 下限', '95% CI 上限', "Cohen's d"],
@@ -434,9 +465,9 @@ function parseTTestOneSample(output: string, tables: TableData[], kv: Record<str
         toNum(f[1]) ?? '—',
         toNum(f[2]) ?? '—',
         p.display || '—',
-        toNum(f[4]) ?? '—',
+        toNum(f[5]) ?? '—',
         toNum(f[6]) ?? '—',
-        toNum(f[6]) ?? '—'
+        toNum(f[7]) ?? '—'
       ]],
       note: `注：${p.value !== null && p.value < 0.05 ? 'p < 0.05，差异显著。' : 'p ≥ 0.05，差异不显著。'}`
     })
@@ -872,4 +903,140 @@ function parseReliability(output: string, tables: TableData[], kv: Record<string
 
   const concl = conclusionOf(output)
   if (concl) kv['结论'] = concl
+}
+
+/**
+ * 解析探索性因子分析（EFA）。
+ *
+ * 与其他解析器不同，这里的表结构是**动态的**：因子数由数据决定（Kaiser 准则或
+ * 用户指定），所以列数不能写死。R 端先输出 `LOAD_HEAD|item|F1|F2|...|communality`
+ * 声明列，再逐行输出 `LOAD|item|v1|v2|...|comm`。
+ *
+ * v0.3.0 的教训：解析器必须**以 R 端声明的表头为准**，而不是硬编码列名——
+ * 这正是 v0.2.6 两处列错位（t 检验取错下标）的同类风险。动态表头让"加一个因子"
+ * 不需要改解析器。
+ */
+function parseEfa(output: string, tables: TableData[], kv: Record<string, string | number>) {
+  // ── 样本量与因子数 ──
+  const nfacLine = firstTagged(output, 'NFACTOR')
+  const nFactors = nfacLine ? (toNum(fields(nfacLine)[1]) ?? 0) : 0
+  if (nFactors > 0) kv['因子数'] = nFactors
+
+  // ── KMO ──
+  const kmoLine = firstTagged(output, 'KMO')
+  const kmo = kmoLine ? toNum(fields(kmoLine)[1]) : null
+  if (kmo !== null) kv['KMO'] = kmo
+
+  // ── Bartlett 球形检验 ──
+  const bart = firstTagged(output, 'BARTLETT')
+  if (bart) {
+    const f = fields(bart)
+    const p = pPair(f[3], f[4])
+    kv['Bartlett χ²'] = toNum(f[1]) ?? 0
+    kv['Bartlett df'] = toNum(f[2]) ?? 0
+    if (p.value !== null) kv['Bartlett p'] = p.value
+  }
+
+  // ── 表1：KMO 与 Bartlett 检验 ──
+  {
+    const rows: (string | number)[][] = []
+    if (kmo !== null) {
+      const kmoDesc =
+        kmo >= 0.9 ? '极佳' : kmo >= 0.8 ? '适合' : kmo >= 0.7 ? '尚可' : kmo >= 0.6 ? '勉强' : '不适合'
+      rows.push(['KMO 取样适切性度量', fmtNum(kmo, 4), kmoDesc])
+    }
+    if (bart) {
+      const f = fields(bart)
+      const p = pPair(f[3], f[4])
+      rows.push(['Bartlett 球形检验 χ²', toNum(f[1]) ?? '—', p.display || '—'])
+      rows.push(['Bartlett 自由度 df', toNum(f[2]) ?? '—', ''])
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  KMO 与 Bartlett 球形检验`,
+        headers: ['检验', '统计量', '判定/p'],
+        rows,
+        note: '注：KMO > 0.8 适合做因子分析；Bartlett 检验 p < 0.05 表示变量间存在相关，适合降维。'
+      })
+    }
+  }
+
+  // ── 表2：方差解释 ──
+  {
+    const eigenLines = tagged(output, 'EIGEN')
+    if (eigenLines.length > 0) {
+      const rows = eigenLines.map((line) => {
+        const f = fields(line)
+        return [`因子 ${f[1]}`, toNum(f[2]) ?? '—', `${f[3] ?? '—'}%`, `${f[4] ?? '—'}%`] as (
+          | string
+          | number
+        )[]
+      })
+      const last = fields(eigenLines[eigenLines.length - 1])
+      kv['累计方差解释'] = `${last[4]}%`
+      tables.push({
+        title: `表${tables.length + 1}  方差解释`,
+        headers: ['因子', '特征值', '方差解释率', '累计方差解释率'],
+        rows,
+        note: '注：按主成分法抽取，因子数依 Kaiser 准则（特征值 > 1）。'
+      })
+    }
+  }
+
+  // ── 表3：旋转后因子载荷矩阵（动态列） ──
+  {
+    const head = firstTagged(output, 'LOAD_HEAD')
+    if (head) {
+      const cols = fields(head).slice(1)
+      const loadLines = tagged(output, 'LOAD')
+      const rows = loadLines.map((line) => {
+        const f = fields(line)
+        const out: (string | number)[] = [f[1] ?? '—']
+        for (let i = 2; i < f.length; i++) {
+          const v = toNum(f[i])
+          out.push(v === null ? '—' : fmtNum(v, 4))
+        }
+        return out
+      })
+      if (rows.length > 0) {
+        tables.push({
+          title: `表${tables.length + 1}  旋转后因子载荷矩阵`,
+          headers: cols,
+          rows,
+          note:
+            '注：采用主成分法抽取、最大方差法（varimax）旋转。' +
+            '载荷绝对值 ≥ 0.4 视为有效载荷。「共同度」为该题项被共同因子解释的方差比例。'
+        })
+
+        // 主因子归属：归并题目，供 AI 解读与用户命名因子
+        const primary = tagged(output, 'PRIMARY')
+        if (primary.length > 0) {
+          const groups: Record<string, string[]> = {}
+          for (const line of primary) {
+            const f = fields(line)
+            const factor = `F${f[2]}`
+            if (!groups[factor]) groups[factor] = []
+            groups[factor].push(f[1] ?? '')
+          }
+          const parts = Object.keys(groups)
+            .sort()
+            .map((k) => `${k}: ${groups[k].join(', ')}`)
+          kv['因子归属'] = parts.join(' | ')
+        }
+      }
+    }
+  }
+
+  // ── 缺失值剔除说明 ──
+  const dropped = firstTagged(output, 'NOTE_DROPPED')
+  if (dropped) kv['缺失值处理'] = fields(dropped)[1] ?? ''
+
+  const concl = conclusionOf(output)
+  if (concl) kv['结论'] = concl
+}
+
+/** 数值格式化：保留指定小数位；null 输出占位符 */
+function fmtNum(v: number | null, digits: number): string {
+  if (v === null || !Number.isFinite(v)) return '—'
+  return v.toFixed(digits)
 }

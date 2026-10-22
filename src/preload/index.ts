@@ -46,12 +46,14 @@ const api = {
     execute: (code: string, dataCsv?: string) =>
       ipcRenderer.invoke('r:execute', code, dataCsv) as Promise<{
         success: boolean; output: string; errors: string[]; stderr: string
+        /** R 运行期间的 warning（v0.2.7 起真正接通） */
+        warnings?: string[]
         timedOut: boolean; truncated: boolean
       }>,
     plot: (code: string, dataCsv?: string) =>
       ipcRenderer.invoke('r:plot', code, dataCsv) as Promise<{
         success: boolean; base64: string | null; path: string | null; error: string | null
-        stderr?: string; timedOut?: boolean
+        stderr?: string; warnings?: string[]; timedOut?: boolean
       }>,
     packages: (names: string[]) =>
       ipcRenderer.invoke('r:packages', names) as Promise<{ installed: string[] }>,

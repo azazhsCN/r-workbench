@@ -37,9 +37,16 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // Fast Refresh 要求一个文件只导出组件。但 React 官方文档的 Provider + hook
+      // 模式天然违反这条（useAI/useData/useR 与 Provider 必须同文件，否则闭包无法
+      // 访问 Context）。规则的 `allowExportNames` 让 hook 导出被视为合法；
+      // 其他非常量导出仍然会被标记，以免热更新悄悄失效。
       'react-refresh/only-export-components': [
         'warn',
-        { allowConstantExport: true }
+        {
+          allowConstantExport: true,
+          allowExportNames: ['useAI', 'useData', 'useR']
+        }
       ]
     }
   },

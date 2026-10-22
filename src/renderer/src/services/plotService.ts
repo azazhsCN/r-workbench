@@ -507,6 +507,7 @@ export const METHOD_PLOT_MAP: Record<string, { type: string; label: string }[]> 
   correlation: [{ type: 'scatter', label: '散点图' }],
   regression: [{ type: 'scatter', label: '散点图+回归线' }],
   reliability: [{ type: 'item_mean', label: '条目均值图' }],
+  efa: [{ type: 'item_mean', label: '题项均值图' }],
   normality: [{ type: 'histogram', label: '直方图' }, { type: 'density', label: '核密度图' }],
   nonparametric: [{ type: 'boxplot', label: '分组箱线图' }],
   frequency: [{ type: 'bar', label: '频数柱状图' }],

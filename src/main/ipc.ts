@@ -16,6 +16,7 @@ import {
   declaredCaseCount,
   parseOfficecliEnvelope,
   parseRScriptStdout,
+  parseRWarnings,
   planDocxExport,
   readSavRowsIncremental,
   validateDocxPayload
@@ -557,6 +558,9 @@ cat("\\n__RWB_DONE__\\n")
           output: parsed.output,
           errors: parsed.errors,
           stderr,
+          // v0.2.7：接通 warnings 通道。类型里早就声明了该字段，但从未赋值，
+          // 导致前端警告面板永远为空（统计前提不满足时用户毫无察觉）。
+          warnings: parseRWarnings(stderr),
           timedOut: false,
           truncated: false
         }
@@ -567,6 +571,7 @@ cat("\\n__RWB_DONE__\\n")
           output: failure.output,
           errors: failure.errors,
           stderr: failure.stderr,
+          warnings: parseRWarnings(failure.stderr),
           timedOut: failure.timedOut,
           truncated: failure.truncated
         }
@@ -703,9 +708,10 @@ cat("\\n__RWB_DONE__\\n")
           const imgBuffer = await readFile(plotPath)
           const base64 = imgBuffer.toString('base64')
           // Nit: 临时目录会在 finally 中删除，path 不再指向有效文件，返回空
-          return { success: true, base64, path: '', error: null, stderr }
+          // v0.2.7：绘图同样上浮 warning（如 "Removed N rows containing missing values"）
+          return { success: true, base64, path: '', error: null, stderr, warnings: parseRWarnings(stderr) }
         } catch {
-          return { success: false, base64: null, path: null, error: '图表文件未生成', stderr }
+          return { success: false, base64: null, path: null, error: '图表文件未生成', stderr, warnings: parseRWarnings(stderr) }
         }
       }
 
@@ -718,7 +724,7 @@ cat("\\n__RWB_DONE__\\n")
         : stderrTail
           ? `未找到图表输出。stderr：${stderrTail.slice(-800)}`
           : '未找到图表输出'
-      return { success: false, base64: null, path: null, error: detail, stderr }
+      return { success: false, base64: null, path: null, error: detail, stderr, warnings: parseRWarnings(stderr) }
     } catch (error: unknown) {
       const failure = normalizeRExecFailure(error, R_TIMEOUT_MS, R_MAX_BUFFER, 'R 绘图')
       return {

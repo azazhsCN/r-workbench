@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { threeLineTableToHTML } from '../ThreeLineTable'
+import { threeLineTableToHTML } from '../threeLineTableUtils'
 
 const PAYLOAD = '<img src=x onerror=alert(1)>'
 const ESCAPED_PAYLOAD = '&lt;img src=x onerror=alert(1)&gt;'

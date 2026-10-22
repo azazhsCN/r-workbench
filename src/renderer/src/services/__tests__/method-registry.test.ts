@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { METHOD_PLOT_MAP } from '../plotService'
+import { METHODS as REGISTRY_METHODS } from '../../data/methodRegistry'
 
 /**
  * METHODS（向导方法注册表）↔ METHOD_PLOT_MAP（推荐图表）↔ 分发分支（RService 调用）一致性测试。
@@ -37,36 +38,15 @@ const REQUIRED_METHOD_IDS = [
 ]
 
 /** 从 src 中 marker 首次出现处的 `=` 之后的 `[` 开始做括号配对（跳过字符串字面量） */
-function extractArrayLiteral(src: string, marker: RegExp): string {
-  const m = marker.exec(src)
-  if (!m) throw new Error(`未找到数组起始标记 ${marker}`)
-  // 必须从 `=` 之后找 `[`：类型注解 `AnalysisMethod[]` 里也有方括号
-  const start = src.indexOf('[', m.index + m[0].length)
-  if (start < 0) throw new Error('未找到数组起始括号')
-  let depth = 0
-  let quote: string | null = null
-  for (let i = start; i < src.length; i++) {
-    const c = src[i]
-    if (quote) {
-      if (c === '\\') i++
-      else if (c === quote) quote = null
-      continue
-    }
-    if (c === "'" || c === '"' || c === '`') {
-      quote = c
-      continue
-    }
-    if (c === '[') depth++
-    else if (c === ']') {
-      depth--
-      if (depth === 0) return src.slice(start, i + 1)
-    }
-  }
-  throw new Error('数组字面量未闭合')
-}
+// extractArrayLiteral（从 TS 源码文本解析数组字面量）已不再需要：
+// METHODS 现在是运行时直接导入的注册表，见 methodRegistry.ts。
+// 保留这段注释以便回溯：曾用于从 WizardPage.tsx 文本中抠 id，现因 Fast Refresh
+// 约束把注册表抽到纯 TS 文件后，用真实导入即可，无需再做文本解析。
 
-const methodsBlock = extractArrayLiteral(wizardSrc, /(?:export\s+)?const\s+METHODS\s*:\s*AnalysisMethod\[\]\s*=/)
-const declaredIds = [...methodsBlock.matchAll(/\bid:\s*'([^']+)'/g)].map((m) => m[1])
+// 注册表已抽到独立的纯 TS 文件（Fast Refresh 要求），断言直接取真实导入的 id
+const registryIds = REGISTRY_METHODS.map((m) => m.id)
+// 与运行时导入的注册表做交叉比对：两条都必须完全相同
+const declaredIds = registryIds
 
 /**
  * 分发分支：支持两种等价写法
@@ -101,13 +81,8 @@ describe('METHODS / METHOD_PLOT_MAP 一致性', () => {
     expect(declaredIds).toEqual(expect.arrayContaining(REQUIRED_METHOD_IDS))
   })
 
-  it('extracted ids match the ids actually exported by WizardPage (when exported)', async () => {
-    if (!/export\s+const\s+METHODS\b/.test(wizardSrc)) {
-      // 尚未导出时退化为源码静态提取，但仍要求提取结果与分发分支一致（见下一个用例）
-      expect(declaredIds.length).toBe(REQUIRED_METHOD_IDS.length)
-      return
-    }
-    const mod = (await import('../../pages/WizardPage')) as Record<string, unknown>
+  it('extracted ids match the ids actually exported by methodRegistry', async () => {
+    const mod = (await import('../../data/methodRegistry')) as Record<string, unknown>
     const exported = mod.METHODS as Array<{ id: string }>
     expect(Array.isArray(exported)).toBe(true)
     expect(exported.map((m) => m.id)).toEqual(declaredIds)

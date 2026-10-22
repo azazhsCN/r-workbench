@@ -17,9 +17,9 @@
 import { describe, it, expect } from 'vitest'
 import { RService } from '../rService'
 import { parseROutput, detectAnalysisType, parsePValue } from '../resultParser'
-import { METHODS } from '../../pages/WizardPage'
+import { METHODS } from '../../data/methodRegistry'
 
-/** 每个方法的生成器调用，覆盖全部 13 种向导方法 */
+/** 每个方法的生成器调用，覆盖全部向导方法 */
 const GENERATORS: Record<string, () => string> = {
   descriptive: () => RService.descriptiveCode(['score'], 'data.csv'),
   ttest_independent: () => RService.tTestIndependentCode('score', 'grp', 'data.csv'),
@@ -31,6 +31,7 @@ const GENERATORS: Record<string, () => string> = {
   correlation_spearman: () => RService.correlationCode('x', 'y', 'spearman', 'data.csv'),
   regression: () => RService.regressionCode('y', ['x1', 'x2'], 'data.csv'),
   reliability: () => RService.reliabilityCode(['i1', 'i2'], 'data.csv'),
+  efa: () => RService.efaCode(['i1', 'i2', 'i3'], undefined, 'data.csv'),
   normality: () => RService.normalityTestCode(['x'], 'data.csv'),
   nonparametric: () => RService.nonparametricCode('score', 'grp', 'data.csv'),
   frequency: () => RService.frequencyCode(['a'], 'data.csv'),
@@ -158,6 +159,23 @@ const SAMPLE_OUTPUT: Record<string, string> = {
     'SUM|setosa|50|5.0060|0.3525|5.0000|4.3000|5.8000',
     'SUM|versicolor|50|5.9360|0.5162|5.9000|4.9000|7.0000',
     'TOTAL|150|5.8433|0.8281'
+  ].join('\n'),
+  efa: [
+    '=== 探索性因子分析 (EFA) ===',
+    'BARTLETT|549.4197|28|p < 0.001|2.0876321e-309',
+    'KMO|0.8475',
+    'KMO_ITEM|q1|0.8202',
+    'NFACTOR|2',
+    'EIGEN|1|3.2651|40.81|40.81',
+    'EIGEN|2|2.9818|37.27|78.09',
+    'LOAD_HEAD|item|F1|F2|communality',
+    'LOAD|q1|0.0454|0.8822|0.7803',
+    'LOAD|q2|0.0322|0.8739|0.7647',
+    'LOAD|q5|0.9137|-0.0156|0.8350',
+    'PRIMARY|q1|2',
+    'PRIMARY|q2|2',
+    'PRIMARY|q5|1',
+    'CONCL|KMO = 0.848（适合），Bartlett 检验显著（p < 0.001），数据适合做因子分析'
   ].join('\n')
 }
 
@@ -320,7 +338,7 @@ describe('p 值契约', () => {
 })
 
 describe('解析器分派契约', () => {
-  it('13 种方法都能被识别，且都不落入 unknown', () => {
+  it('全部向导方法都能被识别，且都不落入 unknown', () => {
     const seen = new Set<string>()
     for (const [name, gen] of Object.entries(GENERATORS)) {
       const banner = gen().match(/^cat\("(=== .+? ===)\\n"\)/m)![1]
@@ -328,8 +346,9 @@ describe('解析器分派契约', () => {
       expect(type, `${name}`).not.toBe('unknown')
       seen.add(type)
     }
-    // correlation 与 correlation_spearman 映射到同一 type
-    expect(seen.size).toBe(13)
+    // correlation 与 correlation_spearman 映射到同一 type，故少 1
+    // v0.3.0：14 → EFA 加入后为 14（GENERATORS 含 15 项，其中两个 correlation 合并）
+    expect(seen.size).toBe(14)
   })
 
   it('分组统计行中的 " N=" 不会让 t 检验被误判为描述性统计', () => {
@@ -401,7 +420,8 @@ describe('解析器分派契约', () => {
 
 describe('向导方法注册表一致性', () => {
   it('METHODS 为空说明导出被破坏', () => {
-    expect(METHODS.length).toBe(13)
+    // v0.3.0：13 → 14（新增 EFA 探索性因子分析）
+    expect(METHODS.length).toBe(14)
   })
 
   it('每个注册的方法 id 都有对应的 R 代码生成器（否则会执行空代码）', () => {

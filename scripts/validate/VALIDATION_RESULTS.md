@@ -1,12 +1,12 @@
 # 统计验证结果（真实生成器 + 独立 oracle）
 
 R 版本：R version 4.6.0 (2026-04-24 ucrt)
-生成时间：2026-10-02 17:53:13
+生成时间：2026-10-22 15:32:31
 fixtures 目录：generated
 被测代码：src/renderer/src/services/rService.ts（esbuild 打包后运行时调用，非手抄副本）
 
-方法覆盖：**13 / 13**
-断言总数：**282**（PASS 282 / FAIL 0）
+方法覆盖：**14 / 14**
+断言总数：**310**（PASS 310 / FAIL 0）
 
 | 方法 | 数据集 | 断言 | 参考(oracle) | 工作台 | 结果 |
 |---|---|---|---|---|---|
@@ -214,6 +214,34 @@ fixtures 目录：generated
 | reliability | reliability | ALPHA_CI.ordering | lo<=alpha<=hi |  0.8239<= 0.9263<= 0.9774 | PASS |
 | reliability | reliability | NOTE_DROPPED.consistency | present | present | PASS |
 | reliability | reliability | ALPHA.psych_raw | psych::alpha | SKIP: psych 未安装（已用两条独立闭式解替代） | PASS |
+| efa | efa | r_syntax_parse | parse() ok | ok | PASS |
+| efa | efa | sprintf_format_args | no mismatch | ok | PASS |
+| efa | efa | no_r_error | no error | ok | PASS |
+| efa | efa | banner | === 探索性因子分析 (EFA) === | === 探索性因子分析 (EFA) === | PASS |
+| efa | efa | kmo | 0.754404 |  0.7544 | PASS |
+| efa | efa | bartlett_chisq | 442.978 | 442.978 | PASS |
+| efa | efa | bartlett_df |      15 |      15 | PASS |
+| efa | efa | eigen_sum_equals_p |       6 |       6 | PASS |
+| efa | efa | n_factors_kaiser |       2 |       2 | PASS |
+| efa | efa | communality_invariant | 4.44089e-16 |       0 | PASS |
+| efa | efa | loadings_max_abs_diff |       0 | 4.57275e-05 | PASS |
+| efa | efa | structure_recovered | TRUE | TRUE | PASS |
+| efa | efa | n_factors_matches_truth |       2 |       2 | PASS |
+| efa | efa | loading_table_cols |       4 |       4 | PASS |
+| efa | efa_3factors | r_syntax_parse | parse() ok | ok | PASS |
+| efa | efa_3factors | sprintf_format_args | no mismatch | ok | PASS |
+| efa | efa_3factors | no_r_error | no error | ok | PASS |
+| efa | efa_3factors | banner | === 探索性因子分析 (EFA) === | === 探索性因子分析 (EFA) === | PASS |
+| efa | efa_3factors | kmo | 0.760322 |  0.7603 | PASS |
+| efa | efa_3factors | bartlett_chisq | 912.351 | 912.351 | PASS |
+| efa | efa_3factors | bartlett_df |      36 |      36 | PASS |
+| efa | efa_3factors | eigen_sum_equals_p |       9 |       9 | PASS |
+| efa | efa_3factors | n_factors_kaiser |       3 |       3 | PASS |
+| efa | efa_3factors | communality_invariant | 6.66134e-16 |       0 | PASS |
+| efa | efa_3factors | loadings_max_abs_diff |       0 | 4.85267e-05 | PASS |
+| efa | efa_3factors | structure_recovered | TRUE | TRUE | PASS |
+| efa | efa_3factors | n_factors_matches_truth |       3 |       3 | PASS |
+| efa | efa_3factors | loading_table_cols |       5 |       5 | PASS |
 | normality | normality | r_syntax_parse | parse() ok | ok | PASS |
 | normality | normality | sprintf_format_args | no mismatch | ok | PASS |
 | normality | normality | no_r_error | no error | ok | PASS |
@@ -291,6 +319,6 @@ fixtures 目录：generated
 | summary_by | summary_by | SUM.D.mean |      40 |      40 | PASS |
 | summary_by | summary_by | SUM.D.min |      40 |      40 | PASS |
 | summary_by | summary_by | SUM.D.max |      40 |      40 | PASS |
-| __coverage__ | - | methods_covered |      13 |      13 | PASS |
+| __coverage__ | - | methods_covered |      14 |      14 | PASS |
 
-**汇总：PASS 282 / 282**
+**汇总：PASS 310 / 310**

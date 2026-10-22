@@ -419,6 +419,100 @@ export function parseRScriptStdout(stdout: unknown): RStdoutParseResult {
   return { output, errors: error ? [error] : [], error, completed }
 }
 
+/**
+ * 从 R 的 stderr 中提取 warning 消息。
+ *
+ * v0.2.7：`RExecuteResult.warnings` 自 v0.2.6 起就在类型里声明，但 `r:execute`
+ * 的返回对象**从未给它赋值**，于是渲染层的警告面板（ChatPage / WizardPage）
+ * 永远是空的。用户在"卡方期望频数不足""存在结点无法计算精确 p 值"这类
+ * 前提不满足的情况下拿不到任何提示——这属于静默错误。
+ *
+ * R 包装脚本设了 `options(warn = 1)`，因此 warning 会立即写入 stderr。实测形态：
+ *   1) 单行：   Warning in t.test(x, y) : cannot compute exact p-value with ties
+ *   2) 块标题： Warning message:
+ *               In chisq.test(x) : Chi-squared approximation may be incorrect
+ *   3) 多行：   Warning message:
+ *               In model.matrix.default(mt, mf, contrasts) :
+ *                 non-list contrasts argument ignored
+ *   4) 汇总：   In addition: Warning messages:
+ *               1: In a : second
+ *               （内容是前文已出现过的，必须跳过以免重复计数）
+ *
+ * 只取 warning，不取 error（error 由 `__RWB_ERROR__` 哨兵走 errors 通道）。
+ */
+export function parseRWarnings(stderr: unknown): string[] {
+  const text = typeof stderr === 'string' ? stderr : ''
+  if (!text.trim()) return []
+
+  const lines = text.replace(/\r\n/g, '\n').split('\n')
+  const out: string[] = []
+  /** 当前正在累积的 warning（多行时会追加） */
+  let current: string[] | null = null
+  /** 是否处在 "In addition: Warning messages:" 汇总块内（内容需丢弃） */
+  let inSummary = false
+
+  const flush = (): void => {
+    if (!current) return
+    const body = current.join(' ').replace(/\s+/g, ' ').trim()
+    if (body.length > 0) out.push(body)
+    current = null
+  }
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, '')
+    const trimmed = line.trim()
+    if (!trimmed) continue
+
+    // ── 汇总块开始：后续条目是前文 warning 的重复 ──
+    if (/^In addition:\s*Warning messages?:/i.test(trimmed)) {
+      flush()
+      inSummary = true
+      continue
+    }
+
+    // ── 汇总块内的 "1: In a : second" 形式条目，跳过 ──
+    if (inSummary) {
+      if (/^\d+:\s/.test(trimmed)) continue
+      // 遇到非汇总格式的行，说明汇总块结束
+      inSummary = false
+    }
+
+    // ── 块标题 "Warning message:" / "Warning messages:" —— 单独不成条，等下一行 ──
+    if (/^(Warning messages?|警告信息)\s*:?\s*$/i.test(trimmed)) {
+      flush()
+      current = []
+      continue
+    }
+
+    // ── warning 起始行（带内容） ──
+    if (/^(Warning|警告)\b/i.test(trimmed)) {
+      flush()
+      current = [stripWarningPrefix(trimmed)]
+      continue
+    }
+
+    // ── 续行：缩进的上下文，或 "In ... :" 形式的调用位置 ──
+    if (current !== null) {
+      current.push(trimmed)
+      continue
+    }
+  }
+  flush()
+
+  return out.map((w) => w.slice(0, 500)).filter((w) => w.length > 0)
+}
+
+/** 去掉 "Warning in foo() :" / "Warning:" / "Warning message:" 前缀，只留正文 */
+function stripWarningPrefix(s: string): string {
+  return s
+    .replace(/^Warning messages?\s*:\s*/i, '')
+    .replace(/^Warning\s+in\s+[^:]*:\s*/i, '')
+    .replace(/^Warning\s*:\s*/i, '')
+    .replace(/^警告信息?\s*[:：]\s*/, '')
+    .trim()
+}
+
+
 /* ═══════════════════════════════════════════════════════════════
  * 三、Word 导出（officecli batch）
  * ═══════════════════════════════════════════════════════════════ */
