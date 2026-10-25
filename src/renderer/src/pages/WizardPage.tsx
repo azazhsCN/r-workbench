@@ -20,21 +20,30 @@ type WizardStep = 'select' | 'configure' | 'execute' | 'result'
  * 回退标签：仅在语言包缺少对应键时使用。
  * 注意这里已是英文，避免中文界面以外的用户看到中文
  * （v0.2.6 起 i18n 覆盖向导全部配置区）。
+ *
+ * **键必须是方法 id**（`METHODS[].id`），不是 nameKey 的末段，也不是别的拼法：
+ * v0.3.0 里 `chisquare` 的键写成 `chi_square`、`summary_by` 写成 `summary`，
+ * 而查找侧用 `nameKey.split('.').pop()` —— 两套命名一旦不同，回退就会静默失效
+ * （表现为英文界面下看到中文名，且不易发现）。现在查找侧以 id 为准，见 `fallbackFor`。
  */
 const FALLBACK_LABELS: Record<string, { name: string; desc: string; category: string }> = {
   descriptive: { name: 'Descriptive Statistics', desc: 'Mean, median, SD, min, max', category: 'Basic' },
   ttest_independent: { name: 'Independent-samples t-test', desc: 'Compare means of two independent groups', category: 'Difference tests' },
   ttest_paired: { name: 'Paired-samples t-test', desc: 'Compare two measurements on the same subjects', category: 'Difference tests' },
   anova: { name: 'One-way ANOVA', desc: 'Compare means across multiple groups', category: 'Difference tests' },
-  chi_square: { name: 'Chi-square test', desc: 'Test independence of two categorical variables', category: 'Difference tests' },
+  chisquare: { name: 'Chi-square test', desc: 'Test independence of two categorical variables', category: 'Difference tests' },
   correlation: { name: 'Correlation', desc: 'Linear association between two variables', category: 'Relationship' },
   regression: { name: 'Linear regression', desc: 'Model a dependent variable from predictors', category: 'Relationship' },
   reliability: { name: 'Reliability', desc: "Cronbach's alpha for a scale", category: 'Survey' },
+  efa: { name: 'Exploratory factor analysis', desc: 'KMO, Bartlett and factor loadings', category: 'Survey' },
+  cfa: { name: 'Confirmatory factor analysis', desc: 'Test the factor structure of a scale', category: 'Survey' },
+  cvi: { name: 'Content validity index', desc: 'I-CVI, S-CVI and modified kappa from expert ratings', category: 'Survey' },
+  harman: { name: 'Harman single-factor test', desc: 'Unrotated PCA for common method bias', category: 'Survey' },
   ttest_one: { name: 'One-sample t-test', desc: 'Test a sample mean against a value', category: 'Difference tests' },
   normality: { name: 'Normality test', desc: 'Shapiro-Wilk test for normality', category: 'Basic' },
   nonparametric: { name: 'Nonparametric test', desc: 'Mann-Whitney U when normality fails', category: 'Difference tests' },
   frequency: { name: 'Frequency', desc: 'Counts and percentages of categories', category: 'Basic' },
-  summary: { name: 'Summary by group', desc: 'Group-wise means and SDs', category: 'Basic' }
+  summary_by: { name: 'Summary by group', desc: 'Group-wise means and SDs', category: 'Basic' }
 }
 
 export default function WizardPage() {
@@ -49,6 +58,8 @@ export default function WizardPage() {
   const [mu, setMu] = useState<number>(0) // S9: 单样本 t 检验的检验值
   /** 相关分析的相关系数类型（v0.2.6：Spearman 此前在后端已支持但 UI 无法选择） */
   const [correlationMethod, setCorrelationMethod] = useState<'pearson' | 'spearman'>('pearson')
+  /** CFA 的因子数（v0.3.1：auto = 由 EFA 特征值 > 1 自动判定；'1'..'4' 为强制指定） */
+  const [cfaFactors, setCfaFactors] = useState<string>('auto')
   const [, setIsExecuting] = useState(false) // S8: 无 getter，步骤切换已覆盖加载状态
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [interpretation, setInterpretation] = useState<string>('')
@@ -109,6 +120,9 @@ export default function WizardPage() {
       regression: () => RService.regressionCode(depVars[0], depVars.slice(1), dataFile),
       reliability: () => RService.reliabilityCode(depVars, dataFile),
       efa: () => RService.efaCode(depVars, undefined, dataFile),
+      cfa: () => RService.cfaCode(depVars, cfaFactors === 'auto' ? undefined : Number(cfaFactors), dataFile),
+      cvi: () => RService.cviCode(depVars, dataFile),
+      harman: () => RService.harmanCode(depVars, dataFile),
       normality: () => RService.normalityTestCode(depVars, dataFile),
       nonparametric: () => RService.nonparametricCode(depVars[0], groupVar, dataFile),
       frequency: () => RService.frequencyCode(depVars, dataFile),
@@ -184,7 +198,9 @@ export default function WizardPage() {
   // 解析方法/描述/类别的本地化文本。
   // 语言包缺键时回退到英文标签（而不是中文 name/description），
   // 否则英文界面会出现中文方法名。
-  const fallbackFor = (m: AnalysisMethod) => FALLBACK_LABELS[m.nameKey?.split('.').pop() ?? m.id]
+  // 回退键直接用方法 id：nameKey 的末段曾与 id 不一致（chisquare vs chi_square、
+  // summary_by vs summary），导致回退静默失效。
+  const fallbackFor = (m: AnalysisMethod) => FALLBACK_LABELS[m.id]
   const methodName = (m: AnalysisMethod) =>
     m.nameKey ? t(m.nameKey, { defaultValue: fallbackFor(m)?.name ?? m.name }) : m.name
   const methodDesc = (m: AnalysisMethod) =>
@@ -365,6 +381,27 @@ export default function WizardPage() {
                   >
                     Spearman
                   </span>
+                </div>
+              </div>
+            )}
+
+            {/* v0.3.1: CFA 因子数（auto = 按 Kaiser 准则自动判定） */}
+            {selectedMethod.id === 'cfa' && (
+              <div className="var-section">
+                <div className="var-section-title">{t('wizard.cfaFactors')}</div>
+                <div className="var-section-desc">{t('wizard.cfaFactors.desc')}</div>
+                <div className="var-tags">
+                  {(selectedMethod.options?.find((o) => o.id === 'cfaFactors')?.values ?? []).map(
+                    (v) => (
+                      <span
+                        key={v.value}
+                        className={`var-tag ${cfaFactors === v.value ? 'selected' : ''}`}
+                        onClick={() => setCfaFactors(v.value)}
+                      >
+                        {t(v.labelKey, { defaultValue: v.label })}
+                      </span>
+                    )
+                  )}
                 </div>
               </div>
             )}

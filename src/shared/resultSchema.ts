@@ -357,7 +357,134 @@ export interface EfaResult extends ResultBase {
 }
 
 /* ═══════════════════════════════════════════════════════════════
- * 三、联合类型与类型守卫
+ * 三、效度线（v0.3.1 新增）
+ *
+ * 三者与 v0.3.0 的 EFA 同属"问卷效度线"，但风险点各不相同：
+ *   - CFA 一张表里并排躺着 χ²/df、CFI、TLI、RMSEA、SRMR 五个 4 位小数，
+ *     任何一个下标错位都不会报错，只会把"拟合良好"显示成"拟合不佳"；
+ *   - CVI 的 I-CVI、Pc、Kappa 三个量都是 0–1 的小数，且 Kappa 由 I-CVI 与 Pc
+ *     算出，错位后会得到"看起来也像 0–1 概率"的错误值；
+ *   - Harman 的 first_pct 与 eigenvalue 量纲不同（56.88 vs 3.41），错位会直接
+ *     颠倒"是否存在共同方法偏差"的结论。
+ * 因此这里的字段名严格对着 V031_CONTRACT.md 的行格式，一个下标都不留。
+ * ═══════════════════════════════════════════════════════════════ */
+
+export interface CfaResult extends ResultBase {
+  kind: 'cfa'
+  /** 因子数 k */
+  n_factors: number
+  /** 题项数 p */
+  n_items: number
+  n: number
+  /** lavaan 语法串，供复现（如 `F1 =~ q1 + q2 + q3`） */
+  model_syntax: string
+  /** 题项归属；factor 为 1-based 因子编号，来自同一数据集上的 EFA */
+  items: Array<{ item: string; factor: number }>
+  fit: {
+    chisq: number
+    /** df = p(p+1)/2 − (2p + k(k−1)/2)；df < 0 时模型不可识别（R 端已 stop） */
+    df: number
+    p: PValue
+    cfi: number | null
+    tli: number | null
+    rmsea: number | null
+    srmr: number | null
+    /** 零模型（独立模型）卡方，CFI/TLI 的分母来源 */
+    null_model: { chisq: number | null; df: number | null }
+  }
+  /** 完全标准化载荷（标准化解）；unstd_load 为原始尺度载荷 */
+  estimates: Array<{
+    item: string
+    /** 所属因子（1-based） */
+    factor: number | null
+    std_load: number | null
+    unstd_load: number | null
+    /** 标准化载荷的 delta 法标准误 */
+    se: number | null
+    /** 标准化载荷的 Wald 检验统计量 */
+    z: number | null
+    p: PValue
+    /** 题项 R² = std_load² */
+    r2: number | null
+  }>
+  /** 因子间相关，每对一行（n_factors < 2 时为空数组） */
+  factor_correlations: Array<{
+    f1: number
+    f2: number
+    cor: number
+    se: number | null
+    z: number | null
+    p: PValue
+  }>
+  /** 组合信度 / 平均方差抽取量 / √AVE（区分效度：√AVE 与 cor 比较） */
+  reliability: Array<{
+    factor: number
+    cr: number | null
+    ave: number | null
+    sqrt_ave: number | null
+  }>
+  diagnostics: Diagnostic[]
+  conclusion?: string
+}
+
+export interface CviResult extends ResultBase {
+  kind: 'cvi'
+  n_items: number
+  /** 行 = 专家，列 = 题项；1–4 相关性评分 */
+  n_experts: number
+  items: Array<{
+    item: string
+    /** 评 ≥ 3 分的专家数（即"相关"） */
+    n_relevant: number
+    n_experts: number
+    /** I-CVI = n_relevant / n_experts */
+    i_cvi: number
+    /** 随机一致概率 Pc = C(n, A)/2^n，A = ceiling(I-CVI 判定阈值 × n) */
+    p_c: number | null
+    /** 修正 Kappa：k* = (I-CVI − Pc)/(1 − Pc) */
+    kappa: number | null
+    /** 优秀 / 良好 / 需修改 */
+    verdict: string
+  }>
+  /** S-CVI/Ave = 各 I-CVI 的均值 */
+  s_cvi_ave: number | null
+  /** S-CVI/UA = 全部专家均评 ≥ 3 的题项比例 */
+  s_cvi_ua: number | null
+  /** S-CVI/UA 对应的题项数 */
+  n_ua: number | null
+  /** 是否全部题项的 I-CVI 达到判定阈值 */
+  threshold_ok: boolean | null
+  diagnostics: Diagnostic[]
+  conclusion?: string
+}
+
+export interface HarmanResult extends ResultBase {
+  kind: 'harman'
+  /** 参与分析的题项数 */
+  n_items: number
+  n: number
+  /** 未旋转主成分分析中特征值 > 1 的成分（逐行） */
+  eigenvalues: Array<{
+    /** 成分序号（1-based） */
+    factor: number
+    eigenvalue: number
+    variance_pct: number
+    cumulative_pct: number
+  }>
+  /** 特征值 > 1 的成分个数 */
+  n_factors_gt1: number
+  /** 第一成分（未旋转）解释的方差百分比；< 40 且因子数 > 1 视为未发现严重偏差 */
+  first_pct: number
+  /** 判定阈值（百分比，契约固定为 40） */
+  threshold: number
+  /** 判据是否满足（首成分 < 阈值 且 特征值 > 1 的因子数 > 1） */
+  ok: boolean | null
+  diagnostics: Diagnostic[]
+  conclusion?: string
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * 四、联合类型与类型守卫
  * ═══════════════════════════════════════════════════════════════ */
 
 export type StructuredResult =
@@ -375,6 +502,9 @@ export type StructuredResult =
   | FrequencyResult
   | SummaryByResult
   | EfaResult
+  | CfaResult
+  | CviResult
+  | HarmanResult
 
 /** kind → 类型 的映射，供类型守卫与穷尽性检查使用 */
 export interface ResultKindMap {
@@ -392,6 +522,9 @@ export interface ResultKindMap {
   frequency: FrequencyResult
   summary_by: SummaryByResult
   efa: EfaResult
+  cfa: CfaResult
+  cvi: CviResult
+  harman: HarmanResult
 }
 
 export type ResultKind = keyof ResultKindMap
@@ -411,7 +544,10 @@ export const RESULT_KINDS = [
   'nonparametric',
   'frequency',
   'summary_by',
-  'efa'
+  'efa',
+  'cfa',
+  'cvi',
+  'harman'
 ] as const satisfies readonly ResultKind[]
 
 /** 协议版本；升级字段含义时递增，解析器据此走兼容分支 */

@@ -33,7 +33,11 @@ const CASES: Array<{ name: string; gen: () => string }> = [
   { name: 'normality', gen: () => RService.normalityTestCode(['x']) },
   { name: 'nonparametric', gen: () => RService.nonparametricCode('score', 'group') },
   { name: 'frequency', gen: () => RService.frequencyCode(['edu']) },
-  { name: 'summary_by', gen: () => RService.summaryByCode('dept', 'salary') }
+  { name: 'summary_by', gen: () => RService.summaryByCode('dept', 'salary') },
+  // v0.3.1：问卷效度进阶三件套（CFA / CVI / Harman），全部纯 base R
+  { name: 'cfa', gen: () => RService.cfaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6']) },
+  { name: 'cvi', gen: () => RService.cviCode(['q1', 'q2', 'q3', 'q4']) },
+  { name: 'harman', gen: () => RService.harmanCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6']) }
 ]
 
 /**
@@ -116,8 +120,8 @@ function structuralIssues(code: string): string[] {
 }
 
 describe('生成器产出必须是合法 R（无需安装 R 的结构检查）', () => {
-  it('covers all 14 generator outputs', () => {
-    expect(CASES).toHaveLength(14)
+  it('covers all 17 generator outputs', () => {
+    expect(CASES).toHaveLength(17)
     for (const c of CASES) expect(c.gen().length, `${c.name} 输出为空`).toBeGreaterThan(0)
   })
 
@@ -153,12 +157,105 @@ describe('生成器产出必须是合法 R（无需安装 R 的结构检查）',
       RService.reliabilityCode(evil),
       RService.correlationCode(evil[0], evil[1], 'pearson'),
       RService.tTestIndependentCode(evil[0], evil[1]),
-      RService.regressionCode(evil[0], evil.slice(1))
+      RService.regressionCode(evil[0], evil.slice(1)),
+      // v0.3.1 三个新生成器同样必须扛住注入
+      RService.cfaCode(evil),
+      RService.cviCode(evil),
+      RService.harmanCode(evil)
     ]
     for (const code of outputs) {
       expect(structuralIssues(code)).toEqual([])
       // 恶意内容不得以裸形式出现在代码里（必须有转义或已被字符串包裹）
       expect(code).not.toContain('system("calc")')
+    }
+  })
+
+  /**
+   * v0.3.1 三个新生成器的**契约形状**断言。
+   *
+   * 这里只做不需要 R 的文本级检查（真正跑 R 的验证在
+   * scripts/validate/run_validation.R）。重点锁死三件在开发中真实踩到的事：
+   *   1. R_COMMON 的 "g" 格式必须有 trimws —— formatC(format = "g") 不指定
+   *      width 时会把字段右对齐补到 digits+1 个字符，实测 num_p(0) 输出
+   *      "        0"，带空格的字段违反"以 | 分隔、不加空格"的契约。
+   *   2. CFA 的 unstd_load 不得等于 std_load —— 拟合对象是相关矩阵时
+   *      diag(Sigma) 恒为 1，若直接把 lam 当 unstd_load 输出，两列一模一样。
+   *   3. CVI 阈值必须与离散取值的可达性一致（n=6→0.83 而非 0.78）。
+   */
+  it('num_p / num_sig 用 trimws 去掉 formatC 的宽度填充（否则字段带前导空格）', () => {
+    const code = RService.harmanCode(['x', 'y', 'z'])
+    const numPLine = code.split('\n').find((l) => l.includes('num_p <- function'))!
+    expect(numPLine).toBeTruthy()
+    // num_p 函数体必须出现 trimws
+    const body = code.split('num_p <- function')[1].split('\n}\n')[0]
+    expect(body, 'num_p 缺少 trimws，formatC("g") 会给字段补前导空格').toContain('trimws')
+    expect(code).toContain('trimws(formatC')
+  })
+
+  it('CFA 的 unstd_load 是原始量纲载荷（std_load × sd），不与 std_load 恒等', () => {
+    const code = RService.cfaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'])
+    // 必须真的用原始列标准差换算
+    expect(code).toMatch(/unstd_lam <- std_lam \* raw_sd/)
+    expect(code).toMatch(/raw_sd <- vapply/)
+    // CFA_ESTIMATE 行必须输出 unstd_lam 而不是 lam
+    expect(code).toMatch(/num\(unstd_lam\[i\]\)/)
+  })
+
+  it('CFA 翻转载荷列时必须同步翻转 Φ 的行与列（不然 φ 符号相反）', () => {
+    const code = RService.cfaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'])
+    // 翻转符号必须记在 flip 向量里，且 Φ 的翻转必须做**行与列双向**夹乘：
+    // diag(flip) %*% Phi %*% diag(flip) —— 只夹一侧会让 Φ 不再是对称相关矩阵，
+    // 只翻 Λ 不翻 Φ 则 φ 符号相反（原型实测：真值 +0.35 估成 −0.37）。
+    expect(code).toMatch(/flip\[j\] <- -1/)
+    expect(code).toMatch(/diag\(flip, n_fac\) %\*% Phi_raw %\*% diag\(flip, n_fac\)/)
+    // 双向夹乘的两个 diag(flip) 都要在：缺少任一侧都不等价于行列同时翻转
+    const sandwich = code.match(/diag\(flip, n_fac\)/g) ?? []
+    expect(sandwich.length, 'Φ 的翻转必须是 diag(flip) 双侧夹乘').toBeGreaterThanOrEqual(2)
+  })
+
+  it('CVI 阈值表是 Lynn/Polit 口径：n<=5 -> 1.00，6-8 -> 0.83，>=9 -> 0.78', () => {
+    const code = RService.cviCode(['q1', 'q2', 'q3'])
+    // 提取 cvi_threshold 函数体做精确断言：阈值写错会直接改变论文里的效度结论
+    const body = code.split('cvi_threshold <- function(n) {')[1].split('\n}\n')[0]
+    expect(body, 'n<=5 的阈值必须是 1.00').toMatch(/if \(n <= 5\) \{\s*1\.00/)
+    expect(body, '6-8 的阈值必须是 0.83（曾误写 0.78/0.75）').toMatch(/if \(n <= 8\) \{\s*0\.83/)
+    expect(body, 'n>=9 的阈值必须是 0.78').toMatch(/0\.78/)
+    expect(body, '阈值中不得出现 0.75').not.toContain('0.75')
+  })
+
+  it('CVI 的 Pc 用单点二项系数 C(n, A)/2^n，不是尾概率和', () => {
+    const code = RService.cviCode(['q1', 'q2', 'q3'])
+    expect(code).toMatch(/Pc <- choose\(n_experts, A_req\) \/ 2\^n_experts/)
+    expect(code).toMatch(/A_req <- ceiling\(thr \* n_experts\)/)
+    // 绝不能出现 sum(choose(...)) 这类尾概率写法
+    expect(code).not.toMatch(/Pc <- sum\(choose/)
+  })
+
+  it('CVI 的 verdict 用 Cicchetti & Sparrow 四级（含"尚可"）', () => {
+    const code = RService.cviCode(['q1', 'q2', 'q3'])
+    for (const v of ['优秀', '良好', '尚可', '需修改']) {
+      expect(code, `verdict 缺少 ${v}`).toContain(v)
+    }
+  })
+
+  it('Harman 必须输出"灵敏度低、只能初步筛查"的提示', () => {
+    const code = RService.harmanCode(['q1', 'q2', 'q3'])
+    expect(code).toContain('灵敏度低')
+    expect(code).toContain('不能证明')
+    // 判据阈值 40%
+    expect(code).toMatch(/thr_pct <- 40/)
+  })
+
+  it('三个新生成器的横幅唯一且与契约完全一致', () => {
+    const expected: Array<[string, string]> = [
+      [RService.cfaCode(['q1', 'q2', 'q3', 'q4']), '=== 验证性因子分析 (CFA) ==='],
+      [RService.cviCode(['q1', 'q2']), '=== 内容效度指数 (CVI) ==='],
+      [RService.harmanCode(['q1', 'q2', 'q3']), '=== Harman 单因子检验 ===']
+    ]
+    for (const [code, banner] of expected) {
+      const found = code.match(/^cat\("=== .+? ===\\n"\)/gm)
+      expect(found, '横幅必须恰好一个').toHaveLength(1)
+      expect(code).toContain(`cat("${banner}\\n")`)
     }
   })
 })

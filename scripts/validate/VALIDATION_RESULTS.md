@@ -1,12 +1,12 @@
 # 统计验证结果（真实生成器 + 独立 oracle）
 
 R 版本：R version 4.6.0 (2026-04-24 ucrt)
-生成时间：2026-10-22 15:32:31
+生成时间：2026-10-25 21:31:51
 fixtures 目录：generated
 被测代码：src/renderer/src/services/rService.ts（esbuild 打包后运行时调用，非手抄副本）
 
-方法覆盖：**14 / 14**
-断言总数：**310**（PASS 310 / FAIL 0）
+方法覆盖：**17 / 17**
+断言总数：**536**（PASS 536 / FAIL 0）
 
 | 方法 | 数据集 | 断言 | 参考(oracle) | 工作台 | 结果 |
 |---|---|---|---|---|---|
@@ -319,6 +319,232 @@ fixtures 目录：generated
 | summary_by | summary_by | SUM.D.mean |      40 |      40 | PASS |
 | summary_by | summary_by | SUM.D.min |      40 |      40 | PASS |
 | summary_by | summary_by | SUM.D.max |      40 |      40 | PASS |
-| __coverage__ | - | methods_covered |      14 |      14 | PASS |
+| cfa | cfa | r_syntax_parse | parse() ok | ok | PASS |
+| cfa | cfa | sprintf_format_args | no mismatch | ok | PASS |
+| cfa | cfa | no_r_error | no error | ok | PASS |
+| cfa | cfa | banner | === 验证性因子分析 (CFA) === | === 验证性因子分析 (CFA) === | PASS |
+| cfa | cfa | CFA_SPEC.p |       6 |       6 | PASS |
+| cfa | cfa | CFA_SPEC.n |     800 |     800 | PASS |
+| cfa | cfa | CFA_ITEM.order | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
+| cfa | cfa | CFA_SPEC.nfac |       2 |       2 | PASS |
+| cfa | cfa | CFA_ITEM.partition | 1-2-3|4-5-6 | 1-2-3|4-5-6 | PASS |
+| cfa | cfa | CFA_FIT.chisq | 0.00208516 |  0.0021 | PASS |
+| cfa | cfa | CFA_FIT.df |       8 |       8 | PASS |
+| cfa | cfa | F_ML | 2.60971e-06 | 2.62829e-06 | PASS |
+| cfa | cfa | CFA_FIT.p |       1 |       1 | PASS |
+| cfa | cfa | invariant.diag_Sigma_eq_1 | 2.12359e-06 |       0 | PASS |
+| cfa | cfa | invariant.lambda2_plus_theta | 2.22045e-16 |       0 | PASS |
+| cfa | cfa | invariant.df_formula |       8 |       8 | PASS |
+| cfa | cfa | invariant.npar |      13 |      13 | PASS |
+| cfa | cfa | CFA_NULLMODEL.chisq | 1893.48 | 1893.48 | PASS |
+| cfa | cfa | CFA_NULLMODEL.df |      15 |      15 | PASS |
+| cfa | cfa | CFA_FITIDX.cfi |       1 |       1 | PASS |
+| cfa | cfa | CFA_FITIDX.tli | 1.00798 |   1.008 | PASS |
+| cfa | cfa | CFA_FITIDX.rmsea |       0 |       0 | PASS |
+| cfa | cfa | CFA_FITIDX.srmr | 0.000196983 |  0.0002 | PASS |
+| cfa | cfa | CFA_ESTIMATE.items | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
+| cfa | cfa | CFA_ESTIMATE.std_load.numeric | all numeric | all numeric | PASS |
+| cfa | cfa | CFA_ESTIMATE.q1.std_load | 0.849759 |  0.8498 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q2.std_load | 0.800337 |  0.8003 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q3.std_load | 0.750033 |    0.75 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q4.std_load | 0.81999 |    0.82 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q5.std_load | 0.78004 |    0.78 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q6.std_load | 0.720055 |  0.7201 | PASS |
+| cfa | cfa | CFA_ESTIMATE.std_load.max_abs_diff |       0 | 4.50406e-05 | PASS |
+| cfa | cfa | CFA_ESTIMATE.sign_convention | TRUE | TRUE | PASS |
+| cfa | cfa | CFA_ESTIMATE.std_load_in_range | TRUE | TRUE | PASS |
+| cfa | cfa | truth.std_load.max_abs_error |       0 |  0.0003 | PASS |
+| cfa | cfa | CFA_ESTIMATE.r2_equals_load_sq |       0 |   1e-04 | PASS |
+| cfa | cfa | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 7.64205e-05 | PASS |
+| cfa | cfa | CFA_ESTIMATE.unstd_differs_from_std | TRUE | TRUE | PASS |
+| cfa | cfa | CFA_FACTOR.cor.max_abs_diff |       0 |       0 | PASS |
+| cfa | cfa | truth.phi12 |    0.35 |  0.3497 | PASS |
+| cfa | cfa | CFA_RELIAB.F1.cr | 0.842758 |  0.8428 | PASS |
+| cfa | cfa | CFA_RELIAB.F1.ave | 0.641726 |  0.6417 | PASS |
+| cfa | cfa | CFA_RELIAB.F1.sqrt_ave | 0.801078 |  0.8011 | PASS |
+| cfa | cfa | CFA_RELIAB.F2.cr | 0.817623 |  0.8176 | PASS |
+| cfa | cfa | CFA_RELIAB.F2.ave | 0.599775 |  0.5998 | PASS |
+| cfa | cfa | CFA_RELIAB.F2.sqrt_ave | 0.774452 |  0.7745 | PASS |
+| cfa | cfa | CONCL.matches_fit_indices | good | good | PASS |
+| cfa | cfa | discriminant.correct_model_CFI_above_0.95 | >= 0.95 |       1 | PASS |
+| cfa | cfa_3factors | r_syntax_parse | parse() ok | ok | PASS |
+| cfa | cfa_3factors | sprintf_format_args | no mismatch | ok | PASS |
+| cfa | cfa_3factors | no_r_error | no error | ok | PASS |
+| cfa | cfa_3factors | banner | === 验证性因子分析 (CFA) === | === 验证性因子分析 (CFA) === | PASS |
+| cfa | cfa_3factors | CFA_SPEC.p |       9 |       9 | PASS |
+| cfa | cfa_3factors | CFA_SPEC.n |     600 |     600 | PASS |
+| cfa | cfa_3factors | CFA_ITEM.order | a1,a2,a3,b1,b2,b3,c1,c2,c3 | a1,a2,a3,b1,b2,b3,c1,c2,c3 | PASS |
+| cfa | cfa_3factors | CFA_SPEC.nfac |       3 |       3 | PASS |
+| cfa | cfa_3factors | CFA_ITEM.partition | 1-2-3|4-5-6|7-8-9 | 1-2-3|4-5-6|7-8-9 | PASS |
+| cfa | cfa_3factors | CFA_FIT.chisq | 0.0121063 |  0.0121 | PASS |
+| cfa | cfa_3factors | CFA_FIT.df |      24 |      24 | PASS |
+| cfa | cfa_3factors | F_ML | 2.02108e-05 | 2.02003e-05 | PASS |
+| cfa | cfa_3factors | CFA_FIT.p |       1 |       1 | PASS |
+| cfa | cfa_3factors | invariant.diag_Sigma_eq_1 | 4.8124e-07 |       0 | PASS |
+| cfa | cfa_3factors | invariant.lambda2_plus_theta | 3.33067e-16 |       0 | PASS |
+| cfa | cfa_3factors | invariant.df_formula |      24 |      24 | PASS |
+| cfa | cfa_3factors | invariant.npar |      21 |      21 | PASS |
+| cfa | cfa_3factors | CFA_NULLMODEL.chisq | 2023.47 | 2023.47 | PASS |
+| cfa | cfa_3factors | CFA_NULLMODEL.df |      36 |      36 | PASS |
+| cfa | cfa_3factors | CFA_FITIDX.cfi |       1 |       1 | PASS |
+| cfa | cfa_3factors | CFA_FITIDX.tli |  1.0181 |  1.0181 | PASS |
+| cfa | cfa_3factors | CFA_FITIDX.rmsea |       0 |       0 | PASS |
+| cfa | cfa_3factors | CFA_FITIDX.srmr | 0.000478256 |  0.0005 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.items | a1,a2,a3,b1,b2,b3,c1,c2,c3 | a1,a2,a3,b1,b2,b3,c1,c2,c3 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.std_load.numeric | all numeric | all numeric | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.a1.std_load | 0.82014 |  0.8201 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.a2.std_load | 0.790232 |  0.7902 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.a3.std_load | 0.760251 |  0.7603 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.b1.std_load | 0.809673 |  0.8097 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.b2.std_load | 0.780696 |  0.7807 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.b3.std_load | 0.749674 |  0.7497 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.c1.std_load | 0.800262 |  0.8003 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.c2.std_load | 0.769941 |  0.7699 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.c3.std_load | 0.740532 |  0.7405 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.std_load.max_abs_diff |       0 | 4.93981e-05 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.sign_convention | TRUE | TRUE | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.std_load_in_range | TRUE | TRUE | PASS |
+| cfa | cfa_3factors | truth.std_load.max_abs_error |       0 |  0.0007 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.r2_equals_load_sq |       0 | 8.396e-05 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 8.10121e-05 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.unstd_differs_from_std | TRUE | TRUE | PASS |
+| cfa | cfa_3factors | CFA_FACTOR.cor.max_abs_diff |       0 |       0 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F1.cr | 0.823586 |  0.8236 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F1.ave | 0.609022 |   0.609 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F1.sqrt_ave | 0.780399 |  0.7804 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F2.cr | 0.814211 |  0.8142 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F2.ave | 0.593872 |  0.5939 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F2.sqrt_ave | 0.770631 |  0.7706 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.cr | 0.833216 |  0.8332 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.ave | 0.625026 |   0.625 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.sqrt_ave | 0.790586 |  0.7906 | PASS |
+| cfa | cfa_3factors | CONCL.matches_fit_indices | good | good | PASS |
+| cfa | cfa_3factors | discriminant.correct_model_CFI_above_0.95 | >= 0.95 |       1 | PASS |
+| cfa | cfa_misfit | r_syntax_parse | parse() ok | ok | PASS |
+| cfa | cfa_misfit | sprintf_format_args | no mismatch | ok | PASS |
+| cfa | cfa_misfit | no_r_error | no error | ok | PASS |
+| cfa | cfa_misfit | banner | === 验证性因子分析 (CFA) === | === 验证性因子分析 (CFA) === | PASS |
+| cfa | cfa_misfit | CFA_SPEC.p |       6 |       6 | PASS |
+| cfa | cfa_misfit | CFA_SPEC.n |     800 |     800 | PASS |
+| cfa | cfa_misfit | CFA_ITEM.order | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
+| cfa | cfa_misfit | CFA_SPEC.nfac |       1 |       1 | PASS |
+| cfa | cfa_misfit | CFA_ITEM.partition | 1-2-3-4-5-6 | 1-2-3-4-5-6 | PASS |
+| cfa | cfa_misfit | CFA_ITEM.forced_1factor |       1 |       1 | PASS |
+| cfa | cfa_misfit | CFA_FIT.chisq | 711.264 | 711.264 | PASS |
+| cfa | cfa_misfit | CFA_FIT.df |       9 |       9 | PASS |
+| cfa | cfa_misfit | F_ML | 0.890193 | 0.890193 | PASS |
+| cfa | cfa_misfit | CFA_FIT.p | 2.61892e-147 | 2.61892e-147 | PASS |
+| cfa | cfa_misfit | invariant.diag_Sigma_eq_1 | 2.06459e-07 |       0 | PASS |
+| cfa | cfa_misfit | invariant.lambda2_plus_theta | 1.11022e-16 |       0 | PASS |
+| cfa | cfa_misfit | invariant.df_formula |       9 |       9 | PASS |
+| cfa | cfa_misfit | invariant.npar |      12 |      12 | PASS |
+| cfa | cfa_misfit | CFA_NULLMODEL.chisq | 1893.48 | 1893.48 | PASS |
+| cfa | cfa_misfit | CFA_NULLMODEL.df |      15 |      15 | PASS |
+| cfa | cfa_misfit | CFA_FITIDX.cfi | 0.626153 |  0.6262 | PASS |
+| cfa | cfa_misfit | CFA_FITIDX.tli | 0.376922 |  0.3769 | PASS |
+| cfa | cfa_misfit | CFA_FITIDX.rmsea | 0.312504 |  0.3125 | PASS |
+| cfa | cfa_misfit | CFA_FITIDX.srmr | 0.184686 |  0.1847 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.items | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.std_load.numeric | all numeric | all numeric | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q1.std_load | 0.833135 |  0.8331 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q2.std_load | 0.793017 |   0.793 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q3.std_load | 0.745041 |   0.745 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q4.std_load | 0.362752 |  0.3628 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q5.std_load | 0.349115 |  0.3491 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q6.std_load | 0.327223 |  0.3272 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.std_load.max_abs_diff |       0 | 4.75547e-05 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.sign_convention | TRUE | TRUE | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.std_load_in_range | TRUE | TRUE | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.r2_equals_load_sq |       0 | 7.5e-05 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 8.47905e-05 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.unstd_differs_from_std | TRUE | TRUE | PASS |
+| cfa | cfa_misfit | CFA_FACTOR.absent_when_1factor | absent | absent | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.cr | 0.755618 |  0.7556 | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.ave | 0.373104 |  0.3731 | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.sqrt_ave | 0.610822 |  0.6108 | PASS |
+| cfa | cfa_misfit | CONCL.matches_fit_indices | poor | poor | PASS |
+| cfa | cfa_misfit | discriminant.misfit_CFI_below_0.80 | < 0.80 |  0.6262 | PASS |
+| cvi | cvi | r_syntax_parse | parse() ok | ok | PASS |
+| cvi | cvi | sprintf_format_args | no mismatch | ok | PASS |
+| cvi | cvi | no_r_error | no error | ok | PASS |
+| cvi | cvi | banner | === 内容效度指数 (CVI) === | === 内容效度指数 (CVI) === | PASS |
+| cvi | cvi | CVI_SPEC.n_items |       6 |       6 | PASS |
+| cvi | cvi | CVI_SPEC.n_experts |       8 |       8 | PASS |
+| cvi | cvi | CVI_ITEM.order | c1,c2,c3,c4,c5,c6 | c1,c2,c3,c4,c5,c6 | PASS |
+| cvi | cvi | CVI_ITEM.c1.n_relevant |       8 |       8 | PASS |
+| cvi | cvi | CVI_ITEM.c1.i_cvi |       1 |       1 | PASS |
+| cvi | cvi | CVI_ITEM.c1.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c1.kappa |       1 |       1 | PASS |
+| cvi | cvi | CVI_ITEM.c1.verdict | 优秀 | 优秀 | PASS |
+| cvi | cvi | CVI_ITEM.c2.n_relevant |       8 |       8 | PASS |
+| cvi | cvi | CVI_ITEM.c2.i_cvi |       1 |       1 | PASS |
+| cvi | cvi | CVI_ITEM.c2.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c2.kappa |       1 |       1 | PASS |
+| cvi | cvi | CVI_ITEM.c2.verdict | 优秀 | 优秀 | PASS |
+| cvi | cvi | CVI_ITEM.c3.n_relevant |       7 |       7 | PASS |
+| cvi | cvi | CVI_ITEM.c3.i_cvi |   0.875 |   0.875 | PASS |
+| cvi | cvi | CVI_ITEM.c3.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c3.kappa | 0.870968 |   0.871 | PASS |
+| cvi | cvi | CVI_ITEM.c3.verdict | 优秀 | 优秀 | PASS |
+| cvi | cvi | CVI_ITEM.c4.n_relevant |       6 |       6 | PASS |
+| cvi | cvi | CVI_ITEM.c4.i_cvi |    0.75 |    0.75 | PASS |
+| cvi | cvi | CVI_ITEM.c4.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c4.kappa | 0.741935 |  0.7419 | PASS |
+| cvi | cvi | CVI_ITEM.c4.verdict | 优秀 | 优秀 | PASS |
+| cvi | cvi | CVI_ITEM.c5.n_relevant |       5 |       5 | PASS |
+| cvi | cvi | CVI_ITEM.c5.i_cvi |   0.625 |   0.625 | PASS |
+| cvi | cvi | CVI_ITEM.c5.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c5.kappa | 0.612903 |  0.6129 | PASS |
+| cvi | cvi | CVI_ITEM.c5.verdict | 良好 | 良好 | PASS |
+| cvi | cvi | CVI_ITEM.c6.n_relevant |       4 |       4 | PASS |
+| cvi | cvi | CVI_ITEM.c6.i_cvi |     0.5 |     0.5 | PASS |
+| cvi | cvi | CVI_ITEM.c6.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c6.kappa | 0.483871 |  0.4839 | PASS |
+| cvi | cvi | CVI_ITEM.c6.verdict | 尚可 | 尚可 | PASS |
+| cvi | cvi | CVI_SUMMARY.s_cvi_ave | 0.791667 |  0.7917 | PASS |
+| cvi | cvi | CVI_SUMMARY.s_cvi_ua | 0.333333 |  0.3333 | PASS |
+| cvi | cvi | CVI_SUMMARY.n_ua |       2 |       2 | PASS |
+| cvi | cvi | CVI_SUMMARY.threshold_ok | FALSE | FALSE | PASS |
+| cvi | cvi | fixture.i_cvi_has_discrimination | >= 3 distinct values | 5 distinct | PASS |
+| cvi | cvi | fixture.verdict_has_multiple_levels | >= 2 levels | 3 levels | PASS |
+| cvi | cvi | oracle.a_req_matches_threshold_table | ceiling(   0.83 x 8) = 7 | Pc = C(8,7)/2^8 = 0.03125 | PASS |
+| harman | harman_medium | r_syntax_parse | parse() ok | ok | PASS |
+| harman | harman_medium | sprintf_format_args | no mismatch | ok | PASS |
+| harman | harman_medium | no_r_error | no error | ok | PASS |
+| harman | harman_medium | banner | === Harman 单因子检验 === | === Harman 单因子检验 === | PASS |
+| harman | harman_medium | HARMAN_SPEC.p |       6 |       6 | PASS |
+| harman | harman_medium | HARMAN_SPEC.n |     400 |     400 | PASS |
+| harman | harman_medium | oracle.consistency_eigen_vs_svd | 2.66454e-15 |       0 | PASS |
+| harman | harman_medium | HARMAN_SUMMARY.n_factors_gt1 |       2 |       2 | PASS |
+| harman | harman_medium | HARMAN_EIGEN.count |       2 |       2 | PASS |
+| harman | harman_medium | HARMAN_EIGEN.eigen1 | 2.25318 |  2.2532 | PASS |
+| harman | harman_medium | HARMAN_EIGEN.variance_pct1 |  37.553 |   37.55 | PASS |
+| harman | harman_medium | HARMAN_EIGEN.eigen2 | 1.50016 |  1.5002 | PASS |
+| harman | harman_medium | HARMAN_EIGEN.variance_pct2 | 25.0027 |      25 | PASS |
+| harman | harman_medium | HARMAN_EIGEN.cumulative_monotone | TRUE | TRUE | PASS |
+| harman | harman_medium | HARMAN_SUMMARY.first_pct |  37.553 |   37.55 | PASS |
+| harman | harman_medium | HARMAN_SUMMARY.ok | 是 | 是 | PASS |
+| harman | harman_medium | HARMAN_SUMMARY.threshold |      40 |      40 | PASS |
+| harman | harman_medium | criterion.medium_side | first_pct<40 & n_gt1>1 | first_pct=37.55 n_gt1=2 | PASS |
+| harman | harman_medium | CONCL.direction | no_bias | no_bias | PASS |
+| harman | harman_medium | HARMAN_NOTE.sensitivity_caveat | present | present | PASS |
+| harman | harman_high | r_syntax_parse | parse() ok | ok | PASS |
+| harman | harman_high | sprintf_format_args | no mismatch | ok | PASS |
+| harman | harman_high | no_r_error | no error | ok | PASS |
+| harman | harman_high | banner | === Harman 单因子检验 === | === Harman 单因子检验 === | PASS |
+| harman | harman_high | HARMAN_SPEC.p |       6 |       6 | PASS |
+| harman | harman_high | HARMAN_SPEC.n |     400 |     400 | PASS |
+| harman | harman_high | oracle.consistency_eigen_vs_svd | 1.77636e-15 |       0 | PASS |
+| harman | harman_high | HARMAN_SUMMARY.n_factors_gt1 |       1 |       1 | PASS |
+| harman | harman_high | HARMAN_EIGEN.count |       1 |       1 | PASS |
+| harman | harman_high | HARMAN_EIGEN.eigen1 | 4.20843 |  4.2084 | PASS |
+| harman | harman_high | HARMAN_EIGEN.variance_pct1 | 70.1404 |   70.14 | PASS |
+| harman | harman_high | HARMAN_SUMMARY.first_pct | 70.1404 |   70.14 | PASS |
+| harman | harman_high | HARMAN_SUMMARY.ok | 否 | 否 | PASS |
+| harman | harman_high | HARMAN_SUMMARY.threshold |      40 |      40 | PASS |
+| harman | harman_high | criterion.high_side | first_pct>40 | first_pct=70.14 | PASS |
+| harman | harman_high | CONCL.direction | bias | bias | PASS |
+| harman | harman_high | HARMAN_NOTE.sensitivity_caveat | present | present | PASS |
+| __coverage__ | - | methods_covered |      17 |      17 | PASS |
 
-**汇总：PASS 310 / 310**
+**汇总：PASS 536 / 536**

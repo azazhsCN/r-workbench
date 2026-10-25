@@ -32,11 +32,24 @@ const GENERATORS: Record<string, () => string> = {
   regression: () => RService.regressionCode('y', ['x1', 'x2'], 'data.csv'),
   reliability: () => RService.reliabilityCode(['i1', 'i2'], 'data.csv'),
   efa: () => RService.efaCode(['i1', 'i2', 'i3'], undefined, 'data.csv'),
+  cfa: () => RService.cfaCode(['i1', 'i2', 'i3'], undefined, 'data.csv'),
+  cvi: () => RService.cviCode(['i1', 'i2'], 'data.csv'),
+  harman: () => RService.harmanCode(['i1', 'i2'], 'data.csv'),
   normality: () => RService.normalityTestCode(['x'], 'data.csv'),
   nonparametric: () => RService.nonparametricCode('score', 'grp', 'data.csv'),
   frequency: () => RService.frequencyCode(['a'], 'data.csv'),
   summary_by: () => RService.summaryByCode('grp', 'score', 'data.csv')
 }
+
+/**
+ * 没有假设检验、因此**不应**输出 p 值的生成器。
+ *
+ * CVI（I-CVI / S-CVI / 修正 Kappa）与 Harman（方差解释率）都是描述性判据，
+ * 本身不产生 p 值。它们进 GENERATORS 后，「p 值契约」不再要求出现 `fmt_p`，
+ * 改为反向断言"不得凭空造 p 值"——豁免必须是被证明的，而不是被跳过的。
+ */
+const NO_P_VALUE_METHODS = new Set(['cvi', 'harman'])
+
 
 /**
  * 每个方法在真实运行时的代表性 R stdout（含横幅 + 特征数据行）。
@@ -302,6 +315,15 @@ describe('p 值契约', () => {
     for (const [name, gen] of Object.entries(GENERATORS)) {
       const code = gen()
       expect(code, `${name} 仍在使用 %.4f 输出 p 值`).not.toMatch(/p\s*=\s*%\.4f/)
+      if (NO_P_VALUE_METHODS.has(name)) {
+        // 描述性判据方法本来就没有 p 值；反过来要求"方法自己的代码段"不得凭空造 p 值。
+        // 只看横幅之后的部分：`${R_COMMON}` 被注入到每个生成器里，其中的 fmt_p 定义
+        // 与 julia/json 助手不代表该方法真的在报告 p 值。
+        const banner = code.match(/^cat\("=== .+? ===\\n"\)/m)
+        const body = banner && banner.index !== undefined ? code.slice(banner.index) : code
+        expect(body, `${name} 无假设检验却输出 p 值，容易被误读`).not.toMatch(/\bfmt_p\(/)
+        continue
+      }
       expect(code, `${name} 未使用 fmt_p`).toContain('fmt_p')
     }
   })
@@ -347,8 +369,8 @@ describe('解析器分派契约', () => {
       seen.add(type)
     }
     // correlation 与 correlation_spearman 映射到同一 type，故少 1
-    // v0.3.0：14 → EFA 加入后为 14（GENERATORS 含 15 项，其中两个 correlation 合并）
-    expect(seen.size).toBe(14)
+    // v0.3.0：14（EFA 加入后）；v0.3.1：17（CFA / CVI / Harman）
+    expect(seen.size, '新增方法时必须同步更新 GENERATORS 与本处计数').toBe(17)
   })
 
   it('分组统计行中的 " N=" 不会让 t 检验被误判为描述性统计', () => {
@@ -421,7 +443,10 @@ describe('解析器分派契约', () => {
 describe('向导方法注册表一致性', () => {
   it('METHODS 为空说明导出被破坏', () => {
     // v0.3.0：13 → 14（新增 EFA 探索性因子分析）
-    expect(METHODS.length).toBe(14)
+    // v0.3.1：14 → 17（新增 CFA / CVI / Harman）
+    // 这条断言只是"数量哨兵"。**新增方法时本文件的 GENERATORS 也必须同步加一行**，
+    // 否则下面两条会以更难读懂的方式失败（"生成器不存在/有孤儿"）。
+    expect(METHODS.length, '新增方法时必须同步更新本文件与 GENERATORS').toBe(17)
   })
 
   it('每个注册的方法 id 都有对应的 R 代码生成器（否则会执行空代码）', () => {

@@ -222,6 +222,217 @@ const efa9Rows = Array.from({ length: efa9N }, (_, i) => {
 })
 
 
+// ══════════════════════════════════════════════════════════════════════════
+// v0.3.1 新方法 fixtures（CFA / CVI / Harman）
+//
+// 全部确定性构造，**不使用 runif/rnorm**：验证结果必须在任何机器上逐位复现，
+// 否则「oracle 一致」这件事本身就不成立（fixtures 变了，参考值也得跟着变）。
+// ══════════════════════════════════════════════════════════════════════════
+
+/** 把确定性序列标准化为 mean 0 / 总体 sd 1（相关矩阵对缩放不敏感）。 */
+const standardize = (xs) => {
+  const mean = xs.reduce((a, b) => a + b, 0) / xs.length
+  const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / xs.length)
+  return xs.map((v) => (v - mean) / sd)
+}
+
+/**
+ * 确定性伪随机源（线性同余发生器，Numerical Recipes 参数）。
+ *
+ * 为什么不用 Math.random()：fixtures 必须逐位可复现，否则"oracle 一致"
+ * 这件事本身就依赖于运行时刻，无法作为证据。
+ * 为什么不用 sin 波（旧做法）：周期 5/7/13 的 sin 序列在 n 维空间里只能
+ * 张成极少数几个方向（周期 p 只有 p 个不同取值），12 个向量 Gram-Schmidt
+ * 之后必然出现近乎共线的方向 → 相关矩阵奇异/病态，CFA 直接报"接近奇异"。
+ * LCG 产生的序列在样本空间里接近满秩，正交化后是良态基。
+ */
+const makeRng = (seed) => {
+  let s = seed >>> 0
+  return () => {
+    // x_{n+1} = (a x_n + c) mod 2^32
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0
+    return s / 4294967296
+  }
+}
+
+/** 确定性正态序列（Box-Muller），仅供构造 fixtures 用。 */
+const normalSeq = (n, seed) => {
+  const rnd = makeRng(seed)
+  const out = []
+  while (out.length < n) {
+    const u1 = Math.max(rnd(), 1e-12)
+    const u2 = rnd()
+    const r = Math.sqrt(-2 * Math.log(u1))
+    out.push(r * Math.cos(2 * Math.PI * u2))
+    if (out.length < n) out.push(r * Math.sin(2 * Math.PI * u2))
+  }
+  return out.slice(0, n)
+}
+
+/**
+ * 精确正交化（Gram-Schmidt）：把一组确定性序列变成**样本层面精确**的
+ * 均值 0 / 单位范数 / 两两内积 0 的基。
+ *
+ * 为什么必须精确正交而不是"近似正交"：
+ *   只有基精确正交时，样本相关矩阵才**精确等于** ΛΦΛ' + Θ，
+ *   于是「估计载荷 ≈ 真值载荷」这条断言才是紧的（否则容差要放到 0.10 以上，
+ *   判别力大幅下降）。这一步纯确定性，不引入任何随机数。
+ */
+const orthonormalize = (vecs) => {
+  const out = []
+  for (const v of vecs) {
+    let w = v.slice()
+    for (const q of out) {
+      const dot = w.reduce((a, b, i) => a + b * q[i], 0)
+      w = w.map((x, i) => x - dot * q[i])
+    }
+    const norm = Math.sqrt(w.reduce((a, b) => a + b * b, 0))
+    out.push(w.map((x) => x / norm))
+  }
+  return out
+}
+
+/**
+ * 已知真值的因子数据生成器。
+ *   item_j = λ_j · g_group(j) + √(1 − λ_j²) · e_j
+ * 其中 {g_1..g_k, e_1..e_p} 是**精确正交**的 n 维单位向量（Gram-Schmidt），
+ * g 之间再按目标 Φ 的相关做 Cholesky 线性组合。
+ * 于是样本层面 cor(item) = Λ Φ Λ' + Θ **精确成立**，
+ * 「载荷恢复误差」断言因此可以是紧的（见 run_validation.R 的 cfa oracle）。
+ *
+ * **刻意给每列不同的均值与尺度**（模拟 1–7 量表的不同题项）：若不这样做，
+ * 原始尺度载荷与标准化载荷在数值上几乎相等，「unstd_load 被误当成 std_load」
+ * 这类映射缺陷就不可见——测试将失去判别力。
+ *
+ * 返回 { cols, rows }；rows 为 4 位小数定长字符串。
+ */
+const makeFactorData = ({ n, cols, loads, groups, phi, seed = 20260301 }) => {
+  const k = Math.max(...groups)
+  const p = cols.length
+  // 潜在因子方向 + 题项噪声：用确定性伪随机序列，正交化后得到良态基
+  const raw = [
+    ...Array.from({ length: k }, (_, j) => normalSeq(n, seed + 101 * (j + 1))),
+    ...Array.from({ length: p }, (_, j) => normalSeq(n, seed + 7717 * (j + 1)))
+  ]
+  const basis = orthonormalize(raw)
+  const latent = basis.slice(0, k)
+  // 正交化后的向量范数为 1（平方和 = 1，即 sd = 1/√n）。因子与噪声都统一
+  // 重新缩放到 **样本 sd = 1**，否则 item 的方差会变成
+  // λ²·1 + (1−λ²)·(1/n) ≠ 1，观测相关就不再等于 ΛΦΛ'——真值恢复断言随之失效。
+  const noise = basis.slice(k).map(standardize)
+  // 由 Φ 的 Cholesky 下三角组合出相关的潜在因子（Φ 半正定 → 组合一定合法）
+  const L = Array.from({ length: k }, () => Array(k).fill(0))
+  for (let a = 0; a < k; a++) {
+    for (let b = 0; b <= a; b++) {
+      let s = phi(a, b)
+      for (let t = 0; t < b; t++) s -= L[a][t] * L[b][t]
+      L[a][b] = a === b ? Math.sqrt(s) : s / L[b][b]
+    }
+  }
+  // g 仍精确正交，按 Φ 组合后再标准化 → 互相关精确等于 Φ
+  const g = Array.from({ length: k }, (_, a) => {
+    const mixed = latent[0].map((_, i) =>
+      Array.from({ length: a + 1 }, (_, t) => L[a][t] * latent[t][i]).reduce((x, y) => x + y, 0))
+    return standardize(mixed)
+  })
+  // 每题的均值与尺度（确定性）：均值 3.5–5.2，sd 0.7–1.6
+  const itemMean = cols.map((_, j) => 3.5 + 0.28 * j)
+  const itemSd = cols.map((_, j) => 0.7 + 0.15 * j)
+  const rows = Array.from({ length: n }, (_, i) =>
+    cols.map((_, j) => {
+      const lam = loads[j]
+      const f = g[groups[j] - 1][i]
+      const v = lam * f + Math.sqrt(1 - lam * lam) * noise[j][i]
+      return (itemMean[j] + itemSd[j] * v).toFixed(4)
+    })
+  )
+  return { cols, rows }
+}
+
+/**
+ * CFA 2 因子 6 题项（n = 800，真值载荷 0.85/0.80/0.75 | 0.82/0.78/0.72，φ12 = 0.35）。
+ * 这组数值与原型实测一致：估计的标准化载荷最大偏差约 0.04，正确模型 CFI 应接近 1。
+ */
+const cfaData = makeFactorData({
+  n: 800,
+  cols: ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'],
+  loads: [0.85, 0.8, 0.75, 0.82, 0.78, 0.72],
+  groups: [1, 1, 1, 2, 2, 2],
+  phi: (a, b) => (a === b ? 1 : 0.35),
+  seed: 20260301
+})
+
+/**
+ * CFA 3 因子 9 题项（n = 600，φ 分别 0.30 / 0.25 / 0.20）。
+ * 存在意义：只有 2 因子数据时，实现把因子数写死成 2 也能通过——测试无判别力。
+ */
+const cfa3Data = makeFactorData({
+  n: 600,
+  cols: ['a1', 'a2', 'a3', 'b1', 'b2', 'b3', 'c1', 'c2', 'c3'],
+  loads: [0.82, 0.79, 0.76, 0.81, 0.78, 0.75, 0.8, 0.77, 0.74],
+  groups: [1, 1, 1, 2, 2, 2, 3, 3, 3],
+  phi: (a, b) => (a === b ? 1 : [[0, 0.3, 0.25], [0.3, 0, 0.2], [0.25, 0.2, 0]][a][b]),
+  seed: 20260399
+})
+
+/**
+ * CVI 数据：行 = 专家（8 位）、列 = 题项（6 个），1–4 相关性评分。
+ * 刻意让 I-CVI 覆盖 1.00 / 0.875 / 0.75 / 0.625 / 0.50 五档，
+ * 使 Cicchetti & Sparrow 的四个判读档（优秀 / 良好 / 尚可 / 需修改）都出现，
+ * 判据才有判别力。
+ * 当专家数 n = 8 时（V031_CONTRACT.md 第二节当前口径：6 ≤ n ≤ 8 → 阈值 0.83）
+ *   → A = ceiling(0.83·8) = 7，Pc = C(8,7)/2^8 = 8/256 = 0.03125。
+ */
+const cviCols = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6']
+const cviRows = [
+  // item1 全评 ≥3，item2 全评 ≥3 → S-CVI/UA = 2/6
+  ['4', '3', '4', '4', '4', '4'],
+  ['4', '4', '4', '3', '3', '2'],
+  ['3', '4', '3', '3', '2', '2'],
+  ['4', '3', '4', '2', '2', '3'],
+  ['3', '4', '3', '3', '3', '2'],
+  ['4', '3', '4', '4', '4', '4'],
+  ['4', '4', '4', '2', '3', '3'],
+  ['3', '4', '2', '4', '2', '2']
+]
+
+/**
+ * Harman 两组数据（n = 400，6 题项），用于证明 40% 判据有判别力：
+ *   - 中等相关（两个 3 题簇：簇内 r≈0.40、簇间 r≈0.08）→ 首成分约 34%，且 λ>1 的因子 >1
+ *   - 高相关（单一强因子，载荷≈0.8 → r≈0.64）→ 首成分约 70%
+ * 两组都必须真跑，判据「<40 且因子数>1」才会在两个方向上都被检验。
+ */
+const harmanN = 400
+const harmanCols = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']
+const harmanMediumRows = (() => {
+  // 全局成分 g0（给所有题项一点公共相关）+ 两个簇成分 gA/gB，正交化后互不相关
+  const g0v = normalSeq(harmanN, 91001)
+  const gAv = normalSeq(harmanN, 91002)
+  const gBv = normalSeq(harmanN, 91003)
+  const noiseV = harmanCols.map((_, j) => normalSeq(harmanN, 92000 + 13 * j))
+  const [g0, gA, gB] = orthonormalize([g0v, gAv, gBv]).map(standardize)
+  const noise = orthonormalize(noiseV).map(standardize)
+  const col = (j) => {
+    const gc = j < 3 ? gA : gB
+    return standardize(
+      Array.from({ length: harmanN }, (_, i) =>
+        Math.sqrt(0.08) * g0[i] + Math.sqrt(0.34) * gc[i] + Math.sqrt(0.58) * noise[j][i])
+    )
+  }
+  const cols = harmanCols.map((_, j) => col(j))
+  return Array.from({ length: harmanN }, (_, i) => cols.map((c) => c[i].toFixed(4)))
+})()
+const harmanHighRows = (() => {
+  const g = orthonormalize([normalSeq(harmanN, 93001)]).map(standardize)[0]
+  const noise = orthonormalize(harmanCols.map((_, j) => normalSeq(harmanN, 94000 + 17 * j))).map(standardize)
+  const lam = [0.84, 0.82, 0.8, 0.79, 0.77, 0.75]
+  const cols = harmanCols.map((_, j) =>
+    standardize(Array.from({ length: harmanN }, (_, i) =>
+      lam[j] * g[i] + Math.sqrt(1 - lam[j] * lam[j]) * noise[j][i]))
+  )
+  return Array.from({ length: harmanN }, (_, i) => cols.map((c) => c[i].toFixed(4)))
+})()
+
 const freqCols = ['edu']
 // 注意：R 的 read.csv(blank.lines.skip=TRUE) 会整行丢弃全空行，因此缺失值用
 // 字面量 "NA"（read.csv 默认 na.strings="NA" → NA），保证那一行仍然存在。
@@ -363,6 +574,56 @@ const scenarios = [
     rows: sumRows,
     desc: '分类汇总（含 n=1 组与缺失值）',
     code: (R, csv) => R.summaryByCode('dept', 'salary', csv)
+  },
+
+  // ── v0.3.1：CFA / CVI / Harman ──────────────────────────────────────────
+  {
+    method: 'cfa',
+    cols: cfaData.cols,
+    rows: cfaData.rows,
+    desc: 'CFA（6 题项、已知 2 因子真值载荷 + φ12 = 0.35、n = 800、纯 base R）',
+    code: (R, csv) => R.cfaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'], undefined, csv)
+  },
+  {
+    method: 'cfa',
+    dataset: 'cfa_3factors',
+    cols: cfa3Data.cols,
+    rows: cfa3Data.rows,
+    desc: 'CFA（9 题项、已知 3 因子结构、n = 600 —— 用于验证因子数不是碰巧等于 2）',
+    code: (R, csv) => R.cfaCode(['a1', 'a2', 'a3', 'b1', 'b2', 'b3', 'c1', 'c2', 'c3'], 3, csv)
+  },
+  {
+    method: 'cfa',
+    dataset: 'cfa_misfit',
+    // 与 cfa 同一份 2 因子数据，但**强制拟合成 1 因子**：
+    // 判别力证据——误设模型的 CFI 必须显著低于正确模型（原型实测 0.6266 vs 1.0000）。
+    cols: cfaData.cols,
+    rows: cfaData.rows,
+    desc: 'CFA 失配模型（真 2 因子数据强制 1 因子 —— 判别力证据，CFI 须显著下降）',
+    code: (R, csv) => R.cfaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'], 1, csv)
+  },
+  {
+    method: 'cvi',
+    cols: cviCols,
+    rows: cviRows,
+    desc: 'CVI（8 位专家 × 6 题项，I-CVI 覆盖 1.00/0.875/0.75/0.625/0.50 五档）',
+    code: (R, csv) => R.cviCode(['c1', 'c2', 'c3', 'c4', 'c5', 'c6'], csv)
+  },
+  {
+    method: 'harman',
+    dataset: 'harman_medium',
+    cols: harmanCols,
+    rows: harmanMediumRows,
+    desc: 'Harman（中等相关：两个 3 题簇，首成分应 < 40% 且 λ>1 的因子 > 1）',
+    code: (R, csv) => R.harmanCode(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'], csv)
+  },
+  {
+    method: 'harman',
+    dataset: 'harman_high',
+    cols: harmanCols,
+    rows: harmanHighRows,
+    desc: 'Harman（单一强因子：载荷≈0.8，首成分应 > 40% —— 判据反向证明）',
+    code: (R, csv) => R.harmanCode(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'], csv)
   }
 ]
 

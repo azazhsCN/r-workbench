@@ -61,15 +61,20 @@ num <- function(x, d = 4L) {
   if (length(x) == 0 || is.na(x) || !is.finite(x)) return("NA")
   formatC(as.numeric(x), format = "f", digits = d)
 }
+# ⚠️ "g" 格式必须 trimws：formatC 在未指定 width 时会把字段右对齐补到
+# digits+1 个字符宽（实测 formatC(0, format = "g", digits = 8) 返回 8 个空格
+# + "0"）。p 值接近 1 或统计量落在 0-999 时会产出带前导空格的字段，违反
+# 契约"字段以 | 分隔、不加空格"。formatC 的 width = 0 参数**无效**（仍补位），
+# 只有 trimws 能真正去掉。
 # 期望频数/卡方等极小统计量需要保留精度，固定 4 位小数会把 9.1e-31 打成 0
 num_sig <- function(x, d = 6L) {
   if (length(x) == 0 || is.na(x) || !is.finite(x)) return("NA")
-  formatC(as.numeric(x), format = "g", digits = d)
+  trimws(formatC(as.numeric(x), format = "g", digits = d))
 }
 # p 值建议用科学计数输出，固定 6 位小数会把 1e-31 打成 0.000000 而丢失全部精度
 num_p <- function(x) {
   if (length(x) == 0 || is.na(x) || !is.finite(x)) return("NA")
-  formatC(as.numeric(x), format = "g", digits = 8)
+  trimws(formatC(as.numeric(x), format = "g", digits = 8))
 }
 # 方差齐性检验：leveneTest 返回 Pr(>F)，fligner.test 返回 p.value。
 # 直接取 lev[["Pr(>F)"]] 对 fligner 会得到 numeric(0)，
@@ -735,6 +740,671 @@ for (lv in levels_g) {
   }
 }
 cat(sprintf("TOTAL|%d|%s|%s\\n", length(v), num(mean(v)), num(sd(v))))
+`
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * v0.3.1 问卷效度进阶：CFA / CVI / Harman
+   *
+   * 三个方法全部走**纯 base R**（stats + base 之外一律不碰），理由与
+   * EFA（见下方 efaCode）相同：lavaan / psych 是编译型重包，实测
+   * `requireNamespace('lavaan')` 在本机为 FALSE，装不上的机器会让整条
+   * 问卷效度线不可用。项目红线是"装了 R 就能用"。
+   *
+   * 行格式一律以 V031_CONTRACT.md 为准（唯一权威），本段只负责产出。
+   * ═══════════════════════════════════════════════════════════════════════ */
+
+  /**
+   * 验证性因子分析（CFA）—— 纯 base R 实现的极大似然 CFA（不依赖 lavaan）。
+   * 行格式见 V031_CONTRACT.md 第一节。
+   *
+   * 方法学要点（已由原型实测定型，勿"重新设计"）：
+   *
+   * 1. **因子归属来自同一脚本内的 EFA**（主成分 + varimax），即 EFA→CFA 串联。
+   *    归属必须显式输出（CFA_ITEM）并在表注里声明"探索—验证同源"。
+   * 2. **角度参数化保证 Φ 合法**：Φ = C C'，C 由 k(k−1)/2 个角度按 Givens
+   *    累积构造，任意实数参数都映射到合法相关矩阵 → optim 不会走进非正定区域。
+   * 3. **符号统一必须同步翻转 Φ**：因子方向不定，整列取反不改变拟合。按
+   *    "列内 |载荷| 最大者为正"翻转时，**必须同时翻转 Φ 的第 j 行与第 j 列**。
+   *    原型第一版漏了这一步，结果整列负载荷且 φ 符号相反（真值 +0.35 估成
+   *    −0.37）——这是实测到的真实缺陷，不是理论洁癖。
+   * 4. **参数向量** = c(p 个载荷, k(k−1)/2 个角度, p 个 log 误差方差)；
+   *    `npar = 2p + k(k−1)/2`，`df = p(p+1)/2 − npar`，与 lavaan 口径一致。
+   * 5. 求解用 `optim(method="BFGS")` + 3 个起点（固定种子，结果可复现），取 F 最小者。
+   * 6. 标准化载荷的 se/z/p 用 delta 法：V = 2/(n−1) · H⁻¹（H 为 F_ML 的数值
+   *    Hessian），J 为 std_load 对参数的数值 Jacobian。符号翻转不改变方差
+   *    （D J V J' D 的对角元素与 D 无关），故 se 可先算后配符号。
+   */
+  static cfaCode(items: string[], nFactors?: number, dataFile = 'data.csv'): string {
+    const itemVec = items.map((v) => `"${rEscape(v)}"`).join(', ')
+    const forcedN = nFactors && nFactors > 0 ? String(Math.round(nFactors)) : 'NA'
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+${R_COMMON}
+cat("=== 验证性因子分析 (CFA) ===\\n")
+items <- c(${itemVec})
+forced_n <- ${forcedN}
+
+missing_items <- items[!(items %in% names(data))]
+if (length(missing_items) > 0) {
+  stop("以下变量不存在: ", paste(missing_items, collapse = ", "))
+}
+
+# 只保留全部题项都有效的样本（listwise 删除），并报告剔除量
+X_raw <- data[, items, drop = FALSE]
+ok <- complete.cases(X_raw)
+X <- X_raw[ok, , drop = FALSE]
+n_dropped <- sum(!ok)
+n <- nrow(X)
+if (n < 100) {
+  stop("有效样本不足（", n, " 行），验证性因子分析要求 n >= 100")
+}
+p <- length(items)
+# 3 题 1 因子是恰好识别模型（df = 0），契约明确要求支持并把 CFI/TLI/RMSEA
+# 置为 1/1/0，因此下限取 3 而不是 4；p < 3 时连 df = 0 都不可能。
+if (p < 3) {
+  stop("题项过少（", p, " 个），CFA 至少需要 3 个题项")
+}
+for (nm in items) {
+  if (!is.numeric(X[[nm]])) {
+    stop("题项 ", nm, " 不是数值型，无法做 CFA")
+  }
+}
+R <- cor(X)
+if (any(!is.finite(R))) {
+  stop("相关矩阵含非有限值，可能存在常量题项")
+}
+if (abs(det(R)) < 1e-12) {
+  stop("相关矩阵接近奇异（存在完全共线或重复的题项），无法做 CFA")
+}
+logdetR <- as.numeric(determinant(R, logarithm = TRUE)$modulus)
+
+# ─────────────────────────────────────────────────────────────
+# 步骤 1：EFA（主成分法 + varimax）导出因子归属 —— EFA -> CFA 串联
+# ─────────────────────────────────────────────────────────────
+eig <- eigen(R, symmetric = TRUE)
+ev <- eig$values
+if (any(ev < -1e-8)) {
+  stop("相关矩阵存在显著负特征值（最小 ", num(min(ev), 4),
+       "），数据可能存在共线或重复题项，无法做 CFA")
+}
+# 数值噪声级负值必须截断：sqrt(负值) 产生 NaN 会沿载荷矩阵静默扩散
+ev[ev < 0] <- 0
+n_fac <- if (is.na(forced_n)) sum(ev > 1) else as.integer(forced_n)
+n_fac <- as.integer(max(1L, min(n_fac, p - 1L)))
+n_positive <- sum(ev > 1e-10)
+if (n_fac > n_positive) {
+  n_fac <- as.integer(max(1L, n_positive))
+}
+L0 <- eig$vectors[, seq_len(n_fac), drop = FALSE] %*%
+  diag(sqrt(ev[seq_len(n_fac)]), n_fac)
+if (n_fac > 1) {
+  L_rot <- unclass(stats::varimax(L0)$loadings)
+} else {
+  L_rot <- L0
+}
+# 载荷符号统一（与 EFA 完全一致的处理）
+for (j in seq_len(ncol(L_rot))) {
+  idx_j <- which.max(abs(L_rot[, j]))
+  if (L_rot[idx_j, j] < 0) {
+    L_rot[, j] <- -L_rot[, j]
+  }
+}
+fac_of <- as.integer(apply(abs(L_rot), 1, which.max))
+
+# 每个因子至少 2 个题项：只有 1 个题项时"载荷"与"误差方差"不可分，
+# 模型不可识别。修法：从题项最多的因子中，把它在该因子上次级载荷最高
+# 的题项划过来（只从 count >= 3 的因子取，避免把别的因子拆空）。
+counts <- tabulate(fac_of, nbins = n_fac)
+guard <- 0L
+while (any(counts < 2) && guard < 100L) {
+  guard <- guard + 1L
+  j_need <- which(counts < 2)[1]
+  donors <- which(counts >= 3)
+  if (length(donors) == 0) {
+    stop("按当前因子数无法形成「每个因子 >= 2 个题项」的结构，请减少因子数或调整题项")
+  }
+  d <- donors[which.max(counts[donors])]
+  cand <- which(fac_of == d)
+  pick <- cand[which.max(abs(L_rot[cand, j_need]))]
+  fac_of[pick] <- j_need
+  counts[d] <- counts[d] - 1L
+  counts[j_need] <- counts[j_need] + 1L
+}
+if (any(counts < 2)) {
+  stop("按当前因子数无法形成「每个因子 >= 2 个题项」的结构，请减少因子数或调整题项")
+}
+
+n_par <- 2 * p + n_fac * (n_fac - 1) / 2
+df_model <- p * (p + 1) / 2 - n_par
+if (df_model < 0) {
+  stop("模型不可识别：p = ", p, "、因子数 = ", n_fac, " 时 df = ", df_model,
+       " < 0（参数 ", n_par, " 个 > 协方差元素 ", p * (p + 1) / 2, " 个）")
+}
+
+cat(sprintf("CFA_SPEC|%d|%d|%d\\n", n_fac, p, n))
+for (i in seq_len(p)) {
+  cat(sprintf("CFA_ITEM|%s|%d\\n", items[i], fac_of[i]))
+}
+syntax <- character(0)
+for (j in seq_len(n_fac)) {
+  syntax <- c(syntax, paste0("F", j, " =~ ", paste(items[fac_of == j], collapse = " + ")))
+}
+cat(sprintf("CFA_MODEL|%s\\n", paste(syntax, collapse = "; ")))
+
+# ─────────────────────────────────────────────────────────────
+# 步骤 2：ML 拟合（角度参数化 + BFGS 多起点）
+# ─────────────────────────────────────────────────────────────
+# 任意实数角度 -> 合法相关矩阵。C 的列按单位向量累积构造，Phi = C C'。
+cor_from_angles <- function(th, k) {
+  if (k == 1) {
+    return(matrix(1, 1, 1))
+  }
+  C <- matrix(0, k, k)
+  C[1, 1] <- 1
+  pos <- 1
+  for (i in 2:k) {
+    ang <- th[pos:(pos + i - 2)]
+    pos <- pos + i - 1
+    s <- 1
+    for (j in 1:(i - 1)) {
+      C[i, j] <- cos(ang[j]) * s
+      s <- s * sin(ang[j])
+    }
+    C[i, i] <- s
+  }
+  Phi <- C %*% t(C)
+  (Phi + t(Phi)) / 2
+}
+na_free <- n_fac * (n_fac - 1) / 2
+build <- function(par) {
+  lam_v <- par[1:p]
+  th_a <- if (na_free > 0) par[(p + 1):(p + na_free)] else numeric(0)
+  lt_v <- par[(p + na_free + 1):(p + na_free + p)]
+  Phi_m <- cor_from_angles(th_a, n_fac)
+  Lam <- matrix(0, p, n_fac)
+  for (i in seq_len(p)) {
+    Lam[i, fac_of[i]] <- lam_v[i]
+  }
+  Sigma <- Lam %*% Phi_m %*% t(Lam) + diag(exp(lt_v), p)
+  list(Sigma = Sigma, lam = lam_v, Phi = Phi_m)
+}
+F_of <- function(par) {
+  S <- build(par)$Sigma
+  d <- determinant(S, logarithm = TRUE)
+  if (!is.finite(d$modulus)) {
+    return(1e10)
+  }
+  v <- tryCatch(
+    as.numeric(d$modulus) + sum(diag(R %*% solve(S))) - logdetR - p,
+    error = function(e) 1e10
+  )
+  if (!is.finite(v)) {
+    return(1e10)
+  }
+  v
+}
+
+# 起点：把 EFA 载荷放到各自的因子上；3 个起点中后两个加扰动
+lam0 <- as.numeric(L_rot[cbind(seq_len(p), fac_of)])
+lam0 <- pmax(pmin(lam0, 0.95), -0.95)
+lam0[abs(lam0) < 0.1] <- 0.5
+# 固定种子：多起点必须可复现，否则同一份数据两次运行可能给出不同小数位
+set.seed(20260101L)
+best <- NULL
+for (st in seq_len(3)) {
+  lam_s <- if (st == 1) lam0 else lam0 + rnorm(p, 0, 0.15)
+  par0 <- c(lam_s, rep(pi / 2, na_free), log(pmax(1 - lam_s^2, 0.05)))
+  o <- try(optim(par0, F_of, method = "BFGS",
+                 control = list(maxit = 2000, reltol = 1e-12)), silent = TRUE)
+  if (inherits(o, "try-error") || !is.finite(o$value)) {
+    next
+  }
+  if (is.null(best) || o$value < best$value) {
+    best <- o
+  }
+}
+if (is.null(best)) {
+  stop("CFA 极大似然估计未收敛（3 个起点全部失败）")
+}
+par_hat <- best$par
+F_ml <- as.numeric(best$value)
+
+# ─────────────────────────────────────────────────────────────
+# 步骤 3：符号统一（翻转 Λ 的列 + 同步翻转 Φ 的行与列）
+# ─────────────────────────────────────────────────────────────
+ms_hat <- build(par_hat)
+lam <- ms_hat$lam
+Phi_raw <- ms_hat$Phi
+theta <- exp(par_hat[(p + na_free + 1):(p + na_free + p)])
+flip <- rep(1, n_fac)
+for (j in seq_len(n_fac)) {
+  idx <- which(fac_of == j)
+  big <- idx[which.max(abs(lam[idx]))]
+  if (lam[big] < 0) {
+    lam[idx] <- -lam[idx]
+    flip[j] <- -1
+  }
+}
+# 关键一步：翻转载荷列必须同步翻转 Φ 的第 j 行与第 j 列，
+# 否则 Φ 与 Λ 不再对应同一个模型（原型实测：φ 真值 +0.35 被估成 −0.37）
+Phi <- diag(flip, n_fac) %*% Phi_raw %*% diag(flip, n_fac)
+Lam <- matrix(0, p, n_fac)
+for (i in seq_len(p)) {
+  Lam[i, fac_of[i]] <- lam[i]
+}
+Sigma <- Lam %*% Phi %*% t(Lam) + diag(theta, p)
+sd_jj <- sqrt(diag(Sigma))
+std_lam <- lam / sd_jj
+r2_std <- std_lam^2
+
+# 未标准化载荷（原始量纲）。
+# 拟合对象是**相关矩阵**，模型隐含 Σ 的对角线恒为 1，因此
+# std_lam = lam / sqrt(diag(Sigma)) 数值上就等于 lam —— 若直接把 lam 当成
+# unstd_load 输出，两列会一模一样，用户以为在看两个口径实为同一个数。
+# 正确换算式：原始量纲下 Y_j = lam_raw * F + e 且 Var(F) = 1，
+# 则 lam_raw = lam_std * sd(Y_j)，等价于对原始协方差矩阵（而非相关矩阵）
+# 拟合得到的未标准化载荷，可直接用于原始数据的评分与应用。
+# ⚠️ sd 必须用 listwise 删除后的同一批有效样本（即 X），否则与模型样本不一致。
+raw_sd <- vapply(seq_len(p), function(i) sd(X[[i]]), numeric(1))
+unstd_lam <- std_lam * raw_sd
+
+# ─────────────────────────────────────────────────────────────
+# 步骤 4：拟合指标（公式逐条对应契约）
+# ─────────────────────────────────────────────────────────────
+chisq <- (n - 1) * F_ml
+chisq_null <- -(n - 1) * logdetR
+df_null <- p * (p - 1) / 2
+p_fit <- if (df_model > 0) pchisq(chisq, df_model, lower.tail = FALSE) else NA_real_
+cfi <- 1
+tli <- 1
+rmsea <- 0
+if (df_model > 0) {
+  num_cfi <- max(chisq - df_model, 0)
+  den_cfi <- max(chisq - df_model, chisq_null - df_null, 0)
+  cfi <- if (den_cfi > 0) 1 - num_cfi / den_cfi else 1
+  d1 <- chisq_null / df_null
+  d2 <- chisq / df_model
+  tli <- if (abs(d1 - 1) > 1e-12) (d1 - d2) / (d1 - 1) else 1
+  rmsea <- sqrt(max(chisq - df_model, 0) / (df_model * (n - 1)))
+}
+std_res <- (R - Sigma) / outer(sd_jj, sd_jj)
+srmr <- sqrt(mean(std_res[lower.tri(std_res, diag = TRUE)]^2))
+cat(sprintf("CFA_FIT|%s|%d|%s|%s\\n", num(chisq), df_model, fmt_p(p_fit), num_p(p_fit)))
+cat(sprintf("CFA_FITIDX|%s|%s|%s|%s\\n", num(cfi), num(tli), num(rmsea), num(srmr)))
+cat(sprintf("CFA_NULLMODEL|%s|%d\\n", num(chisq_null), df_null))
+
+# ─────────────────────────────────────────────────────────────
+# 步骤 5：标准化载荷的 delta 法标准误
+#   V = 2/(n-1) * H^-1（H 为 F_ML 的数值 Hessian）
+#   符号翻转不改变方差（D J V J' D 的对角元与 D 无关），故先算后配符号
+# ─────────────────────────────────────────────────────────────
+num_hess <- function(fun, par, h) {
+  m <- length(par)
+  f0 <- fun(par)
+  H <- matrix(0, m, m)
+  for (i in seq_len(m)) {
+    ei <- rep(0, m)
+    ei[i] <- h
+    H[i, i] <- (fun(par + ei) - 2 * f0 + fun(par - ei)) / (h * h)
+    if (i < m) {
+      for (j in (i + 1):m) {
+        ej <- rep(0, m)
+        ej[j] <- h
+        v <- (fun(par + ei + ej) - fun(par + ei - ej) -
+              fun(par - ei + ej) + fun(par - ei - ej)) / (4 * h * h)
+        H[i, j] <- v
+        H[j, i] <- v
+      }
+    }
+  }
+  H
+}
+se_std <- rep(NA_real_, p)
+se_phi <- rep(NA_real_, max(na_free, 1L))
+H_hat <- tryCatch(num_hess(F_of, par_hat, 1e-4), error = function(e) NULL)
+V_hat <- NULL
+if (!is.null(H_hat)) {
+  Hinv <- tryCatch(solve(H_hat), error = function(e) NULL)
+  if (!is.null(Hinv) && all(is.finite(Hinv)) && all(diag(Hinv) > 0)) {
+    V_hat <- Hinv * 2 / (n - 1)
+  }
+}
+if (!is.null(V_hat)) {
+  # 标准化载荷对全部参数的数值 Jacobian
+  J_std <- matrix(0, p, length(par_hat))
+  for (i in seq_along(par_hat)) {
+    hi <- 1e-6 * max(1, abs(par_hat[i]))
+    a <- par_hat
+    a[i] <- a[i] + hi
+    b <- par_hat
+    b[i] <- b[i] - hi
+    sa <- build(a)
+    sb <- build(b)
+    J_std[, i] <- (sa$lam / sqrt(diag(sa$Sigma)) - sb$lam / sqrt(diag(sb$Sigma))) / (2 * hi)
+  }
+  se_std <- sqrt(pmax(diag(J_std %*% V_hat %*% t(J_std)), 0))
+  if (na_free > 0) {
+    J_phi <- matrix(0, na_free, length(par_hat))
+    for (i in seq_along(par_hat)) {
+      hi <- 1e-6 * max(1, abs(par_hat[i]))
+      a <- par_hat
+      a[i] <- a[i] + hi
+      b <- par_hat
+      b[i] <- b[i] - hi
+      pa <- cor_from_angles(a[(p + 1):(p + na_free)], n_fac)
+      pb <- cor_from_angles(b[(p + 1):(p + na_free)], n_fac)
+      J_phi[, i] <- (pa[lower.tri(pa)] - pb[lower.tri(pb)]) / (2 * hi)
+    }
+    se_phi <- sqrt(pmax(diag(J_phi %*% V_hat %*% t(J_phi)), 0))
+  }
+}
+
+# 字段顺序：item | std_load | unstd_load | se | z | p_display | p_raw | r2
+# 口径说明：se / z / p 是针对**标准化载荷**的 Wald 检验（契约第 45-48 行），
+# 不是未标准化载荷的检验；unstd_load 只作为原始量纲的报告值（带 sd(Y) 缩放）。
+for (i in seq_len(p)) {
+  se_i <- se_std[i]
+  z_i <- NA_real_
+  p_i <- NA_real_
+  if (length(se_i) == 1 && is.finite(se_i) && se_i > 0) {
+    z_i <- std_lam[i] / se_i
+    p_i <- 2 * pnorm(-abs(z_i))
+  }
+  cat(sprintf("CFA_ESTIMATE|%s|%s|%s|%s|%s|%s|%s|%s\\n", items[i], num(std_lam[i]),
+    num(unstd_lam[i]), num(se_i), num(z_i), fmt_p(p_i), num_p(p_i), num(r2_std[i])))
+}
+
+if (n_fac >= 2) {
+  # 下三角按行优先排布，与 cor_from_angles 里角度的顺序一致：
+  # (2,1) (3,1) (3,2) (4,1) (4,2) (4,3) ...
+  phi_idx <- matrix(0L, n_fac, n_fac)
+  phi_idx[lower.tri(phi_idx)] <- seq_len(na_free)
+  for (a in seq_len(n_fac - 1)) {
+    for (b in (a + 1):n_fac) {
+      cor_ab <- Phi[a, b]
+      # 注意取 phi_idx[b, a]（下三角）；取 [a, b] 会拿到 0 号下标 →
+      # numeric(0)，随后 is.finite() 返回 logical(0)，if 条件报
+      # "missing value where TRUE/FALSE needed"
+      se_ab <- se_phi[phi_idx[b, a]]
+      z_ab <- NA_real_
+      p_ab <- NA_real_
+      if (length(se_ab) == 1 && is.finite(se_ab) && se_ab > 0) {
+        z_ab <- cor_ab / se_ab
+        p_ab <- 2 * pnorm(-abs(z_ab))
+      }
+      cat(sprintf("CFA_FACTOR|F%d|F%d|%s|%s|%s|%s|%s\\n", a, b, num(cor_ab),
+        num(se_ab), num(z_ab), fmt_p(p_ab), num_p(p_ab)))
+    }
+  }
+}
+
+# 组合信度 / 平均方差抽取量（λ 用标准化载荷，θ 用 1 − λ*² 的标准化误差）
+for (j in seq_len(n_fac)) {
+  idx <- which(fac_of == j)
+  lam_j <- std_lam[idx]
+  err_j <- pmax(1 - lam_j^2, 0)
+  sum_lam <- sum(lam_j)
+  sum_err <- sum(err_j)
+  cr_j <- if ((sum_lam^2 + sum_err) > 0) (sum_lam^2) / (sum_lam^2 + sum_err) else NA_real_
+  ave_j <- if ((sum(lam_j^2) + sum_err) > 0) sum(lam_j^2) / (sum(lam_j^2) + sum_err) else NA_real_
+  cat(sprintf("CFA_RELIAB|F%d|%s|%s|%s\\n", j, num(cr_j), num(ave_j),
+    num(if (is.na(ave_j)) NA_real_ else sqrt(max(ave_j, 0)))))
+}
+
+# ─────────────────────────────────────────────────────────────
+# 步骤 6：诊断与结论
+# ─────────────────────────────────────────────────────────────
+heywood <- any(theta <= 1e-6) || any(abs(std_lam) > 1)
+if (n_dropped > 0) {
+  cat(sprintf("CFA_NOTE|因缺失值采用整列删除，剔除 %d 行，有效样本 %d\\n", n_dropped, n))
+}
+cat(sprintf("CFA_NOTE|估计方法：极大似然 ML（相关矩阵，纯 base R 实现，未使用 lavaan）\\n"))
+cat(sprintf("CFA_NOTE|因子结构由同一数据集的 EFA（主成分 + varimax）导出，属探索—验证同源，理想做法是在独立样本上复核\\n"))
+if (heywood) {
+  cat(sprintf("CFA_NOTE|检测到 Heywood 案例（误差方差 <= 1e-6 或 |标准化载荷| > 1），解落在边界，载荷与信度指标需谨慎解读\\n"))
+}
+if (df_model == 0) {
+  cat(sprintf("CFA_NOTE|模型恰好识别（df = 0），CFI/TLI/RMSEA 无判别力，仅 SRMR 可作参考\\n"))
+}
+if (is.na(p_fit)) {
+  cat(sprintf("CFA_NOTE|卡方检验的 p 值不可用（df = 0 的恰好识别模型）\\n"))
+}
+fit_txt <- "模型拟合不佳"
+if (cfi >= 0.90 && rmsea <= 0.08 && srmr <= 0.08) {
+  fit_txt <- "模型拟合可接受"
+}
+if (cfi >= 0.95 && tli >= 0.95 && rmsea <= 0.06 && srmr <= 0.08) {
+  fit_txt <- "模型拟合良好"
+}
+cat(sprintf("CONCL|CFI = %s，TLI = %s，RMSEA = %s，SRMR = %s，%s\\n",
+  num(cfi), num(tli), num(rmsea), num(srmr), fit_txt))
+`
+  }
+
+  /**
+   * 内容效度指数（CVI）—— 行=专家、列=题项，1–4 相关性评分。
+   * 行格式见 V031_CONTRACT.md 第二节。
+   *
+   * ⚠️ 数据形态与其余方法**相反**：这里每一行是一位专家，每一列是一个题项。
+   * 题项名即列名，专家数 = 行数。
+   *
+   * 阈值表（Lynn 1986；Polit & Beck 2006；Polit, Beck & Owen 2007）：
+   *   n <= 5      -> 1.00
+   *   6 <= n <= 8 -> 0.83
+   *   n >= 9      -> 0.78
+   * 阈值必须与离散取值的可达性一致：n=6 时 5/6 = 0.8333 恰好达标；
+   * n=9 时 7/9 = 0.7778 **不达标**（0.78 > 7/9），必须 8/9 = 0.8889。
+   * 修正 Kappa 的 Pc = C(n, A)/2^n 是**单点**二项系数（不是尾概率和），
+   * A = ceiling(阈值 × n)；A < n 时两者不同（n=6,A=5：单点 6/64，尾和 7/64）。
+   */
+  static cviCode(items: string[], dataFile = 'data.csv'): string {
+    const itemVec = items.map((v) => `"${rEscape(v)}"`).join(', ')
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+${R_COMMON}
+cat("=== 内容效度指数 (CVI) ===\\n")
+items <- c(${itemVec})
+
+missing_items <- items[!(items %in% names(data))]
+if (length(missing_items) > 0) {
+  stop("以下变量不存在: ", paste(missing_items, collapse = ", "))
+}
+if (length(items) < 1) {
+  stop("至少需要 1 个题项")
+}
+
+# 行 = 专家，列 = 题项
+X_raw <- data[, items, drop = FALSE]
+n_experts <- nrow(X_raw)
+n_items <- ncol(X_raw)
+if (n_experts < 2) {
+  stop("专家数不足（", n_experts, " 行），CVI 至少需要 2 位专家的评分")
+}
+Xm <- matrix(NA_real_, n_experts, n_items)
+for (j in seq_len(n_items)) {
+  Xm[, j] <- suppressWarnings(as.numeric(as.character(X_raw[[j]])))
+}
+if (any(is.na(Xm))) {
+  r_bad <- which(rowSums(is.na(Xm)) > 0)[1]
+  c_bad <- which(is.na(Xm[r_bad, ]))[1]
+  stop("缺少专家评分：第 ", r_bad, " 行（专家）的题项 ", items[c_bad],
+       " 为空或非数值；CVI 要求每位专家对全部题项评分")
+}
+if (any(Xm != round(Xm))) {
+  stop("评分必须为整数（发现非整数评分）")
+}
+if (any(Xm < 1) || any(Xm > 4)) {
+  stop("评分必须落在 1-4 之间（1 不相关 ... 4 高度相关），当前范围 ",
+       num(min(Xm), 2), "-", num(max(Xm), 2))
+}
+
+# I-CVI 的判定阈值随专家数变化（Lynn 1986；Polit & Beck 2006）
+cvi_threshold <- function(n) {
+  if (n <= 5) {
+    1.00
+  } else {
+    if (n <= 8) {
+      0.83
+    } else {
+      0.78
+    }
+  }
+}
+thr <- cvi_threshold(n_experts)
+# A = 达到可接受一致所需的最少认同专家数
+A_req <- ceiling(thr * n_experts)
+# Pc = C(n, A)/2^n —— 单点二项系数，不是尾概率和
+Pc <- choose(n_experts, A_req) / 2^n_experts
+# 浮点比较留 1e-9 容差：阈值是"下限"，恰好等于阈值应判为达标
+thr_eps <- thr - 1e-9
+
+cat(sprintf("CVI_SPEC|%d|%d\\n", n_items, n_experts))
+relevant <- as.integer(colSums(Xm >= 3))
+i_cvi <- relevant / n_experts
+verdict <- character(n_items)
+kappa_v <- numeric(n_items)
+for (j in seq_len(n_items)) {
+  k_star <- (i_cvi[j] - Pc) / (1 - Pc)
+  kappa_v[j] <- k_star
+  verdict_j <- "需修改"
+  if (k_star > 0.74) {
+    verdict_j <- "优秀"
+  } else {
+    if (k_star >= 0.60) {
+      verdict_j <- "良好"
+    } else {
+      if (k_star >= 0.40) {
+        verdict_j <- "尚可"
+      }
+    }
+  }
+  verdict[j] <- verdict_j
+  cat(sprintf("CVI_ITEM|%s|%d|%d|%s|%s|%s|%s\\n", items[j], relevant[j], n_experts,
+    num(i_cvi[j]), num(k_star), num(Pc, 6), verdict_j))
+}
+
+s_cvi_ave <- mean(i_cvi)
+# S-CVI/UA：全部专家均评 >= 3 的题项数 / 题项总数
+n_ua <- sum(relevant == n_experts)
+s_cvi_ua <- n_ua / n_items
+threshold_ok <- all(i_cvi >= thr_eps)
+cat(sprintf("CVI_SUMMARY|%s|%s|%d|%s\\n", num(s_cvi_ave), num(s_cvi_ua), n_ua,
+  if (threshold_ok) "是" else "否"))
+
+if (n_experts < 5) {
+  cat(sprintf("CVI_NOTE|专家数偏少（%d 位），I-CVI 阈值取 1.00，结论稳定性有限，建议扩充专家组\\n", n_experts))
+}
+cat(sprintf("CVI_NOTE|I-CVI 阈值按专家数查表（n <= 5 取 1.00；6-8 取 0.83；>= 9 取 0.78）：本次 n = %d，阈值 %s，即至少 %d/%d 位专家评 >= 3 才算达标\\n",
+  n_experts, num(thr, 2), A_req, n_experts))
+if (min(Xm) >= 3) {
+  cat(sprintf("CVI_NOTE|全部评分均 >= 3（评分范围受限，无 1-2 分的分歧），请复核是否真实反映专家意见\\n"))
+}
+cat(sprintf("CVI_NOTE|Pc 由单点二项系数 C(n, A)/2^n 计算（A = %d），修正 Kappa 判定采用 Cicchetti & Sparrow 四级口径\\n", A_req))
+
+n_pass <- sum(i_cvi >= thr_eps)
+# 结论文案必须与真实判定一致：全部题项达标但仍判"有题项未达标"会让用户
+# 拿着自相矛盾的结论去写论文（实测 4/4 达标却输出"仍有题项未达标"）。
+concl_txt <- "内容效度不佳，建议修订或删除未达标题项"
+if (n_pass == n_items && s_cvi_ave >= 0.90 && s_cvi_ua >= 0.80) {
+  concl_txt <- "内容效度良好：全部题项 I-CVI 达标，S-CVI/Ave 与 S-CVI/UA 均达到建议标准"
+} else {
+  if (n_pass == n_items) {
+    concl_txt <- "全部题项 I-CVI 均达标，但 S-CVI/Ave 或 S-CVI/UA 未达建议标准，量表层面一致性仍需改善"
+  } else {
+    if (n_pass >= 1 && s_cvi_ave >= 0.80) {
+      concl_txt <- "内容效度基本可接受，但仍有题项未达 I-CVI 阈值，建议修订"
+    }
+  }
+}
+cat(sprintf("CONCL|%s（I-CVI 达标 %d/%d 题；S-CVI/Ave = %s，建议 >= 0.90；S-CVI/UA = %s，建议 >= 0.80）\\n",
+  concl_txt, n_pass, n_items, num(s_cvi_ave), num(s_cvi_ua)))
+`
+  }
+
+  /**
+   * Harman 单因子检验 —— 未旋转主成分分析，判断共同方法偏差。
+   * 行格式见 V031_CONTRACT.md 第三节。
+   *
+   * 判据：首成分解释率 < 40% 且特征值 > 1 的成分多于 1 个 -> 未发现严重
+   * 共同方法偏差。必须提示灵敏度低、只能作为初步筛查。
+   */
+  static harmanCode(items: string[], dataFile = 'data.csv'): string {
+    const itemVec = items.map((v) => `"${rEscape(v)}"`).join(', ')
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+${R_COMMON}
+cat("=== Harman 单因子检验 ===\\n")
+items <- c(${itemVec})
+
+missing_items <- items[!(items %in% names(data))]
+if (length(missing_items) > 0) {
+  stop("以下变量不存在: ", paste(missing_items, collapse = ", "))
+}
+
+X_raw <- data[, items, drop = FALSE]
+ok <- complete.cases(X_raw)
+X <- X_raw[ok, , drop = FALSE]
+n_dropped <- sum(!ok)
+n <- nrow(X)
+p <- length(items)
+if (p < 3) {
+  stop("题项过少（", p, " 个），Harman 检验至少需要 3 个题项")
+}
+if (n < 30) {
+  stop("有效样本不足（", n, " 行），Harman 检验至少需要 30 个完整样本")
+}
+for (nm in items) {
+  if (!is.numeric(X[[nm]])) {
+    stop("题项 ", nm, " 不是数值型，无法做 Harman 检验")
+  }
+}
+R <- cor(X)
+if (any(!is.finite(R))) {
+  stop("相关矩阵含非有限值，可能存在常量题项")
+}
+
+# 未旋转主成分分析：相关矩阵的特征值（Kaiser 准则：特征值 > 1 保留）
+eig <- eigen(R, symmetric = TRUE)
+ev <- eig$values
+if (any(ev < -1e-8)) {
+  stop("相关矩阵存在显著负特征值，数据可能存在共线或重复题项，无法做 Harman 检验")
+}
+ev[ev < 0] <- 0
+pct <- ev / p * 100
+
+cat(sprintf("HARMAN_SPEC|%d|%d\\n", p, n))
+n_gt1 <- sum(ev > 1)
+cum_pct <- 0
+if (n_gt1 > 0) {
+  for (k in seq_len(n_gt1)) {
+    cum_pct <- cum_pct + pct[k]
+    cat(sprintf("HARMAN_EIGEN|%d|%s|%s|%s\\n", k, num(ev[k]), num(pct[k], 2), num(cum_pct, 2)))
+  }
+}
+first_pct <- pct[1]
+thr_pct <- 40
+ok_flag <- first_pct < thr_pct && n_gt1 > 1
+cat(sprintf("HARMAN_SUMMARY|%d|%s|%s|%s\\n", n_gt1, num(first_pct, 2), num(thr_pct, 2),
+  if (ok_flag) "是" else "否"))
+
+if (n_dropped > 0) {
+  cat(sprintf("HARMAN_NOTE|因缺失值采用整列删除，剔除 %d 行，有效样本 %d\\n", n_dropped, n))
+}
+cat(sprintf("HARMAN_NOTE|方法：未旋转主成分分析（相关矩阵，按特征值 > 1 提取成分），未做任何旋转\\n"))
+cat(sprintf("HARMAN_NOTE|判据：首成分解释率 < 40%% 且特征值 > 1 的成分多于 1 个，视为未发现严重共同方法偏差\\n"))
+cat(sprintf("HARMAN_NOTE|Harman 单因子检验灵敏度低，只能作为初步筛查，不能证明不存在共同方法偏差\\n"))
+
+if (ok_flag) {
+  cat(sprintf("CONCL|首成分解释率 %s%%（< 40%%）且抽出 %d 个特征值 > 1 的成分，未发现严重共同方法偏差\\n",
+    num(first_pct, 2), n_gt1))
+} else {
+  cat(sprintf("CONCL|首成分解释率 %s%%、特征值 > 1 的成分 %d 个，提示可能存在共同方法偏差，建议结合方法学设计进一步排查\\n",
+    num(first_pct, 2), n_gt1))
+}
 `
   }
 

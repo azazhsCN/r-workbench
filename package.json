@@ -1,6 +1,6 @@
 {
   "name": "r-workbench",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "R Workbench - AI驱动的R语言数据分析工作台，替代SPSS的开源方案",
   "main": "./out/main/index.js",
   "keywords": [
@@ -44,7 +44,9 @@
     "verify:ipc": "node scripts/validate/verify_ipc.cjs",
     "verify:lazy": "node scripts/validate/lazy_r_check.cjs",
     "verify:negcache": "node scripts/validate/negcache_r_check.cjs",
-    "verify:packaged": "node scripts/validate/packaged_app_check.cjs"
+    "verify:packaged": "node scripts/validate/packaged_app_check.cjs",
+    "validate:stat": "Rscript scripts/validate/run_validation.R",
+    "validate:oracle-failure": "Rscript scripts/validate/prove_failure_ability.R"
   },
   "dependencies": {
     "i18next": "^26.4.2",

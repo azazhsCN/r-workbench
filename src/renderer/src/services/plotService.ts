@@ -492,10 +492,17 @@ save_plot(p, "plot_density.png", width = ${w}, height = ${h})
 /**
  * 分析方法推荐图表类型
  *  - mean_bar：真正的均值柱状图（±1 SE 误差线），供 anova / summary_by 使用
- *  - item_mean：条目均值图（逐条目均值），供 reliability 使用
+ *  - item_mean：条目均值图（逐条目均值），供 reliability / efa / cfa / cvi / harman 使用
  *  - paired：配对斜率图，供 ttest_paired 使用
  *  - bar：频数柱状图（计数），供 frequency / chisquare 使用
- * label 必须与 PlotViewer 的 plotLabelKey / i18n 保持一致，不要改文案。
+ *
+ * label **必须是 plotLabelKey（PlotViewer.tsx）里已有的中文键**，否则英文界面
+ * 会直接显示这条中文字面量。v0.3.0 的 efa 写成「题项均值图」（映射表里只有
+ * 「条目均值图」），英文界面因此漏出中文 —— 现在统一为「条目均值图」。
+ *
+ * type **必须是 generatePlotCode 已有 case 的图表类型**（method-registry.test.ts
+ * 会逐项校验）。新增类型（如 CFA 碎石图）需要先在 generatePlotCode 里实现，
+ * 不要只在这里加一行。
  */
 export const METHOD_PLOT_MAP: Record<string, { type: string; label: string }[]> = {
   descriptive: [{ type: 'histogram', label: '直方图' }, { type: 'boxplot', label: '箱线图' }],
@@ -507,7 +514,10 @@ export const METHOD_PLOT_MAP: Record<string, { type: string; label: string }[]> 
   correlation: [{ type: 'scatter', label: '散点图' }],
   regression: [{ type: 'scatter', label: '散点图+回归线' }],
   reliability: [{ type: 'item_mean', label: '条目均值图' }],
-  efa: [{ type: 'item_mean', label: '题项均值图' }],
+  efa: [{ type: 'item_mean', label: '条目均值图' }],
+  cfa: [{ type: 'item_mean', label: '条目均值图' }, { type: 'boxplot', label: '箱线图' }],
+  cvi: [{ type: 'item_mean', label: '条目均值图' }],
+  harman: [{ type: 'item_mean', label: '条目均值图' }, { type: 'boxplot', label: '箱线图' }],
   normality: [{ type: 'histogram', label: '直方图' }, { type: 'density', label: '核密度图' }],
   nonparametric: [{ type: 'boxplot', label: '分组箱线图' }],
   frequency: [{ type: 'bar', label: '频数柱状图' }],

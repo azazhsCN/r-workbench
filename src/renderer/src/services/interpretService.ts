@@ -10,31 +10,28 @@ import i18n from '../i18n'
 import { aiService } from './aiService'
 import type { ParsedAnalysis } from './resultParser'
 
-/** 已知分析方法 id（与 resultParser.detectAnalysisType 的返回值对齐） */
-const KNOWN_METHODS = new Set([
-  'descriptive',
-  'ttest_independent',
-  'ttest_paired',
-  'ttest_one',
-  'anova',
-  'chi_square',
-  'correlation',
-  'regression',
-  'reliability',
-  'normality',
-  'nonparametric',
-  'frequency',
-  'summary'
-])
-
-/** 取当前语言的文案 */
+/** 取当前语言的文案（i18n 可能在初始化完成前被调用，故统一 String() 兜底） */
 function tr(key: string, options?: Record<string, unknown>): string {
   return String(i18n.t(key, options))
 }
 
-/** 分析方法显示名（复用向导页已有的 wizard.method.* 文案） */
+/**
+ * 分析方法显示名（复用向导页已有的 wizard.method.* 文案）。
+ *
+ * ⚠️ 这里**不能**用「先查白名单再翻译」的写法。旧实现维护了一个 `KNOWN_METHODS`
+ * 集合，里面的 id 与 `detectAnalysisType` 的返回值并不一致：
+ *   - 集合里写 `chi_square`，实际返回 `chisquare`
+ *   - 集合里写 `summary`，实际返回 `summary_by`
+ *   - 后来新增的 efa / cfa / cvi / harman 则完全没进集合
+ * 后果是这些方法的 AI 解读 Prompt 里「分析类型」字段直接显示英文 id，
+ * 而不是本地化名称——用户看到的 Prompt 与界面语言不一致。
+ *
+ * 现在改为**直接按 `wizard.method.<type>` 取文案并用 `defaultValue` 兜底**：
+ * 有文案就本地化，没有就退回原始 id。这样新增方法只要补语言包即可，
+ * 不需要再同步维护第二份名单（名单与真实返回值漂移正是本类缺陷的根源）。
+ */
 function methodLabel(type: string): string {
-  return KNOWN_METHODS.has(type) ? tr(`wizard.method.${type}`) : type
+  return tr(`wizard.method.${type}`, { defaultValue: type })
 }
 
 /** 生成解读 Prompt */

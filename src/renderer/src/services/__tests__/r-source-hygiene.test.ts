@@ -116,7 +116,11 @@ describe('R 源码卫生：生成器输出的 R 结构', () => {
     ['normality', () => RService.normalityTestCode(['x'])],
     ['nonparametric', () => RService.nonparametricCode('score', 'group')],
     ['frequency', () => RService.frequencyCode(['edu'])],
-    ['summary_by', () => RService.summaryByCode('dept', 'salary')]
+    ['summary_by', () => RService.summaryByCode('dept', 'salary')],
+    // v0.3.1：问卷效度进阶三件套
+    ['cfa', () => RService.cfaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'])],
+    ['cvi', () => RService.cviCode(['q1', 'q2', 'q3', 'q4'])],
+    ['harman', () => RService.harmanCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'])]
   ]
 
   for (const [name, gen] of GENERATORS) {

@@ -204,7 +204,13 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
   )
 }
 
-/** 为图表配套生成分析代码（S5: 复用 rService 生成器，与向导页保持一致） */
+/**
+ * 为图表配套生成分析代码（S5: 复用 rService 生成器，与向导页保持一致）.
+ *
+ * `methodId` 是 `methodRegistry.METHODS[].id`（不是 `resultParser` 里的分析类型名）。
+ * v0.3.0 这里写的是 `case 'chi_square'`，而注册表 id 是 `chisquare` —— 卡方图表
+ * 配的统计表/解读因此永远走 default 分支静默返回 null，用户只看到图没有表。
+ */
 function generateAnalysisCode(methodId: string, variables: string[], groupVar?: string): string | null {
   if (variables.length < 1) return null
 
@@ -223,7 +229,7 @@ function generateAnalysisCode(methodId: string, variables: string[], groupVar?: 
     case 'anova':
       if (!groupVar || variables.length < 1) return null
       return RService.anovaCode(variables[0], groupVar)
-    case 'chi_square':
+    case 'chisquare':
       if (variables.length < 2) return null
       return RService.chiSquareCode(variables[0], variables[1])
     case 'regression':
@@ -231,6 +237,14 @@ function generateAnalysisCode(methodId: string, variables: string[], groupVar?: 
       return RService.regressionCode(variables[0], variables.slice(1))
     case 'reliability':
       return RService.reliabilityCode(variables)
+    case 'efa':
+      return RService.efaCode(variables)
+    case 'cfa':
+      return RService.cfaCode(variables)
+    case 'cvi':
+      return RService.cviCode(variables)
+    case 'harman':
+      return RService.harmanCode(variables)
     case 'frequency':
       return RService.frequencyCode(variables)
     default:

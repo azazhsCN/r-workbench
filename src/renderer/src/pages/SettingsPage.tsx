@@ -13,11 +13,56 @@ interface AppSettings {
   language: AppLanguage | 'system'
 }
 
-/** 预设服务商 — 只提供 API 地址，模型由用户填写 */
+/**
+ * 预设服务商 — 只提供 API 地址与模型名示例，模型由用户填写。
+ *
+ * v0.3.1：模型名示例全部更新为当前在售模型。此前写的是 `gpt-4o` / `deepseek-chat`
+ * 这类名字，而 DeepSeek 已明确 `deepseek-chat` / `deepseek-reasoner` 于 2026-07-24
+ * 弃用（现应使用 `deepseek-flash` / `deepseek-v4-pro`）；OpenAI 侧的 GPT-4o 也已
+ * 被 GPT-6 世代取代。**提示过时会直接误导用户填错模型名，导致"连接失败/模型不存在"**。
+ *
+ * 注意：这里只是**输入框占位提示**，不做白名单校验——用户仍可填任意模型名，
+ * 因为各家模型迭代快，硬编码枚举反而会挡住新模型。
+ * 数组 `models` 用于下方「常用模型」的快捷填充按钮。
+ */
 const PROVIDERS = [
-  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', placeholder: 'gpt-4o / gpt-4o-mini / o3 ...' },
-  { id: 'deepseek', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com', placeholder: 'deepseek-chat / deepseek-reasoner ...' },
-  { id: 'custom', nameKey: 'settings.ai.provider.custom', baseUrl: '', placeholder: '' }
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    placeholder: 'gpt-6-luna / gpt-6.1-sol / gpt-6-astra ...',
+    models: ['gpt-6-luna', 'gpt-6.1-sol', 'gpt-6-astra']
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com',
+    placeholder: 'deepseek-flash / deepseek-v4-pro ...',
+    models: ['deepseek-flash', 'deepseek-v4-pro']
+  },
+  {
+    id: 'qwen',
+    name: '通义千问',
+    nameKey: 'settings.ai.provider.qwen',
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    placeholder: 'qwen3.8-max / qwen3.8-flash / qwen3.5-plus ...',
+    models: ['qwen3.8-max', 'qwen3.8-flash', 'qwen3.5-plus']
+  },
+  {
+    id: 'moonshot',
+    name: 'Moonshot (Kimi)',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    placeholder: 'kimi-k3.1-pro / kimi-k3.1-pro-highspeed ...',
+    models: ['kimi-k3.1-pro', 'kimi-k3.1-pro-highspeed', 'kimi-k2.7-code']
+  },
+  {
+    id: 'custom',
+    name: '自定义',
+    nameKey: 'settings.ai.provider.custom',
+    baseUrl: '',
+    placeholder: '',
+    models: []
+  }
 ]
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -296,12 +341,26 @@ export default function SettingsPage() {
                 setVerifyStatus('idle')
               }}
             />
-            {/* 快捷填写提示 */}
-            {settings.aiProvider !== 'custom' && (
-              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4 }}>
-                {t('settings.ai.model.commonModels')}
-                {settings.aiProvider === 'openai' && 'gpt-4o、gpt-4o-mini、o3'}
-                {settings.aiProvider === 'deepseek' && 'deepseek-chat、deepseek-reasoner'}
+            {/* 快捷填写提示：点一下直接填入模型名，避免手打出错 */}
+            {settings.aiProvider !== 'custom' && (currentProvider?.models.length ?? 0) > 0 && (
+              <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6 }}>
+                <div style={{ marginBottom: 4 }}>{t('settings.ai.model.commonModels')}</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {(currentProvider?.models ?? []).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => {
+                        setSettings((prev) => ({ ...prev, aiModel: m }))
+                        setVerifyStatus('idle')
+                      }}
+                      style={{ fontSize: 12, padding: '2px 8px' }}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>

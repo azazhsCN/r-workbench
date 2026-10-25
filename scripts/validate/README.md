@@ -41,6 +41,8 @@ scripts/validate/generated/<dataset>.R + <dataset>.csv + manifest.txt
 ```bash
 # 项目根目录
 Rscript scripts/validate/run_validation.R
+# 等价写法（npm script）
+npm run validate:stat
 ```
 
 脚本会自行调用 `generate_fixtures.mjs` 重新生成 fixtures（`--no-regenerate` 可跳过），
@@ -56,7 +58,7 @@ Rscript scripts/validate/run_validation.R --generated <dir> --no-regenerate
 `--src` / `--out` 也可用于**变异测试**：复制一份 `rService.ts` 做故意改动后跑验证，
 脚本必须变红且退出码非 0（见第 6 节）。
 
-## 4. oracle 一览（13 个方法）
+## 4. oracle 一览（17 个方法）
 
 | # | 方法 | fixtures 数据 | oracle（独立来源） |
 |---|------|--------------|-------------------|
@@ -73,10 +75,43 @@ Rscript scripts/validate/run_validation.R --generated <dir> --no-regenerate
 | 11 | 正态性 (Shapiro-Wilk) | 近似正态 + 强偏态 | Blom 得分手算 W + 蒙特卡洛零分布估 p + 手算偏度/峰度 |
 | 12 | Mann-Whitney U | 两组各 7 例、无结点 | 秩和定义求 W + **精确枚举**零分布（C(14,7)）求 p + 配对计数求 rank-biserial |
 | 13 | 频数统计 / 分类汇总 | 含缺失与 n=1 组 | 手工计数与逐组手算（含百分比双口径） |
+| 14 | 探索性因子分析 (EFA) | 6 题 2 因子 / 9 题 3 因子 | Bartlett 用 `determinant()`、KMO 用 `chol2inv(chol())`；独立 eigen + varimax 逐值比对；共同度旋转不变性 |
+| 15 | 验证性因子分析 (CFA) | 6 题 2 因子 (n=800) / 9 题 3 因子 (n=600) / 失配模型 | **换参数化**：Cholesky-Φ + `nlm`（实现用角度-Φ + `optim(BFGS)`）；`ln\|Σ\|` 用特征值展开（实现用 `determinant()`）；`Σ⁻¹` 用 `chol2inv`；另有参数化无关不变式 `diag(Σ)=1`、`Σλ²+θ_std=1`、df 公式 |
+| 16 | 内容效度指数 (CVI) | 8 专家 × 6 题项，I-CVI 覆盖 5 档 | 逐专家**穷举计数**求 I-CVI / S-CVI/UA；`choose()` 独立算 Pc；阈值表在 oracle 内**重写一份** |
+| 17 | Harman 单因子检验 | 中等相关 / 单一强因子 | `eigen(cor(X))` 独立算首特征值占比（实现用 `prcomp`）；SVD 奇异值做第二重自校验 |
 
 数值比较默认相对容差 `TOL = 1e-3`（输出保留 4 位小数 → 误差上界 5e-5），
 3 位小数与平滑近似量用 `TOL_LOOSE = 1e-2`，置换/蒙特卡洛 p 单独设容差。
 所有随机过程固定随机种子（`set.seed(20260904)`），结果可复现。
+
+### 4.1 v0.3.1 三个新方法的 oracle 设计要点
+
+**CFA 为什么必须换参数化而不是"把实现再写一遍"**：
+被测实现用「角度编码保证 Φ 半正定 + `optim(BFGS)` + 多起点」。如果 oracle 也这么写，
+就退化成 v0.2.5 那种"同一段代码跑两遍"的同义反复。因此 oracle 改用
+「Φ 的 Cholesky 下三角自由估计再归一化 + `nlm` 的 Newton 型优化」——
+参数向量的维数与含义都不同，**只有模型隐含 Σ 与 F_ML 这两个不变量应当一致**。
+两套优化器在全部 fixture 上给出的 `F_ML` 相对差约 **5.8e-10**，
+这才是真正独立的交叉验证。
+
+另外断言了三条与参数化完全无关的**不变式**（任何正确实现都必须满足）：
+`diag(Σ) ≈ 1`（相关阵拟合）、`Σλ² + θ_std = 1`（标准化分解）、
+`df = p(p+1)/2 − (2p + k(k−1)/2)`（与 lavaan 一致的参数量口径）。
+
+`lavaan` 在本机**未安装**，且项目红线是零外部 R 包依赖，因此拟合指标（CFI/TLI/
+RMSEA/SRMR）全部按 lavaan 的公式在 oracle 内独立复算，而不是与 lavaan 输出比对。
+
+**CVI 的阈值表在 oracle 里重写一份**：这不是冗余，而是刻意的冗余——oracle 若直接读
+实现的阈值向量，阈值表本身写错就永远不会被发现（正是 v0.2.5 事故的同类模式）。
+本版这条设计**实际抓到了一个真实缺陷**（初稿阈值偏松，见 CHANGELOG）。
+
+**Harman 走 `eigen(cor(X))` 而实现走 `prcomp()`**：两者数学等价但 LAPACK 例程不同，
+若实现的中心化/标准化写错（例如忘了 `scale`），首成分占比会明显不同。
+oracle 内部还额外用 SVD 奇异值做第二重自校验（两条路径互差 1.8e-15）。
+
+**判别力必须双向验证**：CFA 用「正确模型 CFI ≥ 0.95」+「失配模型 CFI < 0.80」两条断言
+夹住判据；Harman 用「中等相关数据 first_pct < 40」+「强因子数据 first_pct > 40」夹住 40% 判据。
+只验一个方向的断言无法排除"判据恒为真/恒为假"。
 
 ## 5. 验证边界（诚实声明）
 
@@ -84,12 +119,52 @@ Rscript scripts/validate/run_validation.R --generated <dir> --no-regenerate
   `resultParser.ts` 的解析结果。解析器契约由 Vitest 测试覆盖
   （`src/renderer/src/services/__tests__/` 与 lead 的 `r-contract.test.ts`）。
 - 它不回答「该数据集上选用某方法是否恰当」——那是研究设计问题。
+- **CFA 的 oracle 验证的是"给定因子结构下的估计与拟合指标算得对不对"，
+  不验证"该因子结构是否成立"**。实现的因子归属由同一数据集的 EFA 自动导出
+  （EFA → CFA 串联），属**探索—验证同源**：同一份数据既用来发现结构、
+  又用来确认结构，会**高估**拟合优度。独立 oracle 无法发现这个问题
+  （它是研究设计层面的局限，不是计算错误），因此产品在 `CFA_NOTE` 里显式提示，
+  CHANGELOG 与 README 也都有同样的声明。
+- 同理，CFA oracle 的 `.std_load` 比对是"两个独立优化器是否收敛到同一个解"，
+  不是"估计是否等于真值"。真值恢复另有一条独立断言
+  （`truth.std_load.max_abs_error`，容差 0.02），它依赖 fixtures 的已知真值，
+  且仅在正确模型场景下断言（失配场景真值不适用）。
 - `VALIDATION_RESULTS.md` 是**本机 R 自动生成的产物**，随 R 版本/平台变化，
   不构成对某个已提交 commit 的独立证据；CI 会在每次运行时重新生成并比对。
 - 缺少 `psych` 时信度分析用两条 base R 独立路径，覆盖强度足够；安装 `psych` 只是增加
   第二方实现作为额外交叉验证。
+- `lavaan` 同理：本机未安装，且项目红线是零外部 R 包依赖。CFA 的拟合指标按
+  lavaan 公式在 oracle 内**独立复算**，因此即使装上 lavaan 也不会改变验证结论；
+  它只会多提供一条"与业界实现比对"的额外路径。
 
 ## 6. 失败能力验证（可复现）
+
+### 6.1 自动 harness（推荐，一条命令）
+
+```bash
+Rscript scripts/validate/prove_failure_ability.R
+# 等价写法
+npm run validate:oracle-failure
+# 退出码 0 = 三处注入都成功让断言变红（即验证脚本确实有判别力）
+# 退出码 1 = 注入后断言没有变红 → 验证脚本存在盲区
+```
+
+它把 `run_validation.R` 复制成临时副本，向三处 oracle 注入**语义错误**
+（不是语法错误——语法错误只能证明 `parse` 失败，证明不了断言有判别力），
+运行后核对退出码为 1 且每个注入点都有断言变红，最后删除临时副本。
+
+| 注入点 | 注入内容 | 变红的断言 |
+|---|---|---|
+| Harman | 首成分占比 × 2 | `HARMAN_SUMMARY.first_pct` / `ok` / `criterion.medium_side` / `CONCL.direction` |
+| CFA | 零模型卡方符号取反 | `CFA_NULLMODEL.chisq` / `CFI` / `TLI` |
+| CVI | 阈值表 0.83 → 0.75 | `p_c` / `kappa` / `verdict` |
+
+本机实测（R 4.6.0）：**536 断言 → PASS 510 / FAIL 26，退出码 1**，
+三个注入点各自都有断言变红，harness 自身退出码 0。
+
+### 6.2 对产品代码做变异测试（手动）
+
+对**产品代码**（而非 oracle）注入缺陷，同样应让验证变红：
 
 ```bash
 # 故意把描述性统计的 sd() 写成 var()，验证脚本必须变红且退出码非 0
@@ -102,6 +177,10 @@ echo "exit=$?"   # 必须为 1，且 SD 断言为 FAIL
 ```
 
 实测结果：`PASS 265 / FAIL 3`（三条 `.SD` 断言），退出码 **1**。
+
+> v0.3.1 开发期间，本 harness 还实际抓到了 3 个产品缺陷（CFA 的 `phi_idx`
+> 下标崩溃、CVI 阈值表口径错误、CFA 的 `unstd_load` 与 `std_load` 恒等）。
+> 这说明它不是"写完就绿灯"的摆设。详见 CHANGELOG `[0.3.1]` 的「修复」一节。
 
 ---
 

@@ -116,7 +116,7 @@ export const METHODS: AnalysisMethod[] = [
     description: '分析两个变量之间的线性关系',
     descKey: 'wizard.method.correlation.desc',
     category: '关系分析',
-    categoryKey: 'wizard.category.rel',
+    categoryKey: 'wizard.category.relation',
     needsGroup: false,
     minVars: 2,
     maxVars: 2,
@@ -141,7 +141,7 @@ export const METHODS: AnalysisMethod[] = [
     description: '建立因变量与自变量的回归方程',
     descKey: 'wizard.method.regression.desc',
     category: '关系分析',
-    categoryKey: 'wizard.category.rel',
+    categoryKey: 'wizard.category.relation',
     needsGroup: false,
     minVars: 2,
     maxVars: 10,
@@ -172,6 +172,62 @@ export const METHODS: AnalysisMethod[] = [
     categoryKey: 'wizard.category.survey',
     needsGroup: false,
     minVars: 3,
+    maxVars: 50,
+    varType: 'numeric'
+  },
+  {
+    id: 'cfa',
+    name: '验证性因子分析',
+    nameKey: 'wizard.method.cfa',
+    icon: '🧭',
+    description: '在已有理论结构下检验题项的因子归属与模型拟合',
+    descKey: 'wizard.method.cfa.desc',
+    category: '问卷分析',
+    categoryKey: 'wizard.category.survey',
+    needsGroup: false,
+    minVars: 3,
+    maxVars: 50,
+    varType: 'numeric',
+    options: [
+      {
+        id: 'cfaFactors',
+        labelKey: 'wizard.option.cfaFactors',
+        label: '因子数',
+        values: [
+          { value: 'auto', labelKey: 'wizard.option.cfaFactors.auto', label: '自动' },
+          { value: '1', labelKey: 'wizard.option.cfaFactors.n1', label: '1 个因子' },
+          { value: '2', labelKey: 'wizard.option.cfaFactors.n2', label: '2 个因子' },
+          { value: '3', labelKey: 'wizard.option.cfaFactors.n3', label: '3 个因子' },
+          { value: '4', labelKey: 'wizard.option.cfaFactors.n4', label: '4 个因子' }
+        ]
+      }
+    ]
+  },
+  {
+    id: 'cvi',
+    name: '内容效度指数',
+    nameKey: 'wizard.method.cvi',
+    icon: '👨‍⚖️',
+    description: '由专家 1–4 评分计算 I-CVI、S-CVI 与修正 Kappa',
+    descKey: 'wizard.method.cvi.desc',
+    category: '问卷分析',
+    categoryKey: 'wizard.category.survey',
+    needsGroup: false,
+    minVars: 2,
+    maxVars: 50,
+    varType: 'numeric'
+  },
+  {
+    id: 'harman',
+    name: 'Harman 单因子检验',
+    nameKey: 'wizard.method.harman',
+    icon: '🧪',
+    description: '未旋转主成分分析，检验共同方法偏差',
+    descKey: 'wizard.method.harman.desc',
+    category: '问卷分析',
+    categoryKey: 'wizard.category.survey',
+    needsGroup: false,
+    minVars: 2,
     maxVars: 50,
     varType: 'numeric'
   },
@@ -234,10 +290,10 @@ export const METHODS: AnalysisMethod[] = [
   {
     id: 'summary_by',
     name: '分类汇总',
-    nameKey: 'wizard.method.summary',
+    nameKey: 'wizard.method.summary_by',
     icon: '📋',
     description: '按分组变量计算均值、标准差等汇总统计',
-    descKey: 'wizard.method.summary.desc',
+    descKey: 'wizard.method.summary_by.desc',
     category: '基础分析',
     categoryKey: 'wizard.category.basic',
     needsGroup: true,

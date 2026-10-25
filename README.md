@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/version-v0.3.0-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-v0.3.1-blue.svg)]()
 [![Languages](https://img.shields.io/badge/languages-中文%20%7C%20English-brightgreen.svg)]()
 
 **中文** | [English](README.en.md)
@@ -25,7 +25,7 @@ R Workbench 是一款面向统计学初学者与研究者的 **AI 驱动数据�
 ### 三种使用方式
 
 - **💬 对话式** — 用自然语言描述研究问题，AI 生成 R 代码并解释，一键执行看结果
-- **📊 向导式** — 14 种常用方法分步引导，选变量即可，无需接触代码
+- **📊 向导式** — 17 种常用方法分步引导，选变量即可，无需接触代码
 - **🔍 可追溯** — 每个结果都能展开看到原始 R 输出，代码随时可查、可改
 
 支持**中英文双语界面**，自动跟随系统语言，也可手动切换。
@@ -75,7 +75,7 @@ R Workbench 是一款面向统计学初学者与研究者的 **AI 驱动数据�
 - 支持 OpenAI / DeepSeek / 通义千问等兼容接口，也可接本地模型（Ollama / LM Studio）
 
 ### 📊 向导式分析
-- 14 种常用统计分析方法：
+- 17 种常用统计分析方法：
   - 描述性统计 / 频数统计 / 分类汇总
   - 独立样本 t 检验 / 配对样本 t 检验 / 单样本 t 检验
   - 单因素方差分析 (ANOVA)
@@ -84,9 +84,14 @@ R Workbench 是一款面向统计学初学者与研究者的 **AI 驱动数据�
   - 线性回归
   - Cronbach's α 信度分析
   - **探索性因子分析 (EFA)** — KMO、Bartlett 球形检验、因子载荷
+  - **验证性因子分析 (CFA)** — 纯 base R 的 ML 估计，CFI / TLI / RMSEA / SRMR、
+    标准化载荷（含 SE / z / p / R²）、CR / AVE，附失配模型判别力证据
+  - **内容效度指数 (CVI)** — I-CVI、S-CVI/Ave、S-CVI/UA、修正 Kappa
+  - **Harman 单因子检验** — 未旋转主成分，首成分解释率与 λ>1 成分数，筛查共同方法偏差
 - 分步引导，自动筛选可用变量
 - 自动生成 R 代码并执行，无需手写公式
-- **无需额外安装 R 包**：全部方法仅依赖 base R 与 stats（EFA 也如此）
+- **无需额外安装 R 包**：全部方法仅依赖 base R 与 stats
+  （EFA 与 **CFA** 也如此——CFA 不依赖 `lavaan`）
 
 ### 📈 可视化图表
 - 6 种学术规范图表：
@@ -205,13 +210,16 @@ r-workbench/
 ## 统计正确性验证
 
 R Workbench 内置一组可复现的统计正确性验证脚本。脚本会先用 esbuild 加载**真实的
-`rService.ts`**，把 13 个方法生成器实际产出的 R 代码写入 fixtures，再交给 R 执行，
+`rService.ts`**，把 17 个方法生成器实际产出的 R 代码写入 fixtures，再交给 R 执行，
 并用**独立 oracle**（手算闭式解、精确置换分布、矩阵代数、第二 R 包）复算关键统计量，
-逐项比对。共 **310 项断言**，覆盖 14/14 个方法。
+逐项比对。共 **536 项断言**，覆盖 **17/17 个方法**。
 
 ```bash
 # 运行验证（需 R >= 4.2；base R 即可，装有 psych 时会额外用 psych::alpha 交叉验证）
 Rscript scripts/validate/run_validation.R
+
+# 反向自证：向 oracle 注入错误，确认断言真的会变红且退出码为 1
+Rscript scripts/validate/prove_failure_ability.R
 ```
 
 脚本在断言失败时**以非 0 退出码结束**（可直接作为 CI 门禁），并会捕获 R 的 stderr，

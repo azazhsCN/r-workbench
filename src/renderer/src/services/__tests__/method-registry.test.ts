@@ -20,21 +20,36 @@ const RSERVICE = resolve(here, '../rService.ts')
 const wizardSrc = readFileSync(WIZARD, 'utf8')
 const rServiceSrc = readFileSync(RSERVICE, 'utf8')
 
-/** 规划的 13 个方法 id —— 少一个或多一个都必须是显式决策，不能静默发生 */
+/**
+ * 规划的全部方法 id —— 少一个必须是显式决策，不能静默发生。
+ *
+ * v0.3.1 起改为**精确匹配**（此前用 `arrayContaining` 只断言"至少包含这 13 个"）。
+ * 为什么必须收紧：宽松断言下，删掉一个方法不会有任何测试变红——
+ * 用户只会看到向导里少了一张卡片，属于静默功能丢失。
+ * 现在新增/删除方法都必须同步改这里（与 r-contract.test.ts 的条数断言呼应）。
+ */
 const REQUIRED_METHOD_IDS = [
+  // 基础分析
   'descriptive',
+  'normality',
+  'frequency',
+  'summary_by',
+  // 差异检验
   'ttest_independent',
   'ttest_paired',
+  'ttest_one',
   'anova',
   'chisquare',
+  'nonparametric',
+  // 关系分析
   'correlation',
   'regression',
+  // 问卷分析
   'reliability',
-  'ttest_one',
-  'normality',
-  'nonparametric',
-  'frequency',
-  'summary_by'
+  'efa',
+  'cfa',
+  'cvi',
+  'harman'
 ]
 
 /** 从 src 中 marker 首次出现处的 `=` 之后的 `[` 开始做括号配对（跳过字符串字面量） */
@@ -75,10 +90,16 @@ function supportedPlotTypes(): Set<string> {
 }
 
 describe('METHODS / METHOD_PLOT_MAP 一致性', () => {
-  it('declares the 13 required method ids, uniquely', () => {
+  it('declares exactly the 17 planned method ids, uniquely', () => {
     expect(declaredIds.length).toBeGreaterThan(0)
     expect(new Set(declaredIds).size).toBe(declaredIds.length)
-    expect(declaredIds).toEqual(expect.arrayContaining(REQUIRED_METHOD_IDS))
+    // 双向精确比对：
+    //   - arrayContaining 只保证"至少包含"，删掉一个方法不会变红 → 静默功能丢失
+    //   - 这里同时锁住"不多不少"，新增/删除都必须显式改 REQUIRED_METHOD_IDS
+    expect([...declaredIds].sort(), '方法集合与规划不一致（删/增方法须同步 REQUIRED_METHOD_IDS）').toEqual(
+      [...REQUIRED_METHOD_IDS].sort()
+    )
+    expect(REQUIRED_METHOD_IDS).toHaveLength(17)
   })
 
   it('extracted ids match the ids actually exported by methodRegistry', async () => {
