@@ -1,12 +1,12 @@
 # 统计验证结果（真实生成器 + 独立 oracle）
 
 R 版本：R version 4.6.0 (2026-04-24 ucrt)
-生成时间：2026-11-02 10:13:36
+生成时间：2026-11-02 10:15:09
 fixtures 目录：generated
 被测代码：src/renderer/src/services/rService.ts（esbuild 打包后运行时调用，非手抄副本）
 
 方法覆盖：**22 / 22**
-断言总数：**839**（PASS 797 / FAIL 42）
+断言总数：**839**（PASS 839 / FAIL 0）
 
 | 方法 | 数据集 | 断言 | 参考(oracle) | 工作台 | 结果 |
 |---|---|---|---|---|---|
@@ -336,10 +336,10 @@ fixtures 目录：generated
 | cfa | cfa | invariant.lambda2_plus_theta | 2.22045e-16 |       0 | PASS |
 | cfa | cfa | invariant.df_formula |       8 |       8 | PASS |
 | cfa | cfa | invariant.npar |      13 |      13 | PASS |
-| cfa | cfa | CFA_NULLMODEL.chisq | -1893.23 | 1893.23 | FAIL |
+| cfa | cfa | CFA_NULLMODEL.chisq | 1893.23 | 1893.23 | PASS |
 | cfa | cfa | CFA_NULLMODEL.df |      15 |      15 | PASS |
-| cfa | cfa | CFA_FITIDX.cfi | NA |       1 | FAIL |
-| cfa | cfa | CFA_FITIDX.tli | 0.992139 |   1.008 | FAIL |
+| cfa | cfa | CFA_FITIDX.cfi |       1 |       1 | PASS |
+| cfa | cfa | CFA_FITIDX.tli | 1.00799 |   1.008 | PASS |
 | cfa | cfa | CFA_FITIDX.rmsea |       0 |       0 | PASS |
 | cfa | cfa | CFA_FITIDX.srmr | 1.76889e-06 |       0 | PASS |
 | cfa | cfa | CFA_ESTIMATE.items | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
@@ -384,10 +384,10 @@ fixtures 目录：generated
 | cfa | cfa_3factors | invariant.lambda2_plus_theta | 2.22045e-16 |       0 | PASS |
 | cfa | cfa_3factors | invariant.df_formula |      24 |      24 | PASS |
 | cfa | cfa_3factors | invariant.npar |      21 |      21 | PASS |
-| cfa | cfa_3factors | CFA_NULLMODEL.chisq | -2021.58 | 2021.58 | FAIL |
+| cfa | cfa_3factors | CFA_NULLMODEL.chisq | 2021.58 | 2021.58 | PASS |
 | cfa | cfa_3factors | CFA_NULLMODEL.df |      36 |      36 | PASS |
-| cfa | cfa_3factors | CFA_FITIDX.cfi | NA |       1 | FAIL |
-| cfa | cfa_3factors | CFA_FITIDX.tli | 0.982504 |  1.0181 | FAIL |
+| cfa | cfa_3factors | CFA_FITIDX.cfi |       1 |       1 | PASS |
+| cfa | cfa_3factors | CFA_FITIDX.tli | 1.01813 |  1.0181 | PASS |
 | cfa | cfa_3factors | CFA_FITIDX.rmsea |       0 |       0 | PASS |
 | cfa | cfa_3factors | CFA_FITIDX.srmr | 9.82283e-07 |       0 | PASS |
 | cfa | cfa_3factors | CFA_ESTIMATE.items | a1,a2,a3,b1,b2,b3,c1,c2,c3 | a1,a2,a3,b1,b2,b3,c1,c2,c3 | PASS |
@@ -438,10 +438,10 @@ fixtures 目录：generated
 | cfa | cfa_misfit | invariant.lambda2_plus_theta | 1.11022e-16 |       0 | PASS |
 | cfa | cfa_misfit | invariant.df_formula |       9 |       9 | PASS |
 | cfa | cfa_misfit | invariant.npar |      12 |      12 | PASS |
-| cfa | cfa_misfit | CFA_NULLMODEL.chisq | -1893.23 | 1893.23 | FAIL |
+| cfa | cfa_misfit | CFA_NULLMODEL.chisq | 1893.23 | 1893.23 | PASS |
 | cfa | cfa_misfit | CFA_NULLMODEL.df |      15 |      15 | PASS |
-| cfa | cfa_misfit | CFA_FITIDX.cfi |       0 |  0.6263 | FAIL |
-| cfa | cfa_misfit | CFA_FITIDX.tli |  1.6131 |  0.3771 | FAIL |
+| cfa | cfa_misfit | CFA_FITIDX.cfi | 0.626262 |  0.6263 | PASS |
+| cfa | cfa_misfit | CFA_FITIDX.tli | 0.377104 |  0.3771 | PASS |
 | cfa | cfa_misfit | CFA_FITIDX.rmsea | 0.312438 |  0.3124 | PASS |
 | cfa | cfa_misfit | CFA_FITIDX.srmr | 0.18461 |  0.1846 | PASS |
 | cfa | cfa_misfit | CFA_ESTIMATE.items | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
@@ -473,33 +473,33 @@ fixtures 目录：generated
 | cvi | cvi | CVI_ITEM.order | c1,c2,c3,c4,c5,c6 | c1,c2,c3,c4,c5,c6 | PASS |
 | cvi | cvi | CVI_ITEM.c1.n_relevant |       8 |       8 | PASS |
 | cvi | cvi | CVI_ITEM.c1.i_cvi |       1 |       1 | PASS |
-| cvi | cvi | CVI_ITEM.c1.p_c | 0.109375 | 0.03125 | FAIL |
+| cvi | cvi | CVI_ITEM.c1.p_c | 0.03125 | 0.03125 | PASS |
 | cvi | cvi | CVI_ITEM.c1.kappa |       1 |       1 | PASS |
 | cvi | cvi | CVI_ITEM.c1.verdict | 优秀 | 优秀 | PASS |
 | cvi | cvi | CVI_ITEM.c2.n_relevant |       8 |       8 | PASS |
 | cvi | cvi | CVI_ITEM.c2.i_cvi |       1 |       1 | PASS |
-| cvi | cvi | CVI_ITEM.c2.p_c | 0.109375 | 0.03125 | FAIL |
+| cvi | cvi | CVI_ITEM.c2.p_c | 0.03125 | 0.03125 | PASS |
 | cvi | cvi | CVI_ITEM.c2.kappa |       1 |       1 | PASS |
 | cvi | cvi | CVI_ITEM.c2.verdict | 优秀 | 优秀 | PASS |
 | cvi | cvi | CVI_ITEM.c3.n_relevant |       7 |       7 | PASS |
 | cvi | cvi | CVI_ITEM.c3.i_cvi |   0.875 |   0.875 | PASS |
-| cvi | cvi | CVI_ITEM.c3.p_c | 0.109375 | 0.03125 | FAIL |
-| cvi | cvi | CVI_ITEM.c3.kappa | 0.859649 |   0.871 | FAIL |
+| cvi | cvi | CVI_ITEM.c3.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c3.kappa | 0.870968 |   0.871 | PASS |
 | cvi | cvi | CVI_ITEM.c3.verdict | 优秀 | 优秀 | PASS |
 | cvi | cvi | CVI_ITEM.c4.n_relevant |       6 |       6 | PASS |
 | cvi | cvi | CVI_ITEM.c4.i_cvi |    0.75 |    0.75 | PASS |
-| cvi | cvi | CVI_ITEM.c4.p_c | 0.109375 | 0.03125 | FAIL |
-| cvi | cvi | CVI_ITEM.c4.kappa | 0.719298 |  0.7419 | FAIL |
-| cvi | cvi | CVI_ITEM.c4.verdict | 良好 | 优秀 | FAIL |
+| cvi | cvi | CVI_ITEM.c4.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c4.kappa | 0.741935 |  0.7419 | PASS |
+| cvi | cvi | CVI_ITEM.c4.verdict | 优秀 | 优秀 | PASS |
 | cvi | cvi | CVI_ITEM.c5.n_relevant |       5 |       5 | PASS |
 | cvi | cvi | CVI_ITEM.c5.i_cvi |   0.625 |   0.625 | PASS |
-| cvi | cvi | CVI_ITEM.c5.p_c | 0.109375 | 0.03125 | FAIL |
-| cvi | cvi | CVI_ITEM.c5.kappa | 0.578947 |  0.6129 | FAIL |
-| cvi | cvi | CVI_ITEM.c5.verdict | 尚可 | 良好 | FAIL |
+| cvi | cvi | CVI_ITEM.c5.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c5.kappa | 0.612903 |  0.6129 | PASS |
+| cvi | cvi | CVI_ITEM.c5.verdict | 良好 | 良好 | PASS |
 | cvi | cvi | CVI_ITEM.c6.n_relevant |       4 |       4 | PASS |
 | cvi | cvi | CVI_ITEM.c6.i_cvi |     0.5 |     0.5 | PASS |
-| cvi | cvi | CVI_ITEM.c6.p_c | 0.109375 | 0.03125 | FAIL |
-| cvi | cvi | CVI_ITEM.c6.kappa | 0.438596 |  0.4839 | FAIL |
+| cvi | cvi | CVI_ITEM.c6.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c6.kappa | 0.483871 |  0.4839 | PASS |
 | cvi | cvi | CVI_ITEM.c6.verdict | 尚可 | 尚可 | PASS |
 | cvi | cvi | CVI_SUMMARY.s_cvi_ave | 0.791667 |  0.7917 | PASS |
 | cvi | cvi | CVI_SUMMARY.s_cvi_ua | 0.333333 |  0.3333 | PASS |
@@ -507,7 +507,7 @@ fixtures 目录：generated
 | cvi | cvi | CVI_SUMMARY.threshold_ok | FALSE | FALSE | PASS |
 | cvi | cvi | fixture.i_cvi_has_discrimination | >= 3 distinct values | 5 distinct | PASS |
 | cvi | cvi | fixture.verdict_has_multiple_levels | >= 2 levels | 3 levels | PASS |
-| cvi | cvi | oracle.a_req_matches_threshold_table | ceiling(   0.75 x 8) = 6 | Pc = C(8,6)/2^8 = 0.109375 | PASS |
+| cvi | cvi | oracle.a_req_matches_threshold_table | ceiling(   0.83 x 8) = 7 | Pc = C(8,7)/2^8 = 0.03125 | PASS |
 | harman | harman_medium | r_syntax_parse | parse() ok | ok | PASS |
 | harman | harman_medium | sprintf_format_args | no mismatch | ok | PASS |
 | harman | harman_medium | no_r_error | no error | ok | PASS |
@@ -522,11 +522,11 @@ fixtures 目录：generated
 | harman | harman_medium | HARMAN_EIGEN.eigen2 | 1.50065 |  1.5006 | PASS |
 | harman | harman_medium | HARMAN_EIGEN.variance_pct2 | 25.0108 |   25.01 | PASS |
 | harman | harman_medium | HARMAN_EIGEN.cumulative_monotone | TRUE | TRUE | PASS |
-| harman | harman_medium | HARMAN_SUMMARY.first_pct | 75.0087 |    37.5 | FAIL |
-| harman | harman_medium | HARMAN_SUMMARY.ok | 否 | 是 | FAIL |
+| harman | harman_medium | HARMAN_SUMMARY.first_pct | 37.5043 |    37.5 | PASS |
+| harman | harman_medium | HARMAN_SUMMARY.ok | 是 | 是 | PASS |
 | harman | harman_medium | HARMAN_SUMMARY.threshold |      40 |      40 | PASS |
-| harman | harman_medium | criterion.medium_side | first_pct<40 & n_gt1>1 | first_pct=75.01 n_gt1=2 | FAIL |
-| harman | harman_medium | CONCL.direction | bias | no_bias | FAIL |
+| harman | harman_medium | criterion.medium_side | first_pct<40 & n_gt1>1 | first_pct=37.50 n_gt1=2 | PASS |
+| harman | harman_medium | CONCL.direction | no_bias | no_bias | PASS |
 | harman | harman_medium | HARMAN_NOTE.sensitivity_caveat | present | present | PASS |
 | harman | harman_high | r_syntax_parse | parse() ok | ok | PASS |
 | harman | harman_high | sprintf_format_args | no mismatch | ok | PASS |
@@ -539,10 +539,10 @@ fixtures 目录：generated
 | harman | harman_high | HARMAN_EIGEN.count |       1 |       1 | PASS |
 | harman | harman_high | HARMAN_EIGEN.eigen1 |  4.2082 |  4.2082 | PASS |
 | harman | harman_high | HARMAN_EIGEN.variance_pct1 | 70.1366 |   70.14 | PASS |
-| harman | harman_high | HARMAN_SUMMARY.first_pct | 140.273 |   70.14 | FAIL |
+| harman | harman_high | HARMAN_SUMMARY.first_pct | 70.1366 |   70.14 | PASS |
 | harman | harman_high | HARMAN_SUMMARY.ok | 否 | 否 | PASS |
 | harman | harman_high | HARMAN_SUMMARY.threshold |      40 |      40 | PASS |
-| harman | harman_high | criterion.high_side | first_pct>40 | first_pct=140.27 | PASS |
+| harman | harman_high | criterion.high_side | first_pct>40 | first_pct=70.14 | PASS |
 | harman | harman_high | CONCL.direction | bias | bias | PASS |
 | harman | harman_high | HARMAN_NOTE.sensitivity_caveat | present | present | PASS |
 | mediation | mediation | r_syntax_parse | parse() ok | ok | PASS |
@@ -569,7 +569,7 @@ fixtures 目录：generated
 | mediation | mediation | MED_PATH.c_total.p | 2.79575e-25 | 2.79575e-25 | PASS |
 | mediation | mediation | invariant.c_equals_cprime_plus_ab | <= 1e-10 | 0.000e+00 | PASS |
 | mediation | mediation | oracle.identity_selfcheck |       0 | 6.10623e-16 | PASS |
-| mediation | mediation | MED_EFFECT.indirect |     1.1 |     0.3 | FAIL |
+| mediation | mediation | MED_EFFECT.indirect | 0.299999 |     0.3 | PASS |
 | mediation | mediation | MED_EFFECT.direct | 0.200003 |     0.2 | PASS |
 | mediation | mediation | MED_EFFECT.total | 0.500002 |     0.5 | PASS |
 | mediation | mediation | consistency.indirect_eq_a_times_b | 0.3000 | 0.3000 | PASS |
@@ -578,10 +578,10 @@ fixtures 目录：generated
 | mediation | mediation | MED_EFFECT.indirect.ci_upper(reference) | 0.380351 |  0.3861 | PASS |
 | mediation | mediation | MED_EFFECT.indirect.ci_contains_point | lo <= est <= hi |  0.2238 <=     0.3 <=  0.3861 | PASS |
 | mediation | mediation | discriminant.real_indirect_ci_excludes_zero | FALSE（真值 a*b=.30） | FALSE | PASS |
-| mediation | mediation | MED_EFFECT.prop_mediated | 2.19999 |     0.6 | FAIL |
+| mediation | mediation | MED_EFFECT.prop_mediated | 0.599995 |     0.6 | PASS |
 | mediation | mediation | MED_EFFECT.prop_mediated.finite | finite or NA |     0.6 | PASS |
-| mediation | mediation | MED_SOBEL.z | 30.3142 |  8.2675 | FAIL |
-| mediation | mediation | MED_SOBEL.p | 7.44558e-202 | 1.368e-16 | PASS |
+| mediation | mediation | MED_SOBEL.z |  8.2675 |  8.2675 | PASS |
+| mediation | mediation | MED_SOBEL.p | 1.368e-16 | 1.368e-16 | PASS |
 | mediation | mediation | MED_EFFECT.ci_method_truthful | percentile 或 bca | percentile | PASS |
 | mediation | mediation | MED_BOOT.B_positive | TRUE | TRUE | PASS |
 | mediation | mediation | MED_STD.a_std | 0.599999 |     0.6 | PASS |
@@ -613,7 +613,7 @@ fixtures 目录：generated
 | mediation | mediation_null | MED_PATH.c_total.p | 1.47804e-32 | 1.47804e-32 | PASS |
 | mediation | mediation_null | invariant.c_equals_cprime_plus_ab | <= 1e-10 | 0.000e+00 | PASS |
 | mediation | mediation_null | oracle.identity_selfcheck |       0 | 2.77279e-15 | PASS |
-| mediation | mediation_null | MED_EFFECT.indirect | 0.500005 |       0 | FAIL |
+| mediation | mediation_null | MED_EFFECT.indirect | 3.06741e-06 |       0 | PASS |
 | mediation | mediation_null | MED_EFFECT.direct | 0.499996 |     0.5 | PASS |
 | mediation | mediation_null | MED_EFFECT.total |     0.5 |     0.5 | PASS |
 | mediation | mediation_null | consistency.indirect_eq_a_times_b | 0.0000 | 0.0000 | PASS |
@@ -622,10 +622,10 @@ fixtures 目录：generated
 | mediation | mediation_null | MED_EFFECT.indirect.ci_upper(reference) | 0.0673496 |  0.0625 | PASS |
 | mediation | mediation_null | MED_EFFECT.indirect.ci_contains_point | lo <= est <= hi | -0.0547 <=       0 <=  0.0625 | PASS |
 | mediation | mediation_null | discriminant.null_indirect_ci_crosses_zero | TRUE（真值 a*b=0） | TRUE | PASS |
-| mediation | mediation_null | MED_EFFECT.prop_mediated | 1.00001 |       0 | FAIL |
+| mediation | mediation_null | MED_EFFECT.prop_mediated | 6.13483e-06 |       0 | PASS |
 | mediation | mediation_null | MED_EFFECT.prop_mediated.finite | finite or NA |       0 | PASS |
-| mediation | mediation_null | MED_SOBEL.z | 17.9054 |  0.0001 | FAIL |
-| mediation | mediation_null | MED_SOBEL.p | 1.07113e-71 | 0.999912 | FAIL |
+| mediation | mediation_null | MED_SOBEL.z | 0.000109845 |  0.0001 | PASS |
+| mediation | mediation_null | MED_SOBEL.p | 0.999912 | 0.999912 | PASS |
 | mediation | mediation_null | MED_EFFECT.ci_method_truthful | percentile 或 bca | percentile | PASS |
 | mediation | mediation_null | MED_BOOT.B_positive | TRUE | TRUE | PASS |
 | mediation | mediation_null | MED_STD.a_std | 0.599999 |     0.6 | PASS |
@@ -649,7 +649,7 @@ fixtures 目录：generated
 | moderation | moderation | MOD_COEF.w.se | 0.035917 |  0.0359 | PASS |
 | moderation | moderation | MOD_COEF.w.t | 11.1045 | 11.1045 | PASS |
 | moderation | moderation | MOD_COEF.w.p | 3.98857e-25 | 3.98857e-25 | PASS |
-| moderation | moderation | MOD_COEF.x_w.coef | 0.749952 |     0.5 | FAIL |
+| moderation | moderation | MOD_COEF.x_w.coef | 0.499968 |     0.5 | PASS |
 | moderation | moderation | MOD_COEF.x_w.se | 0.027137 |  0.0271 | PASS |
 | moderation | moderation | MOD_COEF.x_w.t | 18.4239 | 18.4239 | PASS |
 | moderation | moderation | MOD_COEF.x_w.p | 3.44277e-55 | 3.44277e-55 | PASS |
@@ -697,7 +697,7 @@ fixtures 目录：generated
 | moderation | moderation_null | MOD_COEF.w.se | 0.0359194 |  0.0359 | PASS |
 | moderation | moderation_null | MOD_COEF.w.t | 11.1859 | 11.1859 | PASS |
 | moderation | moderation_null | MOD_COEF.w.p | 1.98875e-25 | 1.98875e-25 | PASS |
-| moderation | moderation_null | MOD_COEF.x_w.coef | 0.000119289 |  0.0001 | PASS |
+| moderation | moderation_null | MOD_COEF.x_w.coef | 7.95258e-05 |  0.0001 | PASS |
 | moderation | moderation_null | MOD_COEF.x_w.se | 0.0281597 |  0.0282 | PASS |
 | moderation | moderation_null | MOD_COEF.x_w.t | 0.0028241 |  0.0028 | PASS |
 | moderation | moderation_null | MOD_COEF.x_w.p | 0.997748 | 0.997748 | PASS |
@@ -749,8 +749,8 @@ fixtures 目录：generated
 | moderated_mediation | moderated_mediation | MM_COEF.y.x_c.coef | 0.253676 |  0.2537 | PASS |
 | moderated_mediation | moderated_mediation | MM_COEF.y.x_c.se | 0.0524051 |  0.0524 | PASS |
 | moderated_mediation | moderated_mediation | MM_COEF.y.x_c.p | 1.95137e-06 | 1.95137e-06 | PASS |
-| moderated_mediation | moderated_mediation | MM_INDEX.index | 0.199337 |  0.1495 | FAIL |
-| moderated_mediation | moderated_mediation | MM_INDEX.boot_mean(reference) | 0.149577 | 0.199337 | PASS |
+| moderated_mediation | moderated_mediation | MM_INDEX.index | 0.149452 |  0.1495 | PASS |
+| moderated_mediation | moderated_mediation | MM_INDEX.boot_mean(reference) | 0.149577 | 0.149452 | PASS |
 | moderated_mediation | moderated_mediation | MM_INDEX.ci_lower(reference) | 0.107604 |  0.1075 | PASS |
 | moderated_mediation | moderated_mediation | MM_INDEX.ci_upper(reference) | 0.192026 |  0.1931 | PASS |
 | moderated_mediation | moderated_mediation | MM_COND.-1SD.a_cond | -0.02044 | -0.0204 | PASS |
@@ -763,7 +763,7 @@ fixtures 目录：generated
 | moderated_mediation | moderated_mediation | MM_COND.+1SD.indirect | 0.408868 |  0.4089 | PASS |
 | moderated_mediation | moderated_mediation | MM_COND.+1SD.ci_present | finite |  0.3051 ..  0.5078 | PASS |
 | moderated_mediation | moderated_mediation | discriminant.conditional_indirect_varies_by_w | max-min > 0.05 | 0.4191 | PASS |
-| moderated_mediation | moderated_mediation | invariant.cond_gap_equals_2sd_index | 0.5589 | 0.4191 | FAIL |
+| moderated_mediation | moderated_mediation | invariant.cond_gap_equals_2sd_index | 0.4191 | 0.4191 | PASS |
 | moderated_mediation | moderated_mediation | invariant.index_equals_a4_times_b |       0 | 5.952e-05 | PASS |
 | moderated_mediation | moderated_mediation | MM_NOTE.warns_index_vs_levels | present | present | PASS |
 | path_analysis | path_analysis | r_syntax_parse | parse() ok | ok | PASS |
@@ -779,11 +779,11 @@ fixtures 目录：generated
 | path_analysis | path_analysis | PATH_EDGE.m>y.coef | 0.600003 |     0.6 | PASS |
 | path_analysis | path_analysis | PATH_EDGE.x>y.coef | 0.199998 |     0.2 | PASS |
 | path_analysis | path_analysis | PATH_EFFECT.x>y.direct | 0.199998 |     0.2 | PASS |
-| path_analysis | path_analysis | PATH_EFFECT.x>y.indirect |       0 |     0.3 | FAIL |
-| path_analysis | path_analysis | PATH_EFFECT.x>y.total | 0.199998 |     0.5 | FAIL |
+| path_analysis | path_analysis | PATH_EFFECT.x>y.indirect | 0.300003 |     0.3 | PASS |
+| path_analysis | path_analysis | PATH_EFFECT.x>y.total | 0.500001 |     0.5 | PASS |
 | path_analysis | path_analysis | invariant.total_equals_direct_plus_indirect | 0.5000 | 0.5000 | PASS |
-| path_analysis | path_analysis | discriminant.indirect_nonzero | |indirect| > 0.05 |       0 | FAIL |
-| path_analysis | path_analysis | discriminant.total_gt_direct | total > direct | total=0.2000 direct=0.2000 | FAIL |
+| path_analysis | path_analysis | discriminant.indirect_nonzero | |indirect| > 0.05 | 0.300003 | PASS |
+| path_analysis | path_analysis | discriminant.total_gt_direct | total > direct | total=0.5000 direct=0.2000 | PASS |
 | path_analysis | path_analysis | PATH_NOTE.declares_ols_per_equation | present | present | PASS |
 | sem | sem | r_syntax_parse | parse() ok | ok | PASS |
 | sem | sem | sprintf_format_args | no mismatch | ok | PASS |
@@ -795,7 +795,7 @@ fixtures 目录：generated
 | sem | sem | invariant.df_formula |       8 |       8 | PASS |
 | sem | sem | SEM_FIT.chisq | 1.78535e-08 |       0 | PASS |
 | sem | sem | SEM_FIT.df |       8 |       8 | PASS |
-| sem | sem | SEM_FIT.cfi | 1.01223 |       1 | FAIL |
+| sem | sem | SEM_FIT.cfi |       1 |       1 | PASS |
 | sem | sem | SEM_FIT.tli | 1.01223 |  1.0122 | PASS |
 | sem | sem | SEM_FIT.rmsea |       0 |       0 | PASS |
 | sem | sem | SEM_FIT.srmr | 8.05636e-07 |       0 | PASS |
@@ -828,7 +828,7 @@ fixtures 目录：generated
 | sem | sem_null | invariant.df_formula |       8 |       8 | PASS |
 | sem | sem_null | SEM_FIT.chisq | 3.28846e-08 |       0 | PASS |
 | sem | sem_null | SEM_FIT.df |       8 |       8 | PASS |
-| sem | sem_null | SEM_FIT.cfi |  1.0134 |       1 | FAIL |
+| sem | sem_null | SEM_FIT.cfi |       1 |       1 | PASS |
 | sem | sem_null | SEM_FIT.tli |  1.0134 |  1.0134 | PASS |
 | sem | sem_null | SEM_FIT.rmsea |       0 |       0 | PASS |
 | sem | sem_null | SEM_FIT.srmr | 1.17128e-06 |       0 | PASS |
@@ -850,4 +850,4 @@ fixtures 目录：generated
 | sem | sem_null | discriminant.null_cross_block_uncorrelated | max|r| < 0.10 | 0.0000 | PASS |
 | __coverage__ | - | methods_covered |      22 |      22 | PASS |
 
-**汇总：PASS 797 / 839**
+**汇总：PASS 839 / 839**
