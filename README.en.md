@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/version-v0.3.1-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-v0.3.2-blue.svg)]()
 [![Languages](https://img.shields.io/badge/languages-中文%20%7C%20English-brightgreen.svg)]()
 
 [中文](README.md) | **English**
@@ -25,7 +25,7 @@ It breaks a complete statistical analysis into four steps and takes care of each
 ### Three ways to work
 
 - **💬 Conversational** — describe your question in plain language; the AI writes and explains the R code, then you run it with one click
-- **📊 Wizard-based** — step-by-step guidance for 17 common methods; just pick your variables, no code required
+- **📊 Wizard-based** — step-by-step guidance for 22 common methods; just pick your variables, no code required
 - **🔍 Traceable** — every result expands down to the raw R output; the code is always visible and editable
 
 Supports a **bilingual interface (Chinese / English)**, detected from the system locale or switched manually.
@@ -51,7 +51,7 @@ This is the project's core design principle: **the AI understands and explains; 
 
 - Every statistic (t values, p values, regression coefficients, confidence intervals…) is computed by local R
 - The AI only reads the computed results and writes an academically formatted interpretation
-- **536 statistical-correctness assertions** are built in, cross-checked against independent oracles (hand-derived closed forms, exact permutation distributions, second R packages) — and you can run them yourself at any time
+- **839 statistical-correctness assertions** are built in, cross-checked against independent oracles (hand-derived closed forms, exact permutation distributions, second R packages) — and you can run them yourself at any time
 
 ### 🔍 No black box: code, process and numbers are all transparent
 
@@ -75,7 +75,7 @@ No subscription, no per-use billing, no feature gating. Read all the source, mod
 - Works with OpenAI / DeepSeek / Qwen and other compatible endpoints, including local models (Ollama / LM Studio)
 
 ### 📊 Wizard Analysis
-- 17 common statistical methods:
+- 22 common statistical methods:
   - Descriptive statistics / Frequency statistics / Group summary
   - Independent samples t-test / Paired samples t-test / One-sample t-test
   - One-way ANOVA
@@ -89,10 +89,22 @@ No subscription, no per-use billing, no feature gating. Read all the source, mod
   - **Content Validity Index (CVI)** — I-CVI, S-CVI/Ave, S-CVI/UA, modified Kappa
   - **Harman's single-factor test** — unrotated principal components; first-component variance share
     and number of components with λ>1, as a common-method-bias screen
-- Step-by-step guidance with automatic variable filtering
+  - **Mediation** — indirect / direct / total effects, Bootstrap percentile CIs
+    (5000 resamples, fixed seed), Sobel cross-check, proportion mediated, standardised coefficients
+  - **Moderation** — interaction term, ΔR²/ΔF, simple slopes at three levels
+    (SE via the linear combination L′VL), Johnson-Neyman region
+  - **Moderated mediation** — index of moderated mediation, conditional indirect
+    effects at three levels of W (Bootstrap CIs)
+  - **Path analysis** — equation-by-equation OLS, direct/indirect/total decomposition,
+    recursive path tracing, cycle detection
+  - **Structural Equation Modeling (SEM)** — pure base R ML estimation (no `lavaan`);
+    measurement + structural model, CFI / TLI / RMSEA / SRMR
+- Step-by-step guidance with **named variable roles** (mediation/moderation-style methods
+  ask for X, M, Y, W explicitly instead of relying on positional meaning)
 - Automatic R code generation and execution — no formulas to write
 - **No extra R packages required**: every method relies only on base R and stats
-  (EFA and **CFA** included — CFA does not depend on `lavaan`)
+  (EFA, **CFA** and **SEM** included — neither CFA nor SEM depends on `lavaan`;
+  mediation/moderation Bootstrap uses hand-written resampling, not the `mediation` package)
 
 ### 📈 Visualizations
 - 6 academic-standard charts:
@@ -212,9 +224,9 @@ r-workbench/
 
 R Workbench ships with a set of reproducible statistical-correctness validation scripts.
 The script first loads the **real `rService.ts`** via esbuild, writes the R code that the
-17 method generators actually produce into fixtures, executes it with R, and re-computes the
+22 method generators actually produce into fixtures, executes it with R, and re-computes the
 key statistics using **independent oracles** (hand-derived closed forms, exact permutation
-distributions, matrix algebra, second R packages). **536 assertions** across all 17/17 methods.
+distributions, matrix algebra, second R packages). **839 assertions** across all 22/22 methods.
 
 ```bash
 # Run validation (requires R >= 4.2; base R is enough, psych::alpha is used as an extra

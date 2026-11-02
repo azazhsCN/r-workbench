@@ -2216,18 +2216,46 @@ oracle_sem <- function(method, dataset, kv, out, data) {
     add_row(method, dataset, "SEM_STRUCT.present", "present", "missing", FALSE)
   }
 
-  ## ---- 判别力：sem（有路径，拟合好）vs sem_null（无路径，拟合应显著变差）----
+  ## ---- 判别力：sem（γ=.5，路径显著 + 拟合好）vs sem_null（γ=0，路径不显著）----
+  ## ⚠️ 这里**不能**断言 sem_null 的 CFI 变差：
+  ##   sem_null 的数据本身就是两因子正交（γ=0），所以"γ=0 的模型"是**正确模型**，
+  ##   它的 CFI 当然等于 1。用"拟合变差"当判别力是把模型拟合与效应存在混为一谈
+  ##   （v0.3.2 开发时第一版 oracle 就写错了这一点）。
+  ## 正确的判别力是：**结构路径的显著性**必须随真值变化——
+  ##   sem 场景 γ=.5 → 结构系数显著（p≈1.6e-34）
+  ##   sem_null 场景 γ=0 → 结构系数不显著（p≈1.0）
   cfi_got <- gfn(kv, "SEM_FIT", 1, 5)
   chisq_got <- gfn(kv, "SEM_FIT", 1, 1)
+  struct_p <- NA_real_
+  struct_coef <- NA_real_
+  if (!is.null(struct_rows) && length(struct_rows) >= 1) {
+    struct_coef <- suppressWarnings(as.numeric(struct_rows[[1]][3]))
+    struct_p <- suppressWarnings(as.numeric(struct_rows[[1]][7]))
+  }
   if (dataset == "sem_null") {
-    # 强制无路径时，模型遗漏了真实结构 ⇒ 拟合必须明显变差
-    add_row(method, dataset, "discriminant.null_model_fits_worse",
-            "CFI < 0.90", fv(cfi_got),
-            is.finite(cfi_got) && cfi_got < 0.90)
+    # 真值 γ=0 ⇒ 结构系数应接近 0 且不显著
+    add_row(method, dataset, "discriminant.null_struct_path_nonsignificant",
+            "|coef| < 0.10 且 p > .05（真值 γ=0）",
+            sprintf("coef=%.4f p=%.4f", struct_coef, struct_p),
+            is.finite(struct_coef) && is.finite(struct_p) &&
+              abs(struct_coef) < 0.10 && struct_p > 0.05)
+    # 观测相关阵中两簇之间应几乎不相关（数据本身的正交性自检）
+    r_xy <- R[1:3, 4:6]
+    add_row(method, dataset, "discriminant.null_cross_block_uncorrelated",
+            "max|r| < 0.10", sprintf("%.4f", max(abs(r_xy))),
+            max(abs(r_xy)) < 0.10)
   } else {
     add_row(method, dataset, "discriminant.real_model_fits_well",
             "CFI >= 0.95", fv(cfi_got),
             is.finite(cfi_got) && cfi_got >= 0.95)
+    add_row(method, dataset, "discriminant.real_struct_path_significant",
+            "p < .001（真值 γ=.5）",
+            sprintf("coef=%.4f p=%.3e", struct_coef, struct_p),
+            is.finite(struct_p) && struct_p < 0.001)
+    # 真值恢复：γ 应接近 .5
+    add_row(method, dataset, "truth.gamma_recovered", "|γ-0.5| < 0.05",
+            sprintf("%.4f", struct_coef),
+            is.finite(struct_coef) && abs(abs(struct_coef) - 0.5) < 0.05)
   }
   ## LR 检验（仅 sem 场景：与"无路径模型"比）
   ## 无路径模型 = 两因子正交（γ=0），其 df 比有路径模型多 1（同 npar 数少 1）

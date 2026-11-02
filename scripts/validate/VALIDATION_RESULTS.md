@@ -1,12 +1,12 @@
 # 统计验证结果（真实生成器 + 独立 oracle）
 
 R 版本：R version 4.6.0 (2026-04-24 ucrt)
-生成时间：2026-10-25 21:31:51
+生成时间：2026-11-02 10:13:36
 fixtures 目录：generated
 被测代码：src/renderer/src/services/rService.ts（esbuild 打包后运行时调用，非手抄副本）
 
-方法覆盖：**17 / 17**
-断言总数：**536**（PASS 536 / FAIL 0）
+方法覆盖：**22 / 22**
+断言总数：**839**（PASS 797 / FAIL 42）
 
 | 方法 | 数据集 | 断言 | 参考(oracle) | 工作台 | 结果 |
 |---|---|---|---|---|---|
@@ -328,43 +328,43 @@ fixtures 目录：generated
 | cfa | cfa | CFA_ITEM.order | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
 | cfa | cfa | CFA_SPEC.nfac |       2 |       2 | PASS |
 | cfa | cfa | CFA_ITEM.partition | 1-2-3|4-5-6 | 1-2-3|4-5-6 | PASS |
-| cfa | cfa | CFA_FIT.chisq | 0.00208516 |  0.0021 | PASS |
+| cfa | cfa | CFA_FIT.chisq | 9.50518e-08 |       0 | PASS |
 | cfa | cfa | CFA_FIT.df |       8 |       8 | PASS |
-| cfa | cfa | F_ML | 2.60971e-06 | 2.62829e-06 | PASS |
+| cfa | cfa | F_ML | 1.18964e-10 |       0 | PASS |
 | cfa | cfa | CFA_FIT.p |       1 |       1 | PASS |
-| cfa | cfa | invariant.diag_Sigma_eq_1 | 2.12359e-06 |       0 | PASS |
+| cfa | cfa | invariant.diag_Sigma_eq_1 | 2.12025e-06 |       0 | PASS |
 | cfa | cfa | invariant.lambda2_plus_theta | 2.22045e-16 |       0 | PASS |
 | cfa | cfa | invariant.df_formula |       8 |       8 | PASS |
 | cfa | cfa | invariant.npar |      13 |      13 | PASS |
-| cfa | cfa | CFA_NULLMODEL.chisq | 1893.48 | 1893.48 | PASS |
+| cfa | cfa | CFA_NULLMODEL.chisq | -1893.23 | 1893.23 | FAIL |
 | cfa | cfa | CFA_NULLMODEL.df |      15 |      15 | PASS |
-| cfa | cfa | CFA_FITIDX.cfi |       1 |       1 | PASS |
-| cfa | cfa | CFA_FITIDX.tli | 1.00798 |   1.008 | PASS |
+| cfa | cfa | CFA_FITIDX.cfi | NA |       1 | FAIL |
+| cfa | cfa | CFA_FITIDX.tli | 0.992139 |   1.008 | FAIL |
 | cfa | cfa | CFA_FITIDX.rmsea |       0 |       0 | PASS |
-| cfa | cfa | CFA_FITIDX.srmr | 0.000196983 |  0.0002 | PASS |
+| cfa | cfa | CFA_FITIDX.srmr | 1.76889e-06 |       0 | PASS |
 | cfa | cfa | CFA_ESTIMATE.items | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
 | cfa | cfa | CFA_ESTIMATE.std_load.numeric | all numeric | all numeric | PASS |
-| cfa | cfa | CFA_ESTIMATE.q1.std_load | 0.849759 |  0.8498 | PASS |
-| cfa | cfa | CFA_ESTIMATE.q2.std_load | 0.800337 |  0.8003 | PASS |
-| cfa | cfa | CFA_ESTIMATE.q3.std_load | 0.750033 |    0.75 | PASS |
-| cfa | cfa | CFA_ESTIMATE.q4.std_load | 0.81999 |    0.82 | PASS |
-| cfa | cfa | CFA_ESTIMATE.q5.std_load | 0.78004 |    0.78 | PASS |
-| cfa | cfa | CFA_ESTIMATE.q6.std_load | 0.720055 |  0.7201 | PASS |
-| cfa | cfa | CFA_ESTIMATE.std_load.max_abs_diff |       0 | 4.50406e-05 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q1.std_load | 0.849999 |    0.85 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q2.std_load |     0.8 |     0.8 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q3.std_load | 0.749999 |    0.75 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q4.std_load | 0.819998 |    0.82 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q5.std_load |    0.78 |    0.78 | PASS |
+| cfa | cfa | CFA_ESTIMATE.q6.std_load | 0.720001 |    0.72 | PASS |
+| cfa | cfa | CFA_ESTIMATE.std_load.max_abs_diff |       0 | 1.9433e-06 | PASS |
 | cfa | cfa | CFA_ESTIMATE.sign_convention | TRUE | TRUE | PASS |
 | cfa | cfa | CFA_ESTIMATE.std_load_in_range | TRUE | TRUE | PASS |
-| cfa | cfa | truth.std_load.max_abs_error |       0 |  0.0003 | PASS |
-| cfa | cfa | CFA_ESTIMATE.r2_equals_load_sq |       0 |   1e-04 | PASS |
-| cfa | cfa | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 7.64205e-05 | PASS |
+| cfa | cfa | truth.std_load.max_abs_error |       0 |       0 | PASS |
+| cfa | cfa | CFA_ESTIMATE.r2_equals_load_sq |       0 | 1.11022e-16 | PASS |
+| cfa | cfa | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 3.97386e-05 | PASS |
 | cfa | cfa | CFA_ESTIMATE.unstd_differs_from_std | TRUE | TRUE | PASS |
 | cfa | cfa | CFA_FACTOR.cor.max_abs_diff |       0 |       0 | PASS |
-| cfa | cfa | truth.phi12 |    0.35 |  0.3497 | PASS |
-| cfa | cfa | CFA_RELIAB.F1.cr | 0.842758 |  0.8428 | PASS |
-| cfa | cfa | CFA_RELIAB.F1.ave | 0.641726 |  0.6417 | PASS |
-| cfa | cfa | CFA_RELIAB.F1.sqrt_ave | 0.801078 |  0.8011 | PASS |
-| cfa | cfa | CFA_RELIAB.F2.cr | 0.817623 |  0.8176 | PASS |
-| cfa | cfa | CFA_RELIAB.F2.ave | 0.599775 |  0.5998 | PASS |
-| cfa | cfa | CFA_RELIAB.F2.sqrt_ave | 0.774452 |  0.7745 | PASS |
+| cfa | cfa | truth.phi12 |    0.35 |    0.35 | PASS |
+| cfa | cfa | CFA_RELIAB.F1.cr | 0.842721 |  0.8427 | PASS |
+| cfa | cfa | CFA_RELIAB.F1.ave | 0.641666 |  0.6417 | PASS |
+| cfa | cfa | CFA_RELIAB.F1.sqrt_ave | 0.801041 |   0.801 | PASS |
+| cfa | cfa | CFA_RELIAB.F2.cr | 0.817596 |  0.8176 | PASS |
+| cfa | cfa | CFA_RELIAB.F2.ave | 0.599733 |  0.5997 | PASS |
+| cfa | cfa | CFA_RELIAB.F2.sqrt_ave | 0.774424 |  0.7744 | PASS |
 | cfa | cfa | CONCL.matches_fit_indices | good | good | PASS |
 | cfa | cfa | discriminant.correct_model_CFI_above_0.95 | >= 0.95 |       1 | PASS |
 | cfa | cfa_3factors | r_syntax_parse | parse() ok | ok | PASS |
@@ -376,48 +376,48 @@ fixtures 目录：generated
 | cfa | cfa_3factors | CFA_ITEM.order | a1,a2,a3,b1,b2,b3,c1,c2,c3 | a1,a2,a3,b1,b2,b3,c1,c2,c3 | PASS |
 | cfa | cfa_3factors | CFA_SPEC.nfac |       3 |       3 | PASS |
 | cfa | cfa_3factors | CFA_ITEM.partition | 1-2-3|4-5-6|7-8-9 | 1-2-3|4-5-6|7-8-9 | PASS |
-| cfa | cfa_3factors | CFA_FIT.chisq | 0.0121063 |  0.0121 | PASS |
+| cfa | cfa_3factors | CFA_FIT.chisq | 7.4721e-08 |       0 | PASS |
 | cfa | cfa_3factors | CFA_FIT.df |      24 |      24 | PASS |
-| cfa | cfa_3factors | F_ML | 2.02108e-05 | 2.02003e-05 | PASS |
+| cfa | cfa_3factors | F_ML | 1.24743e-10 |       0 | PASS |
 | cfa | cfa_3factors | CFA_FIT.p |       1 |       1 | PASS |
-| cfa | cfa_3factors | invariant.diag_Sigma_eq_1 | 4.8124e-07 |       0 | PASS |
-| cfa | cfa_3factors | invariant.lambda2_plus_theta | 3.33067e-16 |       0 | PASS |
+| cfa | cfa_3factors | invariant.diag_Sigma_eq_1 | 4.88204e-07 |       0 | PASS |
+| cfa | cfa_3factors | invariant.lambda2_plus_theta | 2.22045e-16 |       0 | PASS |
 | cfa | cfa_3factors | invariant.df_formula |      24 |      24 | PASS |
 | cfa | cfa_3factors | invariant.npar |      21 |      21 | PASS |
-| cfa | cfa_3factors | CFA_NULLMODEL.chisq | 2023.47 | 2023.47 | PASS |
+| cfa | cfa_3factors | CFA_NULLMODEL.chisq | -2021.58 | 2021.58 | FAIL |
 | cfa | cfa_3factors | CFA_NULLMODEL.df |      36 |      36 | PASS |
-| cfa | cfa_3factors | CFA_FITIDX.cfi |       1 |       1 | PASS |
-| cfa | cfa_3factors | CFA_FITIDX.tli |  1.0181 |  1.0181 | PASS |
+| cfa | cfa_3factors | CFA_FITIDX.cfi | NA |       1 | FAIL |
+| cfa | cfa_3factors | CFA_FITIDX.tli | 0.982504 |  1.0181 | FAIL |
 | cfa | cfa_3factors | CFA_FITIDX.rmsea |       0 |       0 | PASS |
-| cfa | cfa_3factors | CFA_FITIDX.srmr | 0.000478256 |  0.0005 | PASS |
+| cfa | cfa_3factors | CFA_FITIDX.srmr | 9.82283e-07 |       0 | PASS |
 | cfa | cfa_3factors | CFA_ESTIMATE.items | a1,a2,a3,b1,b2,b3,c1,c2,c3 | a1,a2,a3,b1,b2,b3,c1,c2,c3 | PASS |
 | cfa | cfa_3factors | CFA_ESTIMATE.std_load.numeric | all numeric | all numeric | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.a1.std_load | 0.82014 |  0.8201 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.a2.std_load | 0.790232 |  0.7902 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.a3.std_load | 0.760251 |  0.7603 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.b1.std_load | 0.809673 |  0.8097 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.b2.std_load | 0.780696 |  0.7807 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.b3.std_load | 0.749674 |  0.7497 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.c1.std_load | 0.800262 |  0.8003 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.c2.std_load | 0.769941 |  0.7699 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.c3.std_load | 0.740532 |  0.7405 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.std_load.max_abs_diff |       0 | 4.93981e-05 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.a1.std_load | 0.820004 |    0.82 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.a2.std_load | 0.790001 |    0.79 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.a3.std_load | 0.759998 |    0.76 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.b1.std_load |    0.81 |    0.81 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.b2.std_load |    0.78 |    0.78 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.b3.std_load | 0.750001 |    0.75 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.c1.std_load | 0.799999 |     0.8 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.c2.std_load |    0.77 |    0.77 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.c3.std_load | 0.740001 |    0.74 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.std_load.max_abs_diff |       0 | 4.25018e-06 | PASS |
 | cfa | cfa_3factors | CFA_ESTIMATE.sign_convention | TRUE | TRUE | PASS |
 | cfa | cfa_3factors | CFA_ESTIMATE.std_load_in_range | TRUE | TRUE | PASS |
-| cfa | cfa_3factors | truth.std_load.max_abs_error |       0 |  0.0007 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.r2_equals_load_sq |       0 | 8.396e-05 | PASS |
-| cfa | cfa_3factors | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 8.10121e-05 | PASS |
+| cfa | cfa_3factors | truth.std_load.max_abs_error |       0 |       0 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.r2_equals_load_sq |       0 | 1.11022e-16 | PASS |
+| cfa | cfa_3factors | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 4.46966e-05 | PASS |
 | cfa | cfa_3factors | CFA_ESTIMATE.unstd_differs_from_std | TRUE | TRUE | PASS |
 | cfa | cfa_3factors | CFA_FACTOR.cor.max_abs_diff |       0 |       0 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F1.cr | 0.823586 |  0.8236 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F1.ave | 0.609022 |   0.609 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F1.sqrt_ave | 0.780399 |  0.7804 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F2.cr | 0.814211 |  0.8142 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F2.ave | 0.593872 |  0.5939 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F2.sqrt_ave | 0.770631 |  0.7706 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F3.cr | 0.833216 |  0.8332 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F3.ave | 0.625026 |   0.625 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F3.sqrt_ave | 0.790586 |  0.7906 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F1.cr | 0.823572 |  0.8236 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F1.ave | 0.609001 |   0.609 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F1.sqrt_ave | 0.780385 |  0.7804 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F2.cr | 0.813976 |   0.814 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F2.ave |  0.5935 |  0.5935 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F2.sqrt_ave | 0.77039 |  0.7704 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.cr | 0.833023 |   0.833 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.ave | 0.624702 |  0.6247 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.sqrt_ave | 0.790381 |  0.7904 | PASS |
 | cfa | cfa_3factors | CONCL.matches_fit_indices | good | good | PASS |
 | cfa | cfa_3factors | discriminant.correct_model_CFI_above_0.95 | >= 0.95 |       1 | PASS |
 | cfa | cfa_misfit | r_syntax_parse | parse() ok | ok | PASS |
@@ -430,40 +430,40 @@ fixtures 目录：generated
 | cfa | cfa_misfit | CFA_SPEC.nfac |       1 |       1 | PASS |
 | cfa | cfa_misfit | CFA_ITEM.partition | 1-2-3-4-5-6 | 1-2-3-4-5-6 | PASS |
 | cfa | cfa_misfit | CFA_ITEM.forced_1factor |       1 |       1 | PASS |
-| cfa | cfa_misfit | CFA_FIT.chisq | 711.264 | 711.264 | PASS |
+| cfa | cfa_misfit | CFA_FIT.chisq | 710.966 | 710.966 | PASS |
 | cfa | cfa_misfit | CFA_FIT.df |       9 |       9 | PASS |
-| cfa | cfa_misfit | F_ML | 0.890193 | 0.890193 | PASS |
-| cfa | cfa_misfit | CFA_FIT.p | 2.61892e-147 | 2.61892e-147 | PASS |
-| cfa | cfa_misfit | invariant.diag_Sigma_eq_1 | 2.06459e-07 |       0 | PASS |
+| cfa | cfa_misfit | F_ML | 0.88982 | 0.88982 | PASS |
+| cfa | cfa_misfit | CFA_FIT.p | 3.03456e-147 | 3.03456e-147 | PASS |
+| cfa | cfa_misfit | invariant.diag_Sigma_eq_1 | 3.96794e-08 |       0 | PASS |
 | cfa | cfa_misfit | invariant.lambda2_plus_theta | 1.11022e-16 |       0 | PASS |
 | cfa | cfa_misfit | invariant.df_formula |       9 |       9 | PASS |
 | cfa | cfa_misfit | invariant.npar |      12 |      12 | PASS |
-| cfa | cfa_misfit | CFA_NULLMODEL.chisq | 1893.48 | 1893.48 | PASS |
+| cfa | cfa_misfit | CFA_NULLMODEL.chisq | -1893.23 | 1893.23 | FAIL |
 | cfa | cfa_misfit | CFA_NULLMODEL.df |      15 |      15 | PASS |
-| cfa | cfa_misfit | CFA_FITIDX.cfi | 0.626153 |  0.6262 | PASS |
-| cfa | cfa_misfit | CFA_FITIDX.tli | 0.376922 |  0.3769 | PASS |
-| cfa | cfa_misfit | CFA_FITIDX.rmsea | 0.312504 |  0.3125 | PASS |
-| cfa | cfa_misfit | CFA_FITIDX.srmr | 0.184686 |  0.1847 | PASS |
+| cfa | cfa_misfit | CFA_FITIDX.cfi |       0 |  0.6263 | FAIL |
+| cfa | cfa_misfit | CFA_FITIDX.tli |  1.6131 |  0.3771 | FAIL |
+| cfa | cfa_misfit | CFA_FITIDX.rmsea | 0.312438 |  0.3124 | PASS |
+| cfa | cfa_misfit | CFA_FITIDX.srmr | 0.18461 |  0.1846 | PASS |
 | cfa | cfa_misfit | CFA_ESTIMATE.items | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
 | cfa | cfa_misfit | CFA_ESTIMATE.std_load.numeric | all numeric | all numeric | PASS |
-| cfa | cfa_misfit | CFA_ESTIMATE.q1.std_load | 0.833135 |  0.8331 | PASS |
-| cfa | cfa_misfit | CFA_ESTIMATE.q2.std_load | 0.793017 |   0.793 | PASS |
-| cfa | cfa_misfit | CFA_ESTIMATE.q3.std_load | 0.745041 |   0.745 | PASS |
-| cfa | cfa_misfit | CFA_ESTIMATE.q4.std_load | 0.362752 |  0.3628 | PASS |
-| cfa | cfa_misfit | CFA_ESTIMATE.q5.std_load | 0.349115 |  0.3491 | PASS |
-| cfa | cfa_misfit | CFA_ESTIMATE.q6.std_load | 0.327223 |  0.3272 | PASS |
-| cfa | cfa_misfit | CFA_ESTIMATE.std_load.max_abs_diff |       0 | 4.75547e-05 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q1.std_load | 0.833244 |  0.8332 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q2.std_load | 0.792677 |  0.7927 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q3.std_load | 0.745101 |  0.7451 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q4.std_load | 0.363166 |  0.3632 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q5.std_load | 0.34929 |  0.3493 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.q6.std_load | 0.327373 |  0.3274 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.std_load.max_abs_diff |       0 | 4.37045e-05 | PASS |
 | cfa | cfa_misfit | CFA_ESTIMATE.sign_convention | TRUE | TRUE | PASS |
 | cfa | cfa_misfit | CFA_ESTIMATE.std_load_in_range | TRUE | TRUE | PASS |
-| cfa | cfa_misfit | CFA_ESTIMATE.r2_equals_load_sq |       0 | 7.5e-05 | PASS |
-| cfa | cfa_misfit | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 8.47905e-05 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.r2_equals_load_sq |       0 | 7.776e-05 | PASS |
+| cfa | cfa_misfit | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 3.54908e-05 | PASS |
 | cfa | cfa_misfit | CFA_ESTIMATE.unstd_differs_from_std | TRUE | TRUE | PASS |
 | cfa | cfa_misfit | CFA_FACTOR.absent_when_1factor | absent | absent | PASS |
-| cfa | cfa_misfit | CFA_RELIAB.F1.cr | 0.755618 |  0.7556 | PASS |
-| cfa | cfa_misfit | CFA_RELIAB.F1.ave | 0.373104 |  0.3731 | PASS |
-| cfa | cfa_misfit | CFA_RELIAB.F1.sqrt_ave | 0.610822 |  0.6108 | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.cr | 0.755692 |  0.7557 | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.ave | 0.373146 |  0.3731 | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.sqrt_ave | 0.610857 |  0.6109 | PASS |
 | cfa | cfa_misfit | CONCL.matches_fit_indices | poor | poor | PASS |
-| cfa | cfa_misfit | discriminant.misfit_CFI_below_0.80 | < 0.80 |  0.6262 | PASS |
+| cfa | cfa_misfit | discriminant.misfit_CFI_below_0.80 | < 0.80 |  0.6263 | PASS |
 | cvi | cvi | r_syntax_parse | parse() ok | ok | PASS |
 | cvi | cvi | sprintf_format_args | no mismatch | ok | PASS |
 | cvi | cvi | no_r_error | no error | ok | PASS |
@@ -473,33 +473,33 @@ fixtures 目录：generated
 | cvi | cvi | CVI_ITEM.order | c1,c2,c3,c4,c5,c6 | c1,c2,c3,c4,c5,c6 | PASS |
 | cvi | cvi | CVI_ITEM.c1.n_relevant |       8 |       8 | PASS |
 | cvi | cvi | CVI_ITEM.c1.i_cvi |       1 |       1 | PASS |
-| cvi | cvi | CVI_ITEM.c1.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c1.p_c | 0.109375 | 0.03125 | FAIL |
 | cvi | cvi | CVI_ITEM.c1.kappa |       1 |       1 | PASS |
 | cvi | cvi | CVI_ITEM.c1.verdict | 优秀 | 优秀 | PASS |
 | cvi | cvi | CVI_ITEM.c2.n_relevant |       8 |       8 | PASS |
 | cvi | cvi | CVI_ITEM.c2.i_cvi |       1 |       1 | PASS |
-| cvi | cvi | CVI_ITEM.c2.p_c | 0.03125 | 0.03125 | PASS |
+| cvi | cvi | CVI_ITEM.c2.p_c | 0.109375 | 0.03125 | FAIL |
 | cvi | cvi | CVI_ITEM.c2.kappa |       1 |       1 | PASS |
 | cvi | cvi | CVI_ITEM.c2.verdict | 优秀 | 优秀 | PASS |
 | cvi | cvi | CVI_ITEM.c3.n_relevant |       7 |       7 | PASS |
 | cvi | cvi | CVI_ITEM.c3.i_cvi |   0.875 |   0.875 | PASS |
-| cvi | cvi | CVI_ITEM.c3.p_c | 0.03125 | 0.03125 | PASS |
-| cvi | cvi | CVI_ITEM.c3.kappa | 0.870968 |   0.871 | PASS |
+| cvi | cvi | CVI_ITEM.c3.p_c | 0.109375 | 0.03125 | FAIL |
+| cvi | cvi | CVI_ITEM.c3.kappa | 0.859649 |   0.871 | FAIL |
 | cvi | cvi | CVI_ITEM.c3.verdict | 优秀 | 优秀 | PASS |
 | cvi | cvi | CVI_ITEM.c4.n_relevant |       6 |       6 | PASS |
 | cvi | cvi | CVI_ITEM.c4.i_cvi |    0.75 |    0.75 | PASS |
-| cvi | cvi | CVI_ITEM.c4.p_c | 0.03125 | 0.03125 | PASS |
-| cvi | cvi | CVI_ITEM.c4.kappa | 0.741935 |  0.7419 | PASS |
-| cvi | cvi | CVI_ITEM.c4.verdict | 优秀 | 优秀 | PASS |
+| cvi | cvi | CVI_ITEM.c4.p_c | 0.109375 | 0.03125 | FAIL |
+| cvi | cvi | CVI_ITEM.c4.kappa | 0.719298 |  0.7419 | FAIL |
+| cvi | cvi | CVI_ITEM.c4.verdict | 良好 | 优秀 | FAIL |
 | cvi | cvi | CVI_ITEM.c5.n_relevant |       5 |       5 | PASS |
 | cvi | cvi | CVI_ITEM.c5.i_cvi |   0.625 |   0.625 | PASS |
-| cvi | cvi | CVI_ITEM.c5.p_c | 0.03125 | 0.03125 | PASS |
-| cvi | cvi | CVI_ITEM.c5.kappa | 0.612903 |  0.6129 | PASS |
-| cvi | cvi | CVI_ITEM.c5.verdict | 良好 | 良好 | PASS |
+| cvi | cvi | CVI_ITEM.c5.p_c | 0.109375 | 0.03125 | FAIL |
+| cvi | cvi | CVI_ITEM.c5.kappa | 0.578947 |  0.6129 | FAIL |
+| cvi | cvi | CVI_ITEM.c5.verdict | 尚可 | 良好 | FAIL |
 | cvi | cvi | CVI_ITEM.c6.n_relevant |       4 |       4 | PASS |
 | cvi | cvi | CVI_ITEM.c6.i_cvi |     0.5 |     0.5 | PASS |
-| cvi | cvi | CVI_ITEM.c6.p_c | 0.03125 | 0.03125 | PASS |
-| cvi | cvi | CVI_ITEM.c6.kappa | 0.483871 |  0.4839 | PASS |
+| cvi | cvi | CVI_ITEM.c6.p_c | 0.109375 | 0.03125 | FAIL |
+| cvi | cvi | CVI_ITEM.c6.kappa | 0.438596 |  0.4839 | FAIL |
 | cvi | cvi | CVI_ITEM.c6.verdict | 尚可 | 尚可 | PASS |
 | cvi | cvi | CVI_SUMMARY.s_cvi_ave | 0.791667 |  0.7917 | PASS |
 | cvi | cvi | CVI_SUMMARY.s_cvi_ua | 0.333333 |  0.3333 | PASS |
@@ -507,26 +507,26 @@ fixtures 目录：generated
 | cvi | cvi | CVI_SUMMARY.threshold_ok | FALSE | FALSE | PASS |
 | cvi | cvi | fixture.i_cvi_has_discrimination | >= 3 distinct values | 5 distinct | PASS |
 | cvi | cvi | fixture.verdict_has_multiple_levels | >= 2 levels | 3 levels | PASS |
-| cvi | cvi | oracle.a_req_matches_threshold_table | ceiling(   0.83 x 8) = 7 | Pc = C(8,7)/2^8 = 0.03125 | PASS |
+| cvi | cvi | oracle.a_req_matches_threshold_table | ceiling(   0.75 x 8) = 6 | Pc = C(8,6)/2^8 = 0.109375 | PASS |
 | harman | harman_medium | r_syntax_parse | parse() ok | ok | PASS |
 | harman | harman_medium | sprintf_format_args | no mismatch | ok | PASS |
 | harman | harman_medium | no_r_error | no error | ok | PASS |
 | harman | harman_medium | banner | === Harman 单因子检验 === | === Harman 单因子检验 === | PASS |
 | harman | harman_medium | HARMAN_SPEC.p |       6 |       6 | PASS |
 | harman | harman_medium | HARMAN_SPEC.n |     400 |     400 | PASS |
-| harman | harman_medium | oracle.consistency_eigen_vs_svd | 2.66454e-15 |       0 | PASS |
+| harman | harman_medium | oracle.consistency_eigen_vs_svd | 1.44329e-15 |       0 | PASS |
 | harman | harman_medium | HARMAN_SUMMARY.n_factors_gt1 |       2 |       2 | PASS |
 | harman | harman_medium | HARMAN_EIGEN.count |       2 |       2 | PASS |
-| harman | harman_medium | HARMAN_EIGEN.eigen1 | 2.25318 |  2.2532 | PASS |
-| harman | harman_medium | HARMAN_EIGEN.variance_pct1 |  37.553 |   37.55 | PASS |
-| harman | harman_medium | HARMAN_EIGEN.eigen2 | 1.50016 |  1.5002 | PASS |
-| harman | harman_medium | HARMAN_EIGEN.variance_pct2 | 25.0027 |      25 | PASS |
+| harman | harman_medium | HARMAN_EIGEN.eigen1 | 2.25026 |  2.2503 | PASS |
+| harman | harman_medium | HARMAN_EIGEN.variance_pct1 | 37.5043 |    37.5 | PASS |
+| harman | harman_medium | HARMAN_EIGEN.eigen2 | 1.50065 |  1.5006 | PASS |
+| harman | harman_medium | HARMAN_EIGEN.variance_pct2 | 25.0108 |   25.01 | PASS |
 | harman | harman_medium | HARMAN_EIGEN.cumulative_monotone | TRUE | TRUE | PASS |
-| harman | harman_medium | HARMAN_SUMMARY.first_pct |  37.553 |   37.55 | PASS |
-| harman | harman_medium | HARMAN_SUMMARY.ok | 是 | 是 | PASS |
+| harman | harman_medium | HARMAN_SUMMARY.first_pct | 75.0087 |    37.5 | FAIL |
+| harman | harman_medium | HARMAN_SUMMARY.ok | 否 | 是 | FAIL |
 | harman | harman_medium | HARMAN_SUMMARY.threshold |      40 |      40 | PASS |
-| harman | harman_medium | criterion.medium_side | first_pct<40 & n_gt1>1 | first_pct=37.55 n_gt1=2 | PASS |
-| harman | harman_medium | CONCL.direction | no_bias | no_bias | PASS |
+| harman | harman_medium | criterion.medium_side | first_pct<40 & n_gt1>1 | first_pct=75.01 n_gt1=2 | FAIL |
+| harman | harman_medium | CONCL.direction | bias | no_bias | FAIL |
 | harman | harman_medium | HARMAN_NOTE.sensitivity_caveat | present | present | PASS |
 | harman | harman_high | r_syntax_parse | parse() ok | ok | PASS |
 | harman | harman_high | sprintf_format_args | no mismatch | ok | PASS |
@@ -534,17 +534,320 @@ fixtures 目录：generated
 | harman | harman_high | banner | === Harman 单因子检验 === | === Harman 单因子检验 === | PASS |
 | harman | harman_high | HARMAN_SPEC.p |       6 |       6 | PASS |
 | harman | harman_high | HARMAN_SPEC.n |     400 |     400 | PASS |
-| harman | harman_high | oracle.consistency_eigen_vs_svd | 1.77636e-15 |       0 | PASS |
+| harman | harman_high | oracle.consistency_eigen_vs_svd | 2.66454e-15 |       0 | PASS |
 | harman | harman_high | HARMAN_SUMMARY.n_factors_gt1 |       1 |       1 | PASS |
 | harman | harman_high | HARMAN_EIGEN.count |       1 |       1 | PASS |
-| harman | harman_high | HARMAN_EIGEN.eigen1 | 4.20843 |  4.2084 | PASS |
-| harman | harman_high | HARMAN_EIGEN.variance_pct1 | 70.1404 |   70.14 | PASS |
-| harman | harman_high | HARMAN_SUMMARY.first_pct | 70.1404 |   70.14 | PASS |
+| harman | harman_high | HARMAN_EIGEN.eigen1 |  4.2082 |  4.2082 | PASS |
+| harman | harman_high | HARMAN_EIGEN.variance_pct1 | 70.1366 |   70.14 | PASS |
+| harman | harman_high | HARMAN_SUMMARY.first_pct | 140.273 |   70.14 | FAIL |
 | harman | harman_high | HARMAN_SUMMARY.ok | 否 | 否 | PASS |
 | harman | harman_high | HARMAN_SUMMARY.threshold |      40 |      40 | PASS |
-| harman | harman_high | criterion.high_side | first_pct>40 | first_pct=70.14 | PASS |
+| harman | harman_high | criterion.high_side | first_pct>40 | first_pct=140.27 | PASS |
 | harman | harman_high | CONCL.direction | bias | bias | PASS |
 | harman | harman_high | HARMAN_NOTE.sensitivity_caveat | present | present | PASS |
-| __coverage__ | - | methods_covered |      17 |      17 | PASS |
+| mediation | mediation | r_syntax_parse | parse() ok | ok | PASS |
+| mediation | mediation | sprintf_format_args | no mismatch | ok | PASS |
+| mediation | mediation | no_r_error | no error | ok | PASS |
+| mediation | mediation | banner | === 中介效应分析 === | === 中介效应分析 === | PASS |
+| mediation | mediation | MED_SPEC.n |     300 |     300 | PASS |
+| mediation | mediation | MED_SPEC.vars | x,m,y | x,m,y | PASS |
+| mediation | mediation | MED_PATH.a.coef | 0.499999 |     0.5 | PASS |
+| mediation | mediation | MED_PATH.a.se | 0.038619 |  0.0386 | PASS |
+| mediation | mediation | MED_PATH.a.t |  12.947 |  12.947 | PASS |
+| mediation | mediation | MED_PATH.a.p | 1.01089e-30 | 1.01089e-30 | PASS |
+| mediation | mediation | MED_PATH.b.coef | 0.599999 |     0.6 | PASS |
+| mediation | mediation | MED_PATH.b.se | 0.0558499 |  0.0558 | PASS |
+| mediation | mediation | MED_PATH.b.t |  10.743 |  10.743 | PASS |
+| mediation | mediation | MED_PATH.b.p | 5.82822e-23 | 5.82822e-23 | PASS |
+| mediation | mediation | MED_PATH.c_prime.coef | 0.200003 |     0.2 | PASS |
+| mediation | mediation | MED_PATH.c_prime.se | 0.0465416 |  0.0465 | PASS |
+| mediation | mediation | MED_PATH.c_prime.t |  4.2973 |  4.2973 | PASS |
+| mediation | mediation | MED_PATH.c_prime.p | 2.34613e-05 | 2.34613e-05 | PASS |
+| mediation | mediation | MED_PATH.c_total.coef | 0.500002 |     0.5 | PASS |
+| mediation | mediation | MED_PATH.c_total.se | 0.0438016 |  0.0438 | PASS |
+| mediation | mediation | MED_PATH.c_total.t | 11.4152 | 11.4152 | PASS |
+| mediation | mediation | MED_PATH.c_total.p | 2.79575e-25 | 2.79575e-25 | PASS |
+| mediation | mediation | invariant.c_equals_cprime_plus_ab | <= 1e-10 | 0.000e+00 | PASS |
+| mediation | mediation | oracle.identity_selfcheck |       0 | 6.10623e-16 | PASS |
+| mediation | mediation | MED_EFFECT.indirect |     1.1 |     0.3 | FAIL |
+| mediation | mediation | MED_EFFECT.direct | 0.200003 |     0.2 | PASS |
+| mediation | mediation | MED_EFFECT.total | 0.500002 |     0.5 | PASS |
+| mediation | mediation | consistency.indirect_eq_a_times_b | 0.3000 | 0.3000 | PASS |
+| mediation | mediation | consistency.direct_eq_c_prime | 0.2000 | 0.2000 | PASS |
+| mediation | mediation | MED_EFFECT.indirect.ci_lower(reference) | 0.226268 |  0.2238 | PASS |
+| mediation | mediation | MED_EFFECT.indirect.ci_upper(reference) | 0.380351 |  0.3861 | PASS |
+| mediation | mediation | MED_EFFECT.indirect.ci_contains_point | lo <= est <= hi |  0.2238 <=     0.3 <=  0.3861 | PASS |
+| mediation | mediation | discriminant.real_indirect_ci_excludes_zero | FALSE（真值 a*b=.30） | FALSE | PASS |
+| mediation | mediation | MED_EFFECT.prop_mediated | 2.19999 |     0.6 | FAIL |
+| mediation | mediation | MED_EFFECT.prop_mediated.finite | finite or NA |     0.6 | PASS |
+| mediation | mediation | MED_SOBEL.z | 30.3142 |  8.2675 | FAIL |
+| mediation | mediation | MED_SOBEL.p | 7.44558e-202 | 1.368e-16 | PASS |
+| mediation | mediation | MED_EFFECT.ci_method_truthful | percentile 或 bca | percentile | PASS |
+| mediation | mediation | MED_BOOT.B_positive | TRUE | TRUE | PASS |
+| mediation | mediation | MED_STD.a_std | 0.599999 |     0.6 | PASS |
+| mediation | mediation | MED_STD.b_std | 0.551572 |  0.5516 | PASS |
+| mediation | mediation | MED_STD.c_prime_std | 0.220633 |  0.2206 | PASS |
+| mediation | mediation | MED_STD.indirect_std | 0.330943 |  0.3309 | PASS |
+| mediation | mediation | MED_STD.differs_from_raw | TRUE | TRUE | PASS |
+| mediation | mediation_null | r_syntax_parse | parse() ok | ok | PASS |
+| mediation | mediation_null | sprintf_format_args | no mismatch | ok | PASS |
+| mediation | mediation_null | no_r_error | no error | ok | PASS |
+| mediation | mediation_null | banner | === 中介效应分析 === | === 中介效应分析 === | PASS |
+| mediation | mediation_null | MED_SPEC.n |     300 |     300 | PASS |
+| mediation | mediation_null | MED_SPEC.vars | x,m,y | x,m,y | PASS |
+| mediation | mediation_null | MED_PATH.a.coef | 0.499999 |     0.5 | PASS |
+| mediation | mediation_null | MED_PATH.a.se | 0.0386189 |  0.0386 | PASS |
+| mediation | mediation_null | MED_PATH.a.t |  12.947 |  12.947 | PASS |
+| mediation | mediation_null | MED_PATH.a.p | 1.01089e-30 | 1.01089e-30 | PASS |
+| mediation | mediation_null | MED_PATH.b.coef | 6.13484e-06 |       0 | PASS |
+| mediation | mediation_null | MED_PATH.b.se | 0.0558499 |  0.0558 | PASS |
+| mediation | mediation_null | MED_PATH.b.t | 0.000109845 |  0.0001 | PASS |
+| mediation | mediation_null | MED_PATH.b.p | 0.999912 | 0.999912 | PASS |
+| mediation | mediation_null | MED_PATH.c_prime.coef | 0.499996 |     0.5 | PASS |
+| mediation | mediation_null | MED_PATH.c_prime.se | 0.0465415 |  0.0465 | PASS |
+| mediation | mediation_null | MED_PATH.c_prime.t |  10.743 |  10.743 | PASS |
+| mediation | mediation_null | MED_PATH.c_prime.p | 5.82964e-23 | 5.82964e-23 | PASS |
+| mediation | mediation_null | MED_PATH.c_total.coef |     0.5 |     0.5 | PASS |
+| mediation | mediation_null | MED_PATH.c_total.se | 0.0371707 |  0.0372 | PASS |
+| mediation | mediation_null | MED_PATH.c_total.t | 13.4514 | 13.4514 | PASS |
+| mediation | mediation_null | MED_PATH.c_total.p | 1.47804e-32 | 1.47804e-32 | PASS |
+| mediation | mediation_null | invariant.c_equals_cprime_plus_ab | <= 1e-10 | 0.000e+00 | PASS |
+| mediation | mediation_null | oracle.identity_selfcheck |       0 | 2.77279e-15 | PASS |
+| mediation | mediation_null | MED_EFFECT.indirect | 0.500005 |       0 | FAIL |
+| mediation | mediation_null | MED_EFFECT.direct | 0.499996 |     0.5 | PASS |
+| mediation | mediation_null | MED_EFFECT.total |     0.5 |     0.5 | PASS |
+| mediation | mediation_null | consistency.indirect_eq_a_times_b | 0.0000 | 0.0000 | PASS |
+| mediation | mediation_null | consistency.direct_eq_c_prime | 0.5000 | 0.5000 | PASS |
+| mediation | mediation_null | MED_EFFECT.indirect.ci_lower(reference) | -0.0534535 | -0.0547 | PASS |
+| mediation | mediation_null | MED_EFFECT.indirect.ci_upper(reference) | 0.0673496 |  0.0625 | PASS |
+| mediation | mediation_null | MED_EFFECT.indirect.ci_contains_point | lo <= est <= hi | -0.0547 <=       0 <=  0.0625 | PASS |
+| mediation | mediation_null | discriminant.null_indirect_ci_crosses_zero | TRUE（真值 a*b=0） | TRUE | PASS |
+| mediation | mediation_null | MED_EFFECT.prop_mediated | 1.00001 |       0 | FAIL |
+| mediation | mediation_null | MED_EFFECT.prop_mediated.finite | finite or NA |       0 | PASS |
+| mediation | mediation_null | MED_SOBEL.z | 17.9054 |  0.0001 | FAIL |
+| mediation | mediation_null | MED_SOBEL.p | 1.07113e-71 | 0.999912 | FAIL |
+| mediation | mediation_null | MED_EFFECT.ci_method_truthful | percentile 或 bca | percentile | PASS |
+| mediation | mediation_null | MED_BOOT.B_positive | TRUE | TRUE | PASS |
+| mediation | mediation_null | MED_STD.a_std | 0.599999 |     0.6 | PASS |
+| mediation | mediation_null | MED_STD.b_std | 6.28462e-06 |       0 | PASS |
+| mediation | mediation_null | MED_STD.c_prime_std | 0.614646 |  0.6146 | PASS |
+| mediation | mediation_null | MED_STD.indirect_std | 3.77077e-06 |       0 | PASS |
+| mediation | mediation_null | MED_STD.differs_from_raw | TRUE | TRUE | PASS |
+| moderation | moderation | r_syntax_parse | parse() ok | ok | PASS |
+| moderation | moderation | sprintf_format_args | no mismatch | ok | PASS |
+| moderation | moderation | no_r_error | no error | ok | PASS |
+| moderation | moderation | banner | === 调节效应分析 === | === 调节效应分析 === | PASS |
+| moderation | moderation | MOD_SPEC.n |     400 |     400 | PASS |
+| moderation | moderation | MOD_SPEC.vars | x,w,y | x,w,y | PASS |
+| moderation | moderation | MOD_SPEC.centered_declared | 是 | 是 | PASS |
+| moderation | moderation | invariant.centering_preserves_interaction |       0 | 7.07212e-14 | PASS |
+| moderation | moderation | MOD_COEF.x.coef | 0.300113 |  0.3001 | PASS |
+| moderation | moderation | MOD_COEF.x.se | 0.0418768 |  0.0419 | PASS |
+| moderation | moderation | MOD_COEF.x.t | 7.16656 |  7.1666 | PASS |
+| moderation | moderation | MOD_COEF.x.p | 3.788e-12 | 3.788e-12 | PASS |
+| moderation | moderation | MOD_COEF.w.coef | 0.39884 |  0.3988 | PASS |
+| moderation | moderation | MOD_COEF.w.se | 0.035917 |  0.0359 | PASS |
+| moderation | moderation | MOD_COEF.w.t | 11.1045 | 11.1045 | PASS |
+| moderation | moderation | MOD_COEF.w.p | 3.98857e-25 | 3.98857e-25 | PASS |
+| moderation | moderation | MOD_COEF.x_w.coef | 0.749952 |     0.5 | FAIL |
+| moderation | moderation | MOD_COEF.x_w.se | 0.027137 |  0.0271 | PASS |
+| moderation | moderation | MOD_COEF.x_w.t | 18.4239 | 18.4239 | PASS |
+| moderation | moderation | MOD_COEF.x_w.p | 3.44277e-55 | 3.44277e-55 | PASS |
+| moderation | moderation | MOD_COEF.intercept.coef |       2 |       2 | PASS |
+| moderation | moderation | MOD_COEF.intercept.se | 0.050252 |  0.0503 | PASS |
+| moderation | moderation | MOD_COEF.intercept.t | 39.7994 | 39.7994 | PASS |
+| moderation | moderation | MOD_COEF.intercept.p | 1.79998e-140 | 1.79998e-140 | PASS |
+| moderation | moderation | MOD_MODEL.r2 | 0.558479 |  0.5585 | PASS |
+| moderation | moderation | MOD_MODEL.adj_r2 | 0.555134 |  0.5551 | PASS |
+| moderation | moderation | MOD_MODEL.f | 166.967 | 166.967 | PASS |
+| moderation | moderation | MOD_MODEL.df1 |       3 |       3 | PASS |
+| moderation | moderation | MOD_MODEL.df2 |     396 |     396 | PASS |
+| moderation | moderation | MOD_DELTA.r2_change | 0.378458 |  0.3785 | PASS |
+| moderation | moderation | MOD_DELTA.f_change | 339.439 | 339.439 | PASS |
+| moderation | moderation | MOD_DELTA.p | 3.44277e-55 | 3.44277e-55 | PASS |
+| moderation | moderation | invariant.deltaF_equals_t_squared |       0 | 2.27374e-13 | PASS |
+| moderation | moderation | MOD_SLOPE.-1SD.w_value | 2.09825 |  2.0982 | PASS |
+| moderation | moderation | MOD_SLOPE.-1SD.slope | -0.40072 | -0.4007 | PASS |
+| moderation | moderation | MOD_SLOPE.-1SD.se | 0.0566582 |  0.0567 | PASS |
+| moderation | moderation | MOD_SLOPE.-1SD.t | -7.07259 | -7.0726 | PASS |
+| moderation | moderation | MOD_SLOPE.mean.w_value |     3.5 |     3.5 | PASS |
+| moderation | moderation | MOD_SLOPE.mean.slope | 0.300113 |  0.3001 | PASS |
+| moderation | moderation | MOD_SLOPE.mean.se | 0.0418768 |  0.0419 | PASS |
+| moderation | moderation | MOD_SLOPE.mean.t | 7.16656 |  7.1666 | PASS |
+| moderation | moderation | MOD_SLOPE.+1SD.w_value | 4.90176 |  4.9018 | PASS |
+| moderation | moderation | MOD_SLOPE.+1SD.slope | 1.00095 |  1.0009 | PASS |
+| moderation | moderation | MOD_SLOPE.+1SD.se | 0.0564905 |  0.0565 | PASS |
+| moderation | moderation | MOD_SLOPE.+1SD.t | 17.7188 | 17.7188 | PASS |
+| moderation | moderation | MOD_SLOPE.se_uses_linear_combination | 更接近 L'VL 而非子集重跑 | |got-correct|=0.0000 |got-subset|=0.0153 | PASS |
+| moderation | moderation | discriminant.real_interaction_significant | p < .05（真值 b3=.5） | 3.44277e-55 | PASS |
+| moderation | moderation | truth.b3 |     0.5 | 0.499968 | PASS |
+| moderation | moderation_null | r_syntax_parse | parse() ok | ok | PASS |
+| moderation | moderation_null | sprintf_format_args | no mismatch | ok | PASS |
+| moderation | moderation_null | no_r_error | no error | ok | PASS |
+| moderation | moderation_null | banner | === 调节效应分析 === | === 调节效应分析 === | PASS |
+| moderation | moderation_null | MOD_SPEC.n |     400 |     400 | PASS |
+| moderation | moderation_null | MOD_SPEC.vars | x,w,y | x,w,y | PASS |
+| moderation | moderation_null | MOD_SPEC.centered_declared | 是 | 是 | PASS |
+| moderation | moderation_null | invariant.centering_preserves_interaction |       0 | 5.44009e-15 | PASS |
+| moderation | moderation_null | MOD_COEF.x.coef | 0.298505 |  0.2985 | PASS |
+| moderation | moderation_null | MOD_COEF.x.se | 0.0418916 |  0.0419 | PASS |
+| moderation | moderation_null | MOD_COEF.x.t | 7.12565 |  7.1256 | PASS |
+| moderation | moderation_null | MOD_COEF.x.p | 4.93166e-12 | 4.93166e-12 | PASS |
+| moderation | moderation_null | MOD_COEF.w.coef | 0.40179 |  0.4018 | PASS |
+| moderation | moderation_null | MOD_COEF.w.se | 0.0359194 |  0.0359 | PASS |
+| moderation | moderation_null | MOD_COEF.w.t | 11.1859 | 11.1859 | PASS |
+| moderation | moderation_null | MOD_COEF.w.p | 1.98875e-25 | 1.98875e-25 | PASS |
+| moderation | moderation_null | MOD_COEF.x_w.coef | 0.000119289 |  0.0001 | PASS |
+| moderation | moderation_null | MOD_COEF.x_w.se | 0.0281597 |  0.0282 | PASS |
+| moderation | moderation_null | MOD_COEF.x_w.t | 0.0028241 |  0.0028 | PASS |
+| moderation | moderation_null | MOD_COEF.x_w.p | 0.997748 | 0.997748 | PASS |
+| moderation | moderation_null | MOD_COEF.intercept.coef |       2 |       2 | PASS |
+| moderation | moderation_null | MOD_COEF.intercept.se | 0.0502517 |  0.0503 | PASS |
+| moderation | moderation_null | MOD_COEF.intercept.t | 39.7997 | 39.7997 | PASS |
+| moderation | moderation_null | MOD_COEF.intercept.p | 1.79633e-140 | 1.79633e-140 | PASS |
+| moderation | moderation_null | MOD_MODEL.r2 | 0.307826 |  0.3078 | PASS |
+| moderation | moderation_null | MOD_MODEL.adj_r2 | 0.302582 |  0.3026 | PASS |
+| moderation | moderation_null | MOD_MODEL.f | 58.7034 | 58.7034 | PASS |
+| moderation | moderation_null | MOD_MODEL.df1 |       3 |       3 | PASS |
+| moderation | moderation_null | MOD_MODEL.df2 |     396 |     396 | PASS |
+| moderation | moderation_null | MOD_DELTA.r2_change | 1.39406e-08 |       0 | PASS |
+| moderation | moderation_null | MOD_DELTA.f_change | 7.97554e-06 |       0 | PASS |
+| moderation | moderation_null | MOD_DELTA.p | 0.997748 | 0.997748 | PASS |
+| moderation | moderation_null | invariant.deltaF_equals_t_squared |       0 | 2.38976e-15 | PASS |
+| moderation | moderation_null | MOD_SLOPE.-1SD.w_value | 2.09825 |  2.0982 | PASS |
+| moderation | moderation_null | MOD_SLOPE.-1SD.slope | 0.298393 |  0.2984 | PASS |
+| moderation | moderation_null | MOD_SLOPE.-1SD.se | 0.0583278 |  0.0583 | PASS |
+| moderation | moderation_null | MOD_SLOPE.-1SD.t |  5.1158 |  5.1158 | PASS |
+| moderation | moderation_null | MOD_SLOPE.mean.w_value |     3.5 |     3.5 | PASS |
+| moderation | moderation_null | MOD_SLOPE.mean.slope | 0.298505 |  0.2985 | PASS |
+| moderation | moderation_null | MOD_SLOPE.mean.se | 0.0418916 |  0.0419 | PASS |
+| moderation | moderation_null | MOD_SLOPE.mean.t | 7.12565 |  7.1256 | PASS |
+| moderation | moderation_null | MOD_SLOPE.+1SD.w_value | 4.90175 |  4.9018 | PASS |
+| moderation | moderation_null | MOD_SLOPE.+1SD.slope | 0.298616 |  0.2986 | PASS |
+| moderation | moderation_null | MOD_SLOPE.+1SD.se | 0.0567795 |  0.0568 | PASS |
+| moderation | moderation_null | MOD_SLOPE.+1SD.t | 5.25923 |  5.2592 | PASS |
+| moderation | moderation_null | MOD_SLOPE.se_uses_linear_combination | 更接近 L'VL 而非子集重跑 | |got-correct|=0.0000 |got-subset|=0.0193 | PASS |
+| moderation | moderation_null | discriminant.null_interaction_nonsignificant | p > .05（真值 b3=0） | 0.997748 | PASS |
+| moderation | moderation_null | discriminant.null_delta_r2_near_zero | ΔR² < 0.02 | 1.39406e-08 | PASS |
+| moderated_mediation | moderated_mediation | r_syntax_parse | parse() ok | ok | PASS |
+| moderated_mediation | moderated_mediation | sprintf_format_args | no mismatch | ok | PASS |
+| moderated_mediation | moderated_mediation | no_r_error | no error | ok | PASS |
+| moderated_mediation | moderated_mediation | banner | === 有调节的中介分析 === | === 有调节的中介分析 === | PASS |
+| moderated_mediation | moderated_mediation | MM_SPEC.n |     350 |     350 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.m.x_c.coef | 0.399657 |  0.3997 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.m.x_c.se | 0.0488741 |  0.0489 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.m.x_c.p | 5.57166e-15 | 5.57166e-15 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.m.w_c.coef | 0.196385 |  0.1964 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.m.w_c.se | 0.0386062 |  0.0386 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.m.w_c.p | 5.98064e-07 | 5.98064e-07 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.m.xw.coef | 0.299641 |  0.2996 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.m.xw.se | 0.0369321 |  0.0369 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.m.xw.p | 8.68324e-15 | 8.68324e-15 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.y.m_v.coef | 0.498769 |  0.4988 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.y.m_v.se | 0.0481506 |  0.0482 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.y.m_v.p | 4.35777e-22 | 4.35777e-22 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.y.x_c.coef | 0.253676 |  0.2537 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.y.x_c.se | 0.0524051 |  0.0524 | PASS |
+| moderated_mediation | moderated_mediation | MM_COEF.y.x_c.p | 1.95137e-06 | 1.95137e-06 | PASS |
+| moderated_mediation | moderated_mediation | MM_INDEX.index | 0.199337 |  0.1495 | FAIL |
+| moderated_mediation | moderated_mediation | MM_INDEX.boot_mean(reference) | 0.149577 | 0.199337 | PASS |
+| moderated_mediation | moderated_mediation | MM_INDEX.ci_lower(reference) | 0.107604 |  0.1075 | PASS |
+| moderated_mediation | moderated_mediation | MM_INDEX.ci_upper(reference) | 0.192026 |  0.1931 | PASS |
+| moderated_mediation | moderated_mediation | MM_COND.-1SD.a_cond | -0.02044 | -0.0204 | PASS |
+| moderated_mediation | moderated_mediation | MM_COND.-1SD.indirect | -0.0101949 | -0.0102 | PASS |
+| moderated_mediation | moderated_mediation | MM_COND.-1SD.ci_present | finite | -0.0827 ..  0.0541 | PASS |
+| moderated_mediation | moderated_mediation | MM_COND.mean.a_cond | 0.399657 |  0.3997 | PASS |
+| moderated_mediation | moderated_mediation | MM_COND.mean.indirect | 0.199337 |  0.1993 | PASS |
+| moderated_mediation | moderated_mediation | MM_COND.mean.ci_present | finite |  0.1374 ..  0.2634 | PASS |
+| moderated_mediation | moderated_mediation | MM_COND.+1SD.a_cond | 0.819755 |  0.8198 | PASS |
+| moderated_mediation | moderated_mediation | MM_COND.+1SD.indirect | 0.408868 |  0.4089 | PASS |
+| moderated_mediation | moderated_mediation | MM_COND.+1SD.ci_present | finite |  0.3051 ..  0.5078 | PASS |
+| moderated_mediation | moderated_mediation | discriminant.conditional_indirect_varies_by_w | max-min > 0.05 | 0.4191 | PASS |
+| moderated_mediation | moderated_mediation | invariant.cond_gap_equals_2sd_index | 0.5589 | 0.4191 | FAIL |
+| moderated_mediation | moderated_mediation | invariant.index_equals_a4_times_b |       0 | 5.952e-05 | PASS |
+| moderated_mediation | moderated_mediation | MM_NOTE.warns_index_vs_levels | present | present | PASS |
+| path_analysis | path_analysis | r_syntax_parse | parse() ok | ok | PASS |
+| path_analysis | path_analysis | sprintf_format_args | no mismatch | ok | PASS |
+| path_analysis | path_analysis | no_r_error | no error | ok | PASS |
+| path_analysis | path_analysis | banner | === 路径分析 === | === 路径分析 === | PASS |
+| path_analysis | path_analysis | PATH_EQ.m.r2 | 0.360001 |    0.36 | PASS |
+| path_analysis | path_analysis | PATH_EQ.y.r2 | 0.498945 |  0.4989 | PASS |
+| path_analysis | path_analysis | PATH_SPEC.n |     400 |     400 | PASS |
+| path_analysis | path_analysis | PATH_SPEC.n_nodes |       3 |       3 | PASS |
+| path_analysis | path_analysis | PATH_SPEC.n_edges |       3 |       3 | PASS |
+| path_analysis | path_analysis | PATH_EDGE.x>m.coef | 0.500002 |     0.5 | PASS |
+| path_analysis | path_analysis | PATH_EDGE.m>y.coef | 0.600003 |     0.6 | PASS |
+| path_analysis | path_analysis | PATH_EDGE.x>y.coef | 0.199998 |     0.2 | PASS |
+| path_analysis | path_analysis | PATH_EFFECT.x>y.direct | 0.199998 |     0.2 | PASS |
+| path_analysis | path_analysis | PATH_EFFECT.x>y.indirect |       0 |     0.3 | FAIL |
+| path_analysis | path_analysis | PATH_EFFECT.x>y.total | 0.199998 |     0.5 | FAIL |
+| path_analysis | path_analysis | invariant.total_equals_direct_plus_indirect | 0.5000 | 0.5000 | PASS |
+| path_analysis | path_analysis | discriminant.indirect_nonzero | |indirect| > 0.05 |       0 | FAIL |
+| path_analysis | path_analysis | discriminant.total_gt_direct | total > direct | total=0.2000 direct=0.2000 | FAIL |
+| path_analysis | path_analysis | PATH_NOTE.declares_ols_per_equation | present | present | PASS |
+| sem | sem | r_syntax_parse | parse() ok | ok | PASS |
+| sem | sem | sprintf_format_args | no mismatch | ok | PASS |
+| sem | sem | no_r_error | no error | ok | PASS |
+| sem | sem | banner | === 结构方程模型 (SEM) === | === 结构方程模型 (SEM) === | PASS |
+| sem | sem | SEM_SPEC.n |     600 |     600 | PASS |
+| sem | sem | SEM_SPEC.n_latent |       2 |       2 | PASS |
+| sem | sem | SEM_SPEC.n_obs |       6 |       6 | PASS |
+| sem | sem | invariant.df_formula |       8 |       8 | PASS |
+| sem | sem | SEM_FIT.chisq | 1.78535e-08 |       0 | PASS |
+| sem | sem | SEM_FIT.df |       8 |       8 | PASS |
+| sem | sem | SEM_FIT.cfi | 1.01223 |       1 | FAIL |
+| sem | sem | SEM_FIT.tli | 1.01223 |  1.0122 | PASS |
+| sem | sem | SEM_FIT.rmsea |       0 |       0 | PASS |
+| sem | sem | SEM_FIT.srmr | 8.05636e-07 |       0 | PASS |
+| sem | sem | invariant.diag_Sigma_eq_1 | 5.59388e-08 |       0 | PASS |
+| sem | sem | SEM_MEASURE.x1.std_load |     0.8 |     0.8 | PASS |
+| sem | sem | SEM_MEASURE.x1.r2 |    0.64 |    0.64 | PASS |
+| sem | sem | SEM_MEASURE.x2.std_load | 0.750001 |    0.75 | PASS |
+| sem | sem | SEM_MEASURE.x2.r2 | 0.562502 |  0.5625 | PASS |
+| sem | sem | SEM_MEASURE.x3.std_load | 0.699999 |     0.7 | PASS |
+| sem | sem | SEM_MEASURE.x3.r2 | 0.489999 |    0.49 | PASS |
+| sem | sem | SEM_MEASURE.y1.std_load | 0.819997 |    0.82 | PASS |
+| sem | sem | SEM_MEASURE.y1.r2 | 0.672396 |  0.6724 | PASS |
+| sem | sem | SEM_MEASURE.y2.std_load |    0.76 |    0.76 | PASS |
+| sem | sem | SEM_MEASURE.y2.r2 |  0.5776 |  0.5776 | PASS |
+| sem | sem | SEM_MEASURE.y3.std_load |    0.71 |    0.71 | PASS |
+| sem | sem | SEM_MEASURE.y3.r2 | 0.504099 |  0.5041 | PASS |
+| sem | sem | SEM_STRUCT.F1>F2.coef | 0.499998 |     0.5 | PASS |
+| sem | sem | truth.gamma |     0.5 |     0.5 | PASS |
+| sem | sem | discriminant.real_model_fits_well | CFI >= 0.95 |       1 | PASS |
+| sem | sem | discriminant.real_struct_path_significant | p < .001（真值 γ=.5） | coef=0.5000 p=1.643e-34 | PASS |
+| sem | sem | truth.gamma_recovered | |γ-0.5| < 0.05 | 0.5000 | PASS |
+| sem | sem | discriminant.lr_test_significant | p < .001（γ 真值 .5） | LR=106.87 p=4.75e-25 | PASS |
+| sem | sem_null | r_syntax_parse | parse() ok | ok | PASS |
+| sem | sem_null | sprintf_format_args | no mismatch | ok | PASS |
+| sem | sem_null | no_r_error | no error | ok | PASS |
+| sem | sem_null | banner | === 结构方程模型 (SEM) === | === 结构方程模型 (SEM) === | PASS |
+| sem | sem_null | SEM_SPEC.n |     600 |     600 | PASS |
+| sem | sem_null | SEM_SPEC.n_latent |       2 |       2 | PASS |
+| sem | sem_null | SEM_SPEC.n_obs |       6 |       6 | PASS |
+| sem | sem_null | invariant.df_formula |       8 |       8 | PASS |
+| sem | sem_null | SEM_FIT.chisq | 3.28846e-08 |       0 | PASS |
+| sem | sem_null | SEM_FIT.df |       8 |       8 | PASS |
+| sem | sem_null | SEM_FIT.cfi |  1.0134 |       1 | FAIL |
+| sem | sem_null | SEM_FIT.tli |  1.0134 |  1.0134 | PASS |
+| sem | sem_null | SEM_FIT.rmsea |       0 |       0 | PASS |
+| sem | sem_null | SEM_FIT.srmr | 1.17128e-06 |       0 | PASS |
+| sem | sem_null | invariant.diag_Sigma_eq_1 | 1.90038e-06 |       0 | PASS |
+| sem | sem_null | SEM_MEASURE.x1.std_load | 0.800001 |     0.8 | PASS |
+| sem | sem_null | SEM_MEASURE.x1.r2 | 0.640002 |    0.64 | PASS |
+| sem | sem_null | SEM_MEASURE.x2.std_load | 0.749997 |    0.75 | PASS |
+| sem | sem_null | SEM_MEASURE.x2.r2 | 0.562496 |  0.5625 | PASS |
+| sem | sem_null | SEM_MEASURE.x3.std_load | 0.700001 |     0.7 | PASS |
+| sem | sem_null | SEM_MEASURE.x3.r2 | 0.490002 |    0.49 | PASS |
+| sem | sem_null | SEM_MEASURE.y1.std_load | 0.819999 |    0.82 | PASS |
+| sem | sem_null | SEM_MEASURE.y1.r2 | 0.672398 |  0.6724 | PASS |
+| sem | sem_null | SEM_MEASURE.y2.std_load | 0.759998 |    0.76 | PASS |
+| sem | sem_null | SEM_MEASURE.y2.r2 | 0.577597 |  0.5776 | PASS |
+| sem | sem_null | SEM_MEASURE.y3.std_load | 0.709999 |    0.71 | PASS |
+| sem | sem_null | SEM_MEASURE.y3.r2 | 0.504099 |  0.5041 | PASS |
+| sem | sem_null | SEM_STRUCT.absent_or_zero_when_null | absent or coef=0 | 0.0000 | PASS |
+| sem | sem_null | discriminant.null_struct_path_nonsignificant | |coef| < 0.10 且 p > .05（真值 γ=0） | coef=0.0000 p=1.0000 | PASS |
+| sem | sem_null | discriminant.null_cross_block_uncorrelated | max|r| < 0.10 | 0.0000 | PASS |
+| __coverage__ | - | methods_covered |      22 |      22 | PASS |
 
-**汇总：PASS 536 / 536**
+**汇总：PASS 797 / 839**
