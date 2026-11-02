@@ -23,12 +23,18 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { RService } from '../rService'
 
-const R_SERVICE_PATH = join(__dirname, '..', 'rService.ts')
-const rServiceSource = readFileSync(R_SERVICE_PATH, 'utf8')
+/**
+ * v0.3.2：R_COMMON 已抽到 rCommon.ts（rService.ts 已超 1400 行，无法再并行编辑）。
+ * 因此卫生检查必须读**新文件**，否则检查一个已不存在 R_COMMON 的文件，
+ * 会因「找不到声明」直接抛错——而不是静默通过（这点很重要：
+ * 若它静默通过，反引号事故就会失去唯一防线）。
+ */
+const R_COMMON_PATH = join(__dirname, '..', 'rCommon.ts')
+const rCommonSource = readFileSync(R_COMMON_PATH, 'utf8')
 
 /** 提取 R_COMMON 常量体的源码文本（不含 const 声明与结束反引号） */
 function extractRCommonSource(): { body: string; startLine: number } {
-  const lines = rServiceSource.split('\n')
+  const lines = rCommonSource.split('\n')
   const start = lines.findIndex((l) => l.includes('const R_COMMON = String.raw`'))
   if (start < 0) throw new Error('未找到 R_COMMON 声明')
   let end = -1
