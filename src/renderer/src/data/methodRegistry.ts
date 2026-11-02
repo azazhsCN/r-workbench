@@ -349,5 +349,202 @@ export const METHODS: AnalysisMethod[] = [
     minVars: 1,
     maxVars: 1,
     varType: 'numeric'
+  },
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * v0.3.2 因果链方法（中介 / 调节 / 有调节的中介 / 路径分析 / SEM）
+   *
+   * 前三个**必须**用 `roles` 声明具名角色，不能用位置表达变量含义：
+   * `M = aX + e ; Y = c'X + bM + e` 里交换 X 与 M 得到的是完全不同的模型，
+   * 而且错了不会报错——只会静默输出一个含义相反的结论。
+   *
+   * 路径分析 / SEM 的变量是一组**同质**节点（谁是谁由 structure 文本决定），
+   * 所以它们不声明 roles，仍走「多选变量 + minVars/maxVars」那条既有的渲染路径，
+   * 变量含义由 textInputs 里的路径/因子结构补齐。
+   * ═══════════════════════════════════════════════════════════════════════ */
+
+  {
+    id: 'mediation',
+    name: '中介效应',
+    nameKey: 'wizard.method.mediation',
+    icon: '🔗',
+    description: '检验 X 是否通过 M 影响 Y：间接效应、Bootstrap 百分位 CI 与中介比例',
+    descKey: 'wizard.method.mediation.desc',
+    category: '因果分析',
+    categoryKey: 'wizard.category.causal',
+    needsGroup: false,
+    minVars: 3,
+    maxVars: 3,
+    varType: 'numeric',
+    roles: [
+      {
+        id: 'x',
+        labelKey: 'wizard.role.x',
+        label: '自变量 X',
+        descKey: 'wizard.role.x.desc',
+        desc: '原因端：中介路径的起点',
+        varType: 'numeric'
+      },
+      {
+        id: 'm',
+        labelKey: 'wizard.role.m',
+        label: '中介变量 M',
+        descKey: 'wizard.role.m.desc',
+        desc: '机制端：位于 X 与 Y 之间，X 通过它影响 Y',
+        varType: 'numeric'
+      },
+      {
+        id: 'y',
+        labelKey: 'wizard.role.y',
+        label: '因变量 Y',
+        descKey: 'wizard.role.y.desc',
+        desc: '结果端：被解释变量',
+        varType: 'numeric'
+      }
+    ]
+  },
+  {
+    id: 'moderation',
+    name: '调节效应',
+    nameKey: 'wizard.method.moderation',
+    icon: '🎚️',
+    description: '检验 W 是否改变 X 对 Y 的影响：交互项、ΔR² 与简单斜率',
+    descKey: 'wizard.method.moderation.desc',
+    category: '因果分析',
+    categoryKey: 'wizard.category.causal',
+    needsGroup: false,
+    minVars: 3,
+    maxVars: 3,
+    varType: 'numeric',
+    roles: [
+      {
+        id: 'x',
+        labelKey: 'wizard.role.x',
+        label: '自变量 X',
+        descKey: 'wizard.role.x.desc',
+        desc: '原因端：其效应强度可能被 W 改变',
+        varType: 'numeric'
+      },
+      {
+        id: 'w',
+        labelKey: 'wizard.role.w',
+        label: '调节变量 W',
+        descKey: 'wizard.role.w.desc',
+        desc: '调节端：改变 X→Y 的强度（与 X 相乘构成交互项）',
+        varType: 'numeric'
+      },
+      {
+        id: 'y',
+        labelKey: 'wizard.role.y',
+        label: '因变量 Y',
+        descKey: 'wizard.role.y.desc',
+        desc: '结果端：被解释变量',
+        varType: 'numeric'
+      }
+    ]
+  },
+  {
+    id: 'moderated_mediation',
+    name: '有调节的中介',
+    nameKey: 'wizard.method.moderated_mediation',
+    icon: '🧬',
+    description: 'W 调节 X→M 的前半段路径：index of moderated mediation 与条件间接效应',
+    descKey: 'wizard.method.moderated_mediation.desc',
+    category: '因果分析',
+    categoryKey: 'wizard.category.causal',
+    needsGroup: false,
+    minVars: 4,
+    maxVars: 4,
+    varType: 'numeric',
+    roles: [
+      {
+        id: 'x',
+        labelKey: 'wizard.role.x',
+        label: '自变量 X',
+        descKey: 'wizard.role.x.desc',
+        desc: '原因端：中介路径的起点',
+        varType: 'numeric'
+      },
+      {
+        id: 'm',
+        labelKey: 'wizard.role.m',
+        label: '中介变量 M',
+        descKey: 'wizard.role.m.desc',
+        desc: '机制端：其方程里加入 X×W 交互项',
+        varType: 'numeric'
+      },
+      {
+        id: 'y',
+        labelKey: 'wizard.role.y',
+        label: '因变量 Y',
+        descKey: 'wizard.role.y.desc',
+        desc: '结果端：被解释变量',
+        varType: 'numeric'
+      },
+      {
+        id: 'w',
+        labelKey: 'wizard.role.w',
+        label: '调节变量 W',
+        descKey: 'wizard.role.w.desc',
+        desc: '调节端：调节 X→M 这条路径（前半段调节）',
+        varType: 'numeric'
+      }
+    ]
+  },
+  {
+    id: 'path_analysis',
+    name: '路径分析',
+    nameKey: 'wizard.method.path_analysis',
+    icon: '🕸️',
+    description: '按路径列表逐方程 OLS 估计，输出直接 / 间接 / 总效应分解',
+    descKey: 'wizard.method.path_analysis.desc',
+    category: '因果分析',
+    categoryKey: 'wizard.category.causal',
+    needsGroup: false,
+    minVars: 3,
+    maxVars: 10,
+    varType: 'numeric',
+    textInputs: [
+      {
+        id: 'pathSpec',
+        labelKey: 'wizard.textInput.pathSpec',
+        label: '路径列表',
+        descKey: 'wizard.textInput.pathSpec.desc',
+        desc: '用「A > B」表示 A 指向 B，多条用逗号分隔；只写单向、不带环的路径',
+        placeholder: 'X > M, M > Y, X > Y'
+      }
+    ]
+  },
+  {
+    id: 'sem',
+    name: '结构方程模型',
+    nameKey: 'wizard.method.sem',
+    icon: '🏛️',
+    description: '测量模型 + 结构模型联合 ML 估计：载荷、结构路径与拟合指标',
+    descKey: 'wizard.method.sem.desc',
+    category: '因果分析',
+    categoryKey: 'wizard.category.causal',
+    needsGroup: false,
+    minVars: 4,
+    maxVars: 30,
+    varType: 'numeric',
+    textInputs: [
+      {
+        id: 'itemsByFactor',
+        labelKey: 'wizard.textInput.itemsByFactor',
+        label: '因子结构（潜变量 ← 指标）',
+        descKey: 'wizard.textInput.itemsByFactor.desc',
+        desc: '「因子：指标1, 指标2」描述测量模型，多个因子用分号分隔；指标须来自上面已选变量',
+        placeholder: 'F1: i1, i2, i3; F2: i4, i5, i6'
+      },
+      {
+        id: 'structure',
+        labelKey: 'wizard.textInput.structure',
+        label: '结构路径（潜变量 ← 潜变量）',
+        descKey: 'wizard.textInput.structure.desc',
+        desc: '用「A > B」表示 A 指向 B，多个用逗号分隔；首版只支持递归（无环）模型',
+        placeholder: 'F1 > F2'
+      }
+    ]
   }
 ]

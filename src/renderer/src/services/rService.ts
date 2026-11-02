@@ -16,6 +16,13 @@
 import type { RExecuteResult, RStatus } from '@shared/types'
 import { rEscape } from './utils'
 import { R_COMMON, READ_CSV } from './rCommon'
+// v0.3.2 因果链五方法：实现放在 rGenerators/ 下，本类只做薄封装转发。
+// 这样 rService.ts 不必继续膨胀（本轮已 1532 行），也避免多人并行编辑同一文件。
+import { mediationCode } from './rGenerators/mediation'
+import { moderationCode } from './rGenerators/moderation'
+import { moderatedMediationCode } from './rGenerators/moderatedMediation'
+import { pathAnalysisCode } from './rGenerators/pathAnalysis'
+import { semCode } from './rGenerators/sem'
 
 /** 分析结果 */
 export interface AnalysisResult {
@@ -1461,24 +1468,12 @@ if (p_b < 0.05 && kmo_overall >= 0.6) {
 
   /** 中介效应（X → M → Y）。`MED_*` 行格式见 V032_CONTRACT.md 第一节。 */
   static mediationCode(x: string, m: string, y: string, dataFile = 'data.csv'): string {
-    return `
-dataFile <- "${rEscape(dataFile)}"
-data <- ${READ_CSV}
-${R_COMMON}
-cat("=== 中介效应分析 ===\\n")
-stop("中介效应生成器尚未实现（v0.3.2 开发中）")
-`
+    return mediationCode(x, m, y, dataFile)
   }
 
   /** 调节效应（Y ~ X * W）。`MOD_*` 行格式见 V032_CONTRACT.md 第二节。 */
   static moderationCode(x: string, w: string, y: string, dataFile = 'data.csv'): string {
-    return `
-dataFile <- "${rEscape(dataFile)}"
-data <- ${READ_CSV}
-${R_COMMON}
-cat("=== 调节效应分析 ===\\n")
-stop("调节效应生成器尚未实现（v0.3.2 开发中）")
-`
+    return moderationCode(x, w, y, dataFile)
   }
 
   /** 有调节的中介（W 调节 X→M）。`MM_*` 行格式见 V032_CONTRACT.md 第三节。 */
@@ -1489,27 +1484,12 @@ stop("调节效应生成器尚未实现（v0.3.2 开发中）")
     w: string,
     dataFile = 'data.csv'
   ): string {
-    return `
-dataFile <- "${rEscape(dataFile)}"
-data <- ${READ_CSV}
-${R_COMMON}
-cat("=== 有调节的中介分析 ===\\n")
-stop("有调节的中介生成器尚未实现（v0.3.2 开发中）")
-`
+    return moderatedMediationCode(x, m, y, w, dataFile)
   }
 
   /** 路径分析。`pathSpec` 形如 `"X > M, M > Y"`。见契约第四节。 */
   static pathAnalysisCode(nodes: string[], pathSpec: string, dataFile = 'data.csv'): string {
-    const nodeVec = nodes.map((v) => `"${rEscape(v)}"`).join(', ')
-    return `
-dataFile <- "${rEscape(dataFile)}"
-data <- ${READ_CSV}
-${R_COMMON}
-cat("=== 路径分析 ===\\n")
-nodes <- c(${nodeVec})
-path_spec <- "${rEscape(pathSpec)}"
-stop("路径分析生成器尚未实现（v0.3.2 开发中）")
-`
+    return pathAnalysisCode(nodes, pathSpec, dataFile)
   }
 
   /** 结构方程模型。`itemsByFactor` 给出测量模型，`structure` 形如 `"F1 > F2"`。见契约第五节。 */
@@ -1518,15 +1498,6 @@ stop("路径分析生成器尚未实现（v0.3.2 开发中）")
     structure: string,
     dataFile = 'data.csv'
   ): string {
-    const spec = JSON.stringify(itemsByFactor)
-    return `
-dataFile <- "${rEscape(dataFile)}"
-data <- ${READ_CSV}
-${R_COMMON}
-cat("=== 结构方程模型 (SEM) ===\\n")
-items_spec <- '${spec.replace(/\\/g, '\\\\')}'
-structure_spec <- "${rEscape(structure)}"
-stop("SEM 生成器尚未实现（v0.3.2 开发中）")
-`
+    return semCode(itemsByFactor, structure, dataFile)
   }
 }

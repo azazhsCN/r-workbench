@@ -43,7 +43,10 @@ export default function PlotViewer({ methodId, variables, groupVar }: PlotViewer
     '散点图': 'plot.label.scatter',
     '散点图+回归线': 'plot.label.scatter_regression',
     '条目均值图': 'plot.label.item_bar',
-    '核密度图': 'plot.label.density'
+    '核密度图': 'plot.label.density',
+    // v0.3.2：因果链方法复用折线图看趋势。缺这一行英文界面会直接显示中文字面量
+    // 「折线图」（v0.3.0 的 efa 就是这样漏出中文的）。
+    '折线图': 'plot.label.line'
   }
 
   if (plots.length === 0) return null
@@ -247,6 +250,29 @@ function generateAnalysisCode(methodId: string, variables: string[], groupVar?: 
       return RService.harmanCode(variables)
     case 'frequency':
       return RService.frequencyCode(variables)
+    /* ── v0.3.2 因果链五方法 ────────────────────────────────────────────────
+     * 这五个方法**故意**返回 null，不是一个待办的遗漏。
+     *
+     * 原因：`generateAnalysisCode(methodId, variables, groupVar)` 的签名里没有角色信息。
+     * 中介需要 (x, m, y)、调节需要 (x, w, y)、有调节的中介需要 (x, m, y, w)、
+     * SEM 需要因子结构文本 —— 而这里只拿到一个扁平的 `variables[]`。
+     *
+     * 用位置去猜（例如 mediation 就取 variables[0..2]）是**危险的**：
+     * PlotViewer 的 variables 是 registry 角色顺序，看起来"通常对"，
+     * 但 M 与 Y 调换后得到的是一份完全不同、且看起来正常的分析结果。
+     * v0.3.2 改造的全部理由就是消灭这种静默错配，所以这里宁可不出表：
+     * 用户在向导页已经拿到过带角色的完整统计表，这里只补一张可视化的通用图。
+     *
+     * 若将来要让图表侧也出表，正确做法是给本函数加一个
+     * `roleVars?: Record<string, string>` 参数（由 WizardPage 传入），
+     * 而不是在这里按位置反推。
+     * ──────────────────────────────────────────────────────────────────── */
+    case 'mediation':
+    case 'moderation':
+    case 'moderated_mediation':
+    case 'path_analysis':
+    case 'sem':
+      return null
     default:
       return null
   }

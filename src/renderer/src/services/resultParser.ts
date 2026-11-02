@@ -130,6 +130,18 @@ function pPair(display: string | undefined, raw: string | undefined): {
 }
 
 /**
+ * 横幅核心名：剥掉**尾部**的括号限定词（`结构方程模型 (SEM)` → `结构方程模型`）。
+ *
+ * 只剥尾部、且要求括号在末尾收尾，因此 `A (B) C` 这类中间带括号的横幅原样返回。
+ * v0.3.2 的五个方法用它做**全等**匹配，见 detectAnalysisType。
+ */
+function bannerCore(name: string): string {
+  const t = name.trim()
+  const m = t.match(/^(.*?)\s*[（(][^（()）]*[)）]\s*$/)
+  return (m ? m[1] : t).trim()
+}
+
+/**
  * 检测分析类型。
  *
  * **只认生成器输出的唯一横幅**（`=== <方法名> ===`）。
@@ -147,6 +159,24 @@ export function detectAnalysisType(output: string): string {
   const banner = output.match(/^===\s*(.+?)\s*===\s*$/m)
   const name = banner ? banner[1] : ''
   if (name) {
+    // ── v0.3.2 因果链五方法：**横幅核心名全等**匹配，放在所有前缀匹配之前 ──
+    //
+    // 为什么必须全等而不是 `startsWith`：`有调节的中介分析` 与 `中介效应分析`
+    // 只差一个前导的「有调节的」，两者是**不同方法、不同行格式、不同结论口径**。
+    // 任何"取前 N 个字符"或"包含即算"的写法都会把前者吸进后者：
+    //   - `startsWith('中介')`            → 有调节的中介 → mediation（错）
+    //   - `name.includes('中介效应分析')` → 有调节的中介 → mediation（错，且违反铁律）
+    // 全等比较没有这种可能：两个字符串不相等就是不相等，将来再加
+    // `调节的中介分析` / `中介的调节分析` 之类的新方法也不会被旧分支吞掉。
+    // 横幅可能带括号限定词（`结构方程模型 (SEM)`），故先剥掉**尾部**括号再全等，
+    // 只剥尾部、不剥中间，避免把 `有调节的中介分析（前半段）` 的语义剥没了。
+    const core = bannerCore(name)
+    if (core === '中介效应分析') return 'mediation'
+    if (core === '调节效应分析') return 'moderation'
+    if (core === '有调节的中介分析') return 'moderated_mediation'
+    if (core === '路径分析') return 'path_analysis'
+    if (core === '结构方程模型') return 'sem'
+
     if (name.startsWith('描述性统计')) return 'descriptive'
     if (name.startsWith('独立样本 t 检验')) return 'ttest_independent'
     if (name.startsWith('配对样本 t 检验')) return 'ttest_paired'
@@ -300,6 +330,21 @@ export function parseROutput(output: string): ParsedAnalysis {
       break
     case 'harman':
       parseHarman(output, tables, keyValues)
+      break
+    case 'mediation':
+      parseMediation(output, tables, keyValues)
+      break
+    case 'moderation':
+      parseModeration(output, tables, keyValues)
+      break
+    case 'moderated_mediation':
+      parseModeratedMediation(output, tables, keyValues)
+      break
+    case 'path_analysis':
+      parsePathAnalysis(output, tables, keyValues)
+      break
+    case 'sem':
+      parseSem(output, tables, keyValues)
       break
     default:
       break
@@ -1519,6 +1564,1254 @@ function parseHarman(output: string, tables: TableData[], kv: Record<string, str
     const okBool = toBoolCN(okRaw)
     if (okBool !== null) kv['未发现严重偏差码'] = okBool ? 1 : 0
   }
+
+  const concl = conclusionOf(output)
+  if (concl) kv['结论'] = concl
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * v0.3.2 因果链五方法：中介 / 调节 / 有调节的中介 / 路径分析 / SEM
+ *
+ * 行格式的唯一依据是 `V032_CONTRACT.md` 第一至第五节。与 v0.3.1 的
+ * CFA / CVI / Harman 一样，这里刻意把每个下标都写成「f[n] // 字段名」并保留
+ * 契约注释，因为 v0.2.x 的四次事故全部是"下标含义只存在于某个人的记忆里"。
+ *
+ * 新方法比旧方法多一层风险：这些量**互相之间有代数约束**。
+ *   - 中介：`c = c′ + a·b`，`indirect = a·b`，`total = direct + indirect`
+ *   - 调节：`slope(w0) = b1 + b3·w0`，交互项 p 与 ΔR²/ΔF 的 p 必须同向
+ *   - 有调节的中介：`index = a4·b`，`条件间接 = (a2 + a4·W)·b`
+ *   - 路径分析：`total = direct + indirect`
+ * 约束的存在既是**便利**（错位几乎必然破坏某个恒等式）也是**陷阱**：
+ * 一个半吊子实现完全可以在 TS 侧"重算一遍"来让恒等式看起来成立，
+ * 从而把 R 端的值悄悄换掉。因此本组解析器守两条纪律：
+ *
+ * 1. **不重算**任何推断量。显著与否、是否达标、模型是否可接受，全部来自
+ *    R 端的 `CONCL` 与各 `*_NOTE`。TS 侧只做两件纯算术的事：
+ *      (a) `CI 是否含 0` —— 纯区间包含判断。它不替代 R 端结论，
+ *          只是防止用户拿**点估计**去读显著性（Bootstrap 区间跨 0 时点估计
+ *          几乎总是非 0 的，这是中介分析最常见的误读）；
+ *      (b) 契约明文要求的恒等式自检。自检失败只产出 warning 级别的展示，
+ *          绝不回写/修正 R 端给的值——改写会让"错在哪"永久消失。
+ *
+ * 2. **表与 keyValues 同源**：每个进表的数字与进 kv 的数字都是同一个局部常量，
+ *    不允许"表里算一遍、kv 里再算一遍"（v0.2.7 红线）。
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * 恒等式自检容差。
+ *
+ * 契约要求 R 端内部容差 1e-10，但**解析器看到的是 `num(x, 4)` 之后的文本**：
+ * 三个被舍入的量再相加减，误差上界约 1e-4 量级。取 1e-3 既能容忍打印舍入，
+ * 又能抓住真正的下标错位——错位造成的偏差是 0.1 ~ 1 量级，
+ * 比容差大两到三个数量级。
+ */
+const IDENTITY_TOL = 1e-3
+
+/**
+ * CI 是否排除 0（纯区间包含判断）。
+ *
+ * 这不是"重新做显著性判定"：显著性结论只来自 R 端 `CONCL`。这里回答的只是
+ * "R 端报告的这条区间有没有盖住 0"，因为效应分解表若只印端点不印这一列，
+ * 用户会拿点估计去读显著与否。
+ */
+function ciExcludesZero(lower: number | null, upper: number | null): boolean | null {
+  if (lower === null || upper === null) return null
+  if (!Number.isFinite(lower) || !Number.isFinite(upper)) return null
+  return lower > 0 || upper < 0
+}
+
+/** CI 是否含 0 的展示串：`不含 0` / `含 0` / `—`（端点缺失） */
+function ciZeroText(lower: number | null, upper: number | null): string {
+  const excludes = ciExcludesZero(lower, upper)
+  if (excludes === null) return '—'
+  return excludes ? '不含 0' : '含 0'
+}
+
+/** Bootstrap 配置行（MED_BOOT / MM_BOOT 同一格式）：`B|seed|ci_level|method` */
+interface BootConfig {
+  b: number | null
+  seed: number | null
+  ci_level: number | null
+  method: string
+}
+
+function parseBootLine(line: string | null): BootConfig | null {
+  if (!line) return null
+  const f = fields(line)
+  return {
+    b: toNum(f[1]), // f[1] = B（重复次数）
+    seed: toNum(f[2]), // f[2] = seed（固定种子，保证可复现）
+    ci_level: toNum(f[3]), // f[3] = ci_level（0.95）
+    method: (f[4] ?? '').trim() // f[4] = percentile / bca（必须与实际用法一致）
+  }
+}
+
+/** Bootstrap 配置的展示串（缺失时给占位，不拼 `B = NA` 这种假句子） */
+function bootText(boot: BootConfig | null): string {
+  if (!boot) return '—'
+  const bits: string[] = []
+  if (boot.b !== null) bits.push(`B = ${boot.b}`)
+  if (boot.seed !== null) bits.push(`seed = ${boot.seed}`)
+  if (boot.ci_level !== null) bits.push(`${fmtNum(boot.ci_level * 100, 1)}% CI`)
+  if (boot.method) bits.push(boot.method)
+  return bits.length > 0 ? bits.join('，') : '—'
+}
+
+/** 把 `TAG|自由文本` 行收成字符串数组（NOTE 类行可能有多个） */
+function textLines(output: string, tag: string): string[] {
+  return tagged(output, tag)
+    .map((l) => fields(l).slice(1).join('|').trim())
+    .filter((s) => s !== '')
+}
+
+/**
+ * 恒等式自检的三态收口：`一致` / `不一致` / `无法判断`。
+ *
+ * 为什么必须区分第三态：自检最危险的退化不是"漏报不一致"，而是**空转通过**。
+ * 一旦某个必要字段因下标错位或键名拼接错误而取不到，`if (a !== null && …)`
+ * 就整段静默跳过，自检报告"一致"——用户因此得到一句「恒等式自检：一致」的
+ * 安全背书，而实际上**什么都没检查**。
+ *
+ * 这与 v0.2.x 的四次事故同源：静默跳过比报错更危险。所以这里强制三态：
+ *   - `一致`     ：所有需要的量都取到了，且恒等式成立
+ *   - `不一致`   ：所有需要的量都取到了，但恒等式不成立
+ *   - `无法判断` ：有量没取到（或 R 端未输出），自检**没有**发生
+ *
+ * 第三态由注入实验发现：把 MM_COEF 的复合键改成裸 term 后，恒等式检查
+ * 因为取不到 a2 而空转通过，测试仍绿——那是一次真实的设计缺陷。
+ */
+function selfCheckVerdict(broken: string[], missing: string[]): string {
+  if (broken.length > 0) return '不一致'
+  if (missing.length > 0) return '无法判断'
+  return '一致'
+}
+
+/**
+ * 登记一条"自检所需的量没取到"。
+ *
+ * 只在**契约里 R 端一定会输出**的字段上使用；可选字段（如 Johnson-Neyman、
+ * 失败的 BCa）缺失不算缺失，不得让自检降级为"无法判断"。
+ */
+function requireForCheck<T>(value: T | null | undefined, name: string, missing: string[]): T | null {
+  if (value === null || value === undefined) {
+    missing.push(name)
+    return null
+  }
+  return value
+}
+
+/**
+ * 解析中介效应（Mediation）。
+ *
+ * 行契约（V032_CONTRACT.md 第一节）：
+ *   MED_SPEC  |n|x|m|y
+ *   MED_PATH  |path|coef|se|t|p_display|p_raw             path ∈ a / b / c_prime / c_total
+ *   MED_EFFECT|effect|value|se|ci_lower|ci_upper|ci_method
+ *                                                         effect ∈ indirect / direct / total / prop_mediated
+ *   MED_SOBEL |z|p_display|p_raw
+ *   MED_BOOT  |B|seed|ci_level|method
+ *   MED_STD   |path|std_coef                              path ∈ a_std / b_std / c_prime_std / indirect_std
+ *   MED_NOTE  |text
+ *   CONCL     |text
+ *
+ * 为什么必须逐格断言：indirect、direct、total 三个量全是回归系数级的小数，
+ * 彼此量级相近、符号都可能为正。把 indirect 读成 direct 不会有任何类型或范围
+ * 检查报警，表仍然"有数据、看着像研究结果"，只有恒等式能发现。
+ */
+function parseMediation(output: string, tables: TableData[], kv: Record<string, string | number>) {
+  // ── MED_SPEC|n|x|m|y ──
+  const spec = firstTagged(output, 'MED_SPEC')
+  const nObs = spec ? toNum(fields(spec)[1]) : null
+  const varX = spec ? (fields(spec)[2] ?? '').trim() : ''
+  const varM = spec ? (fields(spec)[3] ?? '').trim() : ''
+  const varY = spec ? (fields(spec)[4] ?? '').trim() : ''
+  if (nObs !== null) kv['样本量'] = nObs
+  if (varX) kv['自变量X'] = varX
+  if (varM) kv['中介变量M'] = varM
+  if (varY) kv['因变量Y'] = varY
+
+  // ── 表1：逐条路径 ──
+  // MED_PATH|path|coef|se|t|p_display|p_raw
+  //   f[1]=path f[2]=coef f[3]=se f[4]=t f[5]=p展示串 f[6]=p原始值
+  const pathLabel: Record<string, string> = {
+    a: 'a：X → M',
+    b: 'b：M → Y（控制 X）',
+    c_prime: 'c′：X → Y（控制 M）',
+    c_total: 'c：X → Y（总效应）'
+  }
+  const pathRows: (string | number)[][] = []
+  const coefOf = new Map<string, number>()
+  for (const line of tagged(output, 'MED_PATH')) {
+    const f = fields(line)
+    const key = (f[1] ?? '').trim()
+    const coef = toNum(f[2])
+    const se = toNum(f[3])
+    const t = toNum(f[4])
+    const p = pPair(f[5], f[6])
+    if (coef !== null) coefOf.set(key, coef)
+    pathRows.push([pathLabel[key] ?? key, coef ?? '—', se ?? '—', t ?? '—', pText(p)])
+    if (coef !== null) kv[`path_${key}_coef`] = coef
+    if (se !== null) kv[`path_${key}_se`] = se
+    if (t !== null) kv[`path_${key}_t`] = t
+    if (p.value !== null) kv[`path_${key}_p`] = p.value
+    if (p.display) kv[`path_${key}_pDisplay`] = p.display
+  }
+  if (pathRows.length > 0) {
+    tables.push({
+      title: `表${tables.length + 1}  中介模型路径系数`,
+      headers: ['路径', '系数', 'SE', 't', 'p'],
+      rows: pathRows,
+      note:
+        '注：a 为 X → M 的回归系数；b 为控制 X 后 M → Y 的系数；c′ 为控制 M 后 X → Y 的系数；' +
+        'c 为 X → Y 的简单回归系数。四者必须满足 c = c′ + a·b（容差 1e-10），' +
+        '该恒等式不成立即说明模型设定或输出有误。'
+    })
+  }
+
+  // ── 表2：效应分解 + Bootstrap 分位数 CI ──
+  // MED_EFFECT|effect|value|se|ci_lower|ci_upper|ci_method
+  //   f[1]=effect f[2]=value f[3]=se f[4]=ci_lower f[5]=ci_upper f[6]=ci_method
+  const effectLabel: Record<string, string> = {
+    indirect: '间接效应 a×b',
+    direct: '直接效应 c′',
+    total: '总效应 c',
+    prop_mediated: '中介效应占比'
+  }
+  const effectRows: (string | number)[][] = []
+  const valueOf = new Map<string, number | null>()
+  /** 实际用到的 CI 方法（契约要求如实标注 percentile / bca） */
+  const ciMethods = new Set<string>()
+  for (const line of tagged(output, 'MED_EFFECT')) {
+    const f = fields(line)
+    const key = (f[1] ?? '').trim()
+    const value = toNum(f[2])
+    const se = toNum(f[3])
+    const lo = toNum(f[4])
+    const hi = toNum(f[5])
+    const method = (f[6] ?? '').trim()
+    if (method) ciMethods.add(method)
+    valueOf.set(key, value)
+    effectRows.push([
+      effectLabel[key] ?? key,
+      value ?? '—',
+      se ?? '—',
+      lo ?? '—',
+      hi ?? '—',
+      method || '—',
+      ciZeroText(lo, hi)
+    ])
+    // 表与 kv 同源：同一个局部常量写两处，绝不各算一遍
+    if (value !== null) kv[key] = value
+    if (se !== null) kv[`${key}_se`] = se
+    if (lo !== null) kv[`${key}_ci_lower`] = lo
+    if (hi !== null) kv[`${key}_ci_upper`] = hi
+    const excludes = ciExcludesZero(lo, hi)
+    if (excludes !== null) kv[`${key}_ci_excludes_zero`] = excludes ? '是' : '否'
+  }
+  const boot = parseBootLine(firstTagged(output, 'MED_BOOT'))
+  const bootLine = bootText(boot)
+  if (effectRows.length > 0) {
+    tables.push({
+      title: `表${tables.length + 1}  效应分解与 Bootstrap 置信区间`,
+      headers: ['效应', '效应值', 'SE', 'CI 下限', 'CI 上限', 'CI 方法', 'CI 是否含 0'],
+      rows: effectRows,
+      note:
+        '注：间接效应 = a×b，直接效应 = c′，总效应 = c = c′ + a·b。' +
+        'CI 为 Bootstrap 分位数区间（主推断依据），Sobel 检验仅为正态近似对照。' +
+        `Bootstrap 配置：${bootLine}。` +
+        '「CI 是否含 0」为区间端点是否覆盖 0 的直读结果：含 0 表示该效应在该置信水平下' +
+        '不可区分于 0；中介效应占比在总效应接近 0 时不可解释（契约要求输出 NA 而非 Inf）。'
+    })
+    if (ciMethods.size > 0) kv['ci_method'] = Array.from(ciMethods).join(',')
+  }
+
+  // ── MED_SOBEL|z|p_display|p_raw ──
+  const sobel = firstTagged(output, 'MED_SOBEL')
+  if (sobel) {
+    const f = fields(sobel)
+    const z = toNum(f[1])
+    const p = pPair(f[2], f[3])
+    if (z !== null) kv['sobel_z'] = z
+    if (p.value !== null) kv['sobel_p'] = p.value
+    if (p.display) kv['sobel_pDisplay'] = p.display
+  }
+
+  // ── MED_BOOT 的四个字段 ──
+  if (boot) {
+    if (boot.b !== null) kv['boot_B'] = boot.b
+    if (boot.seed !== null) kv['boot_seed'] = boot.seed
+    if (boot.ci_level !== null) kv['boot_ci_level'] = boot.ci_level
+    if (boot.method) kv['boot_method'] = boot.method
+  }
+
+  // ── 表3：标准化系数 ──
+  // MED_STD|path|std_coef
+  {
+    const stdLabel: Record<string, string> = {
+      a_std: 'a（标准化）',
+      b_std: 'b（标准化）',
+      c_prime_std: 'c′（标准化）',
+      indirect_std: '间接效应（标准化）'
+    }
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'MED_STD')) {
+      const f = fields(line)
+      const key = (f[1] ?? '').trim()
+      const v = toNum(f[2])
+      rows.push([stdLabel[key] ?? key, v ?? '—'])
+      if (v !== null) kv[`std_${key}`] = v
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  标准化路径系数`,
+        headers: ['路径', '标准化系数'],
+        rows,
+        note:
+          '注：X / M / Y 分别做 z 分数标准化后重跑两个回归得到，用于跨变量比较相对效应大小；' +
+          '标准化间接效应 = a_std × b_std。'
+      })
+    }
+  }
+
+  // ── 契约恒等式自检：只报警，绝不改写 R 端给的值 ──
+  //
+  // 三态输出（见 selfCheckVerdict）：
+  //   一致 / 不一致 / 无法判断。**「无法判断」不是冗余**——
+  //   注入实验证明：把 MED_PATH 的键名拼错后，所有 `if (x !== null && ...)`
+  //   会整段跳过，自检变成"永远一致"的空转，测试全绿。
+  //   现在缺任何一个契约保证会输出的量，都会显式降级为「无法判断」。
+  if (tagged(output, 'MED_PATH').length > 0 && tagged(output, 'MED_EFFECT').length > 0) {
+    const missing: string[] = []
+    const a = requireForCheck(coefOf.get('a') ?? null, 'a', missing)
+    const b = requireForCheck(coefOf.get('b') ?? null, 'b', missing)
+    const cP = requireForCheck(coefOf.get('c_prime') ?? null, 'c_prime', missing)
+    const cT = requireForCheck(coefOf.get('c_total') ?? null, 'c_total', missing)
+    const indirect = requireForCheck(valueOf.get('indirect') ?? null, 'indirect', missing)
+    const direct = requireForCheck(valueOf.get('direct') ?? null, 'direct', missing)
+    const total = requireForCheck(valueOf.get('total') ?? null, 'total', missing)
+    const broken: string[] = []
+    if (a !== null && b !== null && cP !== null && cT !== null) {
+      const dev = Math.abs(cT - (cP + a * b))
+      if (dev > IDENTITY_TOL) broken.push(`c ≠ c′ + a·b（偏差 ${fmtNum(dev, 6)}）`)
+    }
+    if (a !== null && b !== null && indirect !== null) {
+      const dev = Math.abs(indirect - a * b)
+      if (dev > IDENTITY_TOL) broken.push(`indirect ≠ a×b（偏差 ${fmtNum(dev, 6)}）`)
+    }
+    if (cP !== null && direct !== null && Math.abs(direct - cP) > IDENTITY_TOL) {
+      broken.push(`direct ≠ c′（偏差 ${fmtNum(Math.abs(direct - cP), 6)}）`)
+    }
+    if (cT !== null && total !== null && Math.abs(total - cT) > IDENTITY_TOL) {
+      broken.push(`total ≠ c（偏差 ${fmtNum(Math.abs(total - cT), 6)}）`)
+    }
+    if (direct !== null && indirect !== null && total !== null) {
+      const dev = Math.abs(total - (direct + indirect))
+      if (dev > IDENTITY_TOL) broken.push(`total ≠ direct + indirect（偏差 ${fmtNum(dev, 6)}）`)
+    }
+    kv['恒等式自检'] = selfCheckVerdict(broken, missing)
+    if (broken.length > 0) kv['恒等式偏差'] = broken.join('；')
+    if (missing.length > 0) kv['恒等式缺失字段'] = missing.join('、')
+  }
+
+  const notes = textLines(output, 'MED_NOTE')
+  if (notes.length > 0) kv['提示'] = notes.join('；')
+
+  const concl = conclusionOf(output)
+  if (concl) kv['结论'] = concl
+}
+
+/**
+ * 解析调节效应（Moderation）。
+ *
+ * 行契约（V032_CONTRACT.md 第二节）：
+ *   MOD_SPEC  |n|x|w|y|centered                      centered ∈ 是 / 否
+ *   MOD_COEF  |term|coef|se|t|p_display|p_raw        term ∈ x / w / x_w / intercept
+ *   MOD_MODEL |r2|adj_r2|f|p_display|p_raw|df1|df2
+ *   MOD_DELTA |r2_change|f_change|df1|df2|p_display|p_raw
+ *   MOD_SLOPE |w_level|w_value|slope|se|t|p_display|p_raw   w_level ∈ -1SD / mean / +1SD
+ *   MOD_JOHNSON|region|lower|upper
+ *   MOD_NOTE  |text
+ *   CONCL     |text
+ *
+ * 三处最容易被"顺手重算"的地方，本解析器一律只透传：
+ *   1. **简单斜率的 slope 字段**。契约要求 `se = sqrt(L'VL)`（线性组合法），
+ *      而 `slope` 本身由 R 端用 `b1 + b3·w0` 算出。若 TS 侧再算一遍 slope，
+ *      两条实现迟早漂移，且会让"R 端算错的 slope"永远无法被发现——
+ *      所以这里**透传** slope，只在末尾做契约恒等式自检（差异只报警，不改值）。
+ *   2. **center 声明**。`centered` 决定表注写「已中心化」还是「未中心化」。
+ *      硬编码任一句都会让另一半输出说谎（v0.3.1 的"半吊子重复实现"教训）。
+ *   3. **显著性口径**。交互项是否显著只来自 R 端的 p；TS 不做判定，
+ *      只交叉核对 `MOD_COEF` 的 x_w 与 `MOD_DELTA` 的 p 是否同向
+ *      （契约要求的"同一模型的两种呈现"），不一致时打 warning。
+ */
+function parseModeration(output: string, tables: TableData[], kv: Record<string, string | number>) {
+  // ── MOD_SPEC|n|x|w|y|centered ──
+  const spec = firstTagged(output, 'MOD_SPEC')
+  const nObs = spec ? toNum(fields(spec)[1]) : null
+  const varX = spec ? (fields(spec)[2] ?? '').trim() : ''
+  const varW = spec ? (fields(spec)[3] ?? '').trim() : ''
+  const varY = spec ? (fields(spec)[4] ?? '').trim() : ''
+  const centeredRaw = spec ? (fields(spec)[5] ?? '').trim() : ''
+  const centered = toBoolCN(centeredRaw)
+  if (nObs !== null) kv['n'] = nObs
+  if (varX) kv['x'] = varX
+  if (varW) kv['w'] = varW
+  if (varY) kv['y'] = varY
+  // 原样透传，同时给一个布尔码便于程序分支；不根据其它字段反推
+  if (centeredRaw) kv['centered'] = centeredRaw
+  if (centered !== null) kv['centered_code'] = centered ? 1 : 0
+
+  /** 中心化声明的人话（表注用）。只翻译，不判定。 */
+  const centeredText =
+    centered === null
+      ? 'R 端未声明是否中心化'
+      : centered
+        ? `已对 ${varX || 'X'} 与 ${varW || 'W'} 做均值中心化（mean-centering）`
+        : `未做中心化（${varX || 'X'} 与 ${varW || 'W'} 均为原始尺度）`
+
+  // ── 表1：回归系数（含交互项）──
+  // MOD_COEF|term|coef|se|t|p_display|p_raw
+  //   f[1]=term f[2]=coef f[3]=se f[4]=t f[5]=p展示串 f[6]=p原始值
+  const termLabel: Record<string, string> = {
+    x: `${varX || 'X'}（自变量）`,
+    w: `${varW || 'W'}（调节变量）`,
+    x_w: `${varX || 'X'} × ${varW || 'W'}（交互项）`,
+    intercept: '截距'
+  }
+  const coefOf = new Map<string, number>()
+  const pOf = new Map<string, number | null>()
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'MOD_COEF')) {
+      const f = fields(line)
+      const key = (f[1] ?? '').trim()
+      const coef = toNum(f[2])
+      const se = toNum(f[3])
+      const t = toNum(f[4])
+      const p = pPair(f[5], f[6])
+      if (coef !== null) coefOf.set(key, coef)
+      pOf.set(key, p.value)
+      rows.push([termLabel[key] ?? key, coef ?? '—', se ?? '—', t ?? '—', pText(p)])
+      // 表与 kv 同源
+      if (coef !== null) kv[`coef_${key}`] = coef
+      if (se !== null) kv[`se_${key}`] = se
+      if (t !== null) kv[`t_${key}`] = t
+      if (p.value !== null) kv[`p_${key}`] = p.value
+      if (p.display) kv[`p_${key}_display`] = p.display
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  调节效应回归系数`,
+        headers: ['项', '系数', 'SE', 't', 'p'],
+        rows,
+        note:
+          `注：模型为 ${varY || 'Y'} = b0 + b1·${varX || 'X'} + b2·${varW || 'W'} + b3·(${varX || 'X'}·${varW || 'W'})。` +
+          '交互项（x × w）的系数即 b3，其显著性表示调节效应是否存在。' +
+          `${centeredText}。`
+      })
+    }
+  }
+
+  // ── 表2：模型整体解释力与交互项增量检验 ──
+  // MOD_MODEL|r2|adj_r2|f|p_display|p_raw|df1|df2
+  //   f[1]=r2 f[2]=adj_r2 f[3]=f f[4]=p展示串 f[5]=p原始值 f[6]=df1 f[7]=df2
+  // MOD_DELTA|r2_change|f_change|df1|df2|p_display|p_raw
+  //   f[1]=r2_change f[2]=f_change f[3]=df1 f[4]=df2 f[5]=p展示串 f[6]=p原始值
+  const model = firstTagged(output, 'MOD_MODEL')
+  const delta = firstTagged(output, 'MOD_DELTA')
+  {
+    const rows: (string | number)[][] = []
+    let modelP: { value: number | null; display: string } = { value: null, display: '' }
+    let deltaP: { value: number | null; display: string } = { value: null, display: '' }
+    if (model) {
+      const f = fields(model)
+      const r2 = toNum(f[1])
+      const adjR2 = toNum(f[2])
+      const fStat = toNum(f[3])
+      modelP = pPair(f[4], f[5])
+      const df1 = toNum(f[6])
+      const df2 = toNum(f[7])
+      rows.push(['R²', r2 ?? '—', '含交互项模型的解释率', pText(modelP)])
+      rows.push(['调整 R²', adjR2 ?? '—', '按参数个数校正', ''])
+      rows.push(['F', fStat ?? '—', `df = (${df1 ?? '—'}, ${df2 ?? '—'})`, pText(modelP)])
+      if (r2 !== null) kv['r2'] = r2
+      if (adjR2 !== null) kv['adj_r2'] = adjR2
+      if (fStat !== null) kv['F'] = fStat
+      if (modelP.value !== null) kv['p'] = modelP.value
+      if (modelP.display) kv['pDisplay'] = modelP.display
+      if (df1 !== null) kv['df1'] = df1
+      if (df2 !== null) kv['df2'] = df2
+    }
+    if (delta) {
+      const f = fields(delta)
+      const r2Change = toNum(f[1])
+      const fChange = toNum(f[2])
+      const ddf1 = toNum(f[3])
+      const ddf2 = toNum(f[4])
+      deltaP = pPair(f[5], f[6])
+      rows.push(['ΔR²（加入交互项）', r2Change ?? '—', '对照模型：仅主效应 Y ~ X + W', ''])
+      rows.push([
+        'ΔF',
+        fChange ?? '—',
+        `df = (${ddf1 ?? '—'}, ${ddf2 ?? '—'})`,
+        pText(deltaP)
+      ])
+      if (r2Change !== null) kv['r2_change'] = r2Change
+      if (fChange !== null) kv['f_change'] = fChange
+      if (ddf1 !== null) kv['delta_df1'] = ddf1
+      if (ddf2 !== null) kv['delta_df2'] = ddf2
+      if (deltaP.value !== null) kv['delta_p'] = deltaP.value
+      if (deltaP.display) kv['delta_pDisplay'] = deltaP.display
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  模型解释力与交互项增量检验`,
+        headers: ['指标', '数值', '说明', 'p'],
+        rows,
+        note:
+          '注：ΔR² / ΔF 的对照模型是只含主效应的 Y ~ X + W，当前模型为 Y ~ X * W，' +
+          '因此 ΔR² 就是交互项带来的那部分解释力。' +
+          'ΔF 的 p 与交互项系数的 p 是同一模型的两种呈现，二者必须同向。' +
+          `${centeredText}。`
+      })
+    }
+  }
+
+  // ── 表3：简单斜率 ──
+  // MOD_SLOPE|w_level|w_value|slope|se|t|p_display|p_raw
+  //   f[1]=w_level f[2]=w_value f[3]=slope f[4]=se f[5]=t f[6]=p展示串 f[7]=p原始值
+  const slopeOf = new Map<string, number>()
+  const slopeWValue = new Map<string, number | null>()
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'MOD_SLOPE')) {
+      const f = fields(line)
+      const level = (f[1] ?? '').trim()
+      const wValue = toNum(f[2])
+      const slope = toNum(f[3])
+      const se = toNum(f[4])
+      const t = toNum(f[5])
+      const p = pPair(f[6], f[7])
+      if (slope !== null) slopeOf.set(level, slope)
+      slopeWValue.set(level, wValue)
+      rows.push([
+        level || '—',
+        wValue ?? '—',
+        slope ?? '—',
+        se ?? '—',
+        t ?? '—',
+        pText(p)
+      ])
+      if (slope !== null) kv[`slope_${level}`] = slope
+      if (se !== null) kv[`slope_se_${level}`] = se
+      if (t !== null) kv[`slope_t_${level}`] = t
+      if (p.value !== null) kv[`slope_p_${level}`] = p.value
+      if (p.display) kv[`slope_pDisplay_${level}`] = p.display
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  简单斜率分析`,
+        headers: ['W 水平', 'W 取值', '简单斜率', 'SE', 't', 'p'],
+        rows,
+        note:
+          `注：简单斜率 = b1 + b3·w0，w0 为 ${varW || 'W'} 在 mean−1SD / mean / mean+1SD 处的取值。` +
+          'SE 由线性组合法求得（se = √(L′VL)，L = [0, 1, 0, w0]，V = vcov(fit)），' +
+          '不是"在 w0 附近取子集重新回归"——后者会给出虚假的置信区间。' +
+          `R² 变化可结合上表解读；${centeredText}。`
+      })
+    }
+  }
+
+  // ── 表4：Johnson-Neyman 区间（可选，失败不中断）──
+  // MOD_JOHNSON|region|lower|upper
+  {
+    const rows: (string | number)[][] = []
+    let idx = 0
+    for (const line of tagged(output, 'MOD_JOHNSON')) {
+      const f = fields(line)
+      const region = (f[1] ?? '').trim()
+      const lo = toNum(f[2])
+      const hi = toNum(f[3])
+      idx++
+      rows.push([region || '—', lo ?? '—', hi ?? '—'])
+      kv[`jn_region_${idx}`] = region
+      if (lo !== null) kv[`jn_lower_${idx}`] = lo
+      if (hi !== null) kv[`jn_upper_${idx}`] = hi
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  Johnson-Neyman 显著性区间`,
+        headers: ['区间', '下限', '上限'],
+        rows,
+        note:
+          `注：Johnson-Neyman 法给出 ${varW || 'W'} 取值范围内简单斜率显著的区间；` +
+          '区间外表示该取值处调节效应不显著。计算失败时 R 端会跳过本表，不作为错误。'
+      })
+    }
+  }
+
+  // ── 契约一致性自检：只报警，不改值 ──
+  const checks: string[] = []
+  const b1 = coefOf.get('x') ?? null
+  const b3 = coefOf.get('x_w') ?? null
+  if (b1 !== null && b3 !== null) {
+    for (const [level, slope] of slopeOf) {
+      const w0 = slopeWValue.get(level) ?? null
+      if (w0 === null) continue
+      const dev = Math.abs(slope - (b1 + b3 * w0))
+      if (dev > IDENTITY_TOL) {
+        checks.push(`simple slope(${level}) ≠ b1 + b3·w0（偏差 ${fmtNum(dev, 6)}）`)
+      }
+    }
+  }
+  // 交互项 p 与 ΔF 的 p 必须同向（契约要求"同一模型的两种呈现"）。
+  // 这里只比较两个 R 端给出的 p，不引入新的推断。
+  const pXW = pOf.get('x_w') ?? null
+  const deltaLine = firstTagged(output, 'MOD_DELTA')
+  const deltaPVal = deltaLine ? pPair(fields(deltaLine)[5], fields(deltaLine)[6]).value : null
+  let significantAgree: '一致' | '不一致' | '无法判断' = '无法判断'
+  if (pXW !== null && deltaPVal !== null) {
+    const same = (pXW < 0.05) === (deltaPVal < 0.05)
+    significantAgree = same ? '一致' : '不一致'
+    if (!same) {
+      checks.push(
+        `交互项 p（${fmtNum(pXW, 4)}）与 ΔF 的 p（${fmtNum(deltaPVal, 4)}）显著性不同向`
+      )
+    }
+  }
+  kv['交互项显著性自检'] = significantAgree
+  // 三态收口：拿不到 b1/b3 或拿不到任何简单斜率时，自检并未发生，
+  // 必须报「无法判断」而不是"一致"（空转通过是本项目最危险的失败形态）。
+  const modMissing: string[] = []
+  if (b1 === null) modMissing.push('x（b1）')
+  if (b3 === null) modMissing.push('x_w（b3）')
+  if (slopeOf.size === 0) modMissing.push('简单斜率')
+  if (slopeOf.size > 0 && Array.from(slopeOf.keys()).every((k) => slopeWValue.get(k) == null)) {
+    modMissing.push('简单斜率的 W 取值')
+  }
+  kv['一致性自检'] = selfCheckVerdict(checks, tagged(output, 'MOD_COEF').length > 0 ? modMissing : [])
+  if (checks.length > 0) kv['一致性偏差'] = checks.join('；')
+  if (modMissing.length > 0) kv['一致性缺失字段'] = modMissing.join('、')
+
+  const notes = textLines(output, 'MOD_NOTE')
+  if (notes.length > 0) kv['提示'] = notes.join('；')
+
+  const concl = conclusionOf(output)
+  if (concl) kv['结论'] = concl
+}
+
+/**
+ * 解析有调节的中介（Moderated Mediation）。
+ *
+ * 行契约（V032_CONTRACT.md 第三节）：
+ *   MM_SPEC |n|x|m|y|w
+ *   MM_COEF |model|term|coef|se|t|p_display|p_raw      model ∈ m / y；term 如 x / w / x_w / m
+ *   MM_INDEX|index|se|ci_lower|ci_upper
+ *   MM_COND |w_level|w_value|a_cond|indirect|ci_lower|ci_upper
+ *   MM_BOOT |B|seed|ci_level|method
+ *   MM_NOTE |text
+ *   CONCL   |text
+ *
+ * 这个方法的独特风险：`MM_COEF` 是**两个方程混在一条长表里**，
+ * 用 `model` 列区分（m 方程 / y 方程）。两个方程里都有名为 `x` 的项，
+ * 但含义完全不同（m 方程里是 a2，y 方程里是 c）。如果解析器只按 term 建索引
+ * 而不按 (model, term) 建索引，后者会静默覆盖前者——表里仍然有两个 `x` 行，
+ * 值也是合法小数，但条件间接效应的自检从此失去意义。
+ * 所以这里一律用 `model:term` 复合键。
+ */
+function parseModeratedMediation(
+  output: string,
+  tables: TableData[],
+  kv: Record<string, string | number>
+) {
+  // ── MM_SPEC|n|x|m|y|w ──
+  const spec = firstTagged(output, 'MM_SPEC')
+  const nObs = spec ? toNum(fields(spec)[1]) : null
+  const varX = spec ? (fields(spec)[2] ?? '').trim() : ''
+  const varM = spec ? (fields(spec)[3] ?? '').trim() : ''
+  const varY = spec ? (fields(spec)[4] ?? '').trim() : ''
+  const varW = spec ? (fields(spec)[5] ?? '').trim() : ''
+  if (nObs !== null) kv['n'] = nObs
+  if (varX) kv['x'] = varX
+  if (varM) kv['m'] = varM
+  if (varY) kv['y'] = varY
+  if (varW) kv['w'] = varW
+
+  // ── 表1：两个方程的系数（长表，按 model 分节展示）──
+  // MM_COEF|model|term|coef|se|t|p_display|p_raw
+  //   f[1]=model f[2]=term f[3]=coef f[4]=se f[5]=t f[6]=p展示串 f[7]=p原始值
+  const modelLabel: Record<string, string> = {
+    m: `${varM || 'M'} 方程（中介变量）`,
+    y: `${varY || 'Y'} 方程（结果变量）`
+  }
+  const termLabel: Record<string, string> = {
+    x: `${varX || 'X'}（自变量）`,
+    w: `${varW || 'W'}（调节变量）`,
+    x_w: `${varX || 'X'} × ${varW || 'W'}（交互项 a4）`,
+    m: `${varM || 'M'}（中介变量 b）`,
+    intercept: '截距'
+  }
+  /** 复合键 `model:term` → 系数。两个方程里都有 term=x，必须分开存 */
+  const coefOf = new Map<string, number>()
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'MM_COEF')) {
+      const f = fields(line)
+      const model = (f[1] ?? '').trim()
+      const term = (f[2] ?? '').trim()
+      const coef = toNum(f[3])
+      const se = toNum(f[4])
+      const t = toNum(f[5])
+      const p = pPair(f[6], f[7])
+      if (coef !== null) coefOf.set(`${model}:${term}`, coef)
+      rows.push([
+        modelLabel[model] ?? model,
+        termLabel[term] ?? term,
+        coef ?? '—',
+        se ?? '—',
+        t ?? '—',
+        pText(p)
+      ])
+      if (coef !== null) kv[`coef_${model}_${term}`] = coef
+      if (se !== null) kv[`se_${model}_${term}`] = se
+      if (t !== null) kv[`t_${model}_${term}`] = t
+      if (p.value !== null) kv[`p_${model}_${term}`] = p.value
+      if (p.display) kv[`p_${model}_${term}_display`] = p.display
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  两个回归方程的系数`,
+        headers: ['方程', '项', '系数', 'SE', 't', 'p'],
+        rows,
+        note:
+          `注：中介方程 ${varM || 'M'} = a1 + a2·${varX || 'X'} + a3·${varW || 'W'} + a4·(${varX || 'X'}·${varW || 'W'})；` +
+          `结果方程 ${varY || 'Y'} = c′ + b·${varM || 'M'} + c·${varX || 'X'}。` +
+          `a4 是 ${varW || 'W'} 对 ${varX || 'X'} → ${varM || 'M'} 这条路径的调节系数，b 是 ${varM || 'M'} → ${varY || 'Y'} 的系数。`
+      })
+    }
+  }
+
+  // ── 表2：index of moderated mediation ──
+  // MM_INDEX|index|se|ci_lower|ci_upper
+  //   f[1]=index f[2]=se f[3]=ci_lower f[4]=ci_upper
+  const indexLine = firstTagged(output, 'MM_INDEX')
+  if (indexLine) {
+    const f = fields(indexLine)
+    const idxVal = toNum(f[1])
+    const idxSe = toNum(f[2])
+    const idxLo = toNum(f[3])
+    const idxHi = toNum(f[4])
+    tables.push({
+      title: `表${tables.length + 1}  有调节的中介效应指数 (index of moderated mediation)`,
+      headers: ['指标', '数值', 'CI 下限', 'CI 上限', 'CI 是否含 0'],
+      rows: [
+        [
+          'index = a4 × b',
+          idxVal ?? '—',
+          idxLo ?? '—',
+          idxHi ?? '—',
+          ciZeroText(idxLo, idxHi)
+        ],
+        ['SE（Bootstrap）', idxSe ?? '—', '', '', '']
+      ],
+      note:
+        '注：index of moderated mediation = a4 × b，衡量调节变量每变动一个单位、间接效应随之变化多少。' +
+        '其置信区间必须来自 Bootstrap 分位数（不能只用 Sobel 正态近似）。' +
+        'index 是否显著回答的是「调节是否作用于中介链路」，' +
+        '**不等于**每个 W 水平下的条件间接效应都显著——两者必须分开报告。'
+    })
+    // 表与 kv 同源
+    if (idxVal !== null) kv['index'] = idxVal
+    if (idxSe !== null) kv['index_se'] = idxSe
+    if (idxLo !== null) kv['index_ci_lower'] = idxLo
+    if (idxHi !== null) kv['index_ci_upper'] = idxHi
+    const excludes = ciExcludesZero(idxLo, idxHi)
+    if (excludes !== null) kv['index_ci_excludes_zero'] = excludes ? '是' : '否'
+  }
+
+  // ── 表3：条件间接效应 ──
+  // MM_COND|w_level|w_value|a_cond|indirect|ci_lower|ci_upper
+  //   f[1]=w_level f[2]=w_value f[3]=a_cond f[4]=indirect f[5]=ci_lower f[6]=ci_upper
+  const condIndirect = new Map<string, number>()
+  const condWValue = new Map<string, number | null>()
+  const condA = new Map<string, number>()
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'MM_COND')) {
+      const f = fields(line)
+      const level = (f[1] ?? '').trim()
+      const wValue = toNum(f[2])
+      const aCond = toNum(f[3])
+      const indirect = toNum(f[4])
+      const lo = toNum(f[5])
+      const hi = toNum(f[6])
+      if (indirect !== null) condIndirect.set(level, indirect)
+      condWValue.set(level, wValue)
+      if (aCond !== null) condA.set(level, aCond)
+      rows.push([
+        level || '—',
+        wValue ?? '—',
+        aCond ?? '—',
+        indirect ?? '—',
+        lo ?? '—',
+        hi ?? '—',
+        ciZeroText(lo, hi)
+      ])
+      // key 里带上 level，避免不同水平互相覆盖
+      kv[`cond_${level}_a`] = aCond ?? 'NA'
+      kv[`cond_${level}_indirect`] = indirect ?? 'NA'
+      if (lo !== null) kv[`cond_${level}_ci_lower`] = lo
+      if (hi !== null) kv[`cond_${level}_ci_upper`] = hi
+      const excludes = ciExcludesZero(lo, hi)
+      if (excludes !== null) kv[`cond_${level}_ci_excludes_zero`] = excludes ? '是' : '否'
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  各 ${varW || 'W'} 水平下的条件间接效应`,
+        headers: ['W 水平', 'W 取值', '条件 a', '条件间接效应', 'CI 下限', 'CI 上限', 'CI 是否含 0'],
+        rows,
+        note:
+          '注：条件间接效应 = (a2 + a4·W)·b；W 取 mean−1SD / mean / mean+1SD 三个水平。' +
+          '「CI 是否含 0」为区间端点是否覆盖 0 的直读结果。' +
+          'index 显著 ≠ 每个水平都显著：可能存在「index 显著、其中某个水平不显著」的情形，' +
+          '必须逐水平报告区间，不能只报 index。'
+      })
+    }
+  }
+
+  // ── MM_BOOT ──
+  const boot = parseBootLine(firstTagged(output, 'MM_BOOT'))
+  if (boot) {
+    if (boot.b !== null) kv['boot_B'] = boot.b
+    if (boot.seed !== null) kv['boot_seed'] = boot.seed
+    if (boot.ci_level !== null) kv['boot_ci_level'] = boot.ci_level
+    if (boot.method) kv['boot_method'] = boot.method
+  }
+  // Bootstrap 配置补进 index 表的表注（表注本来就必须声明推断来源）
+  const idxTable = tables.find((t) => t.title.includes('有调节的中介效应指数'))
+  if (idxTable) {
+    idxTable.note = `${idxTable.note}Bootstrap 配置：${bootText(boot)}。`
+  }
+
+  // ── 契约恒等式自检：index = a4·b；条件间接 = (a2 + a4·W)·b ──
+  // MM_COEF 是**两个方程混在一条长表**里，必须按 `model:term` 复合键取量。
+  // 注入实验证明：若只按 term 建索引，y:m 之类会覆盖同名的行，a2/a4/b 取不到，
+  // 整段自检静默空转并报"一致"——因此这里对每个契约保证输出的量做缺失登记。
+  if (tagged(output, 'MM_COEF').length > 0) {
+    const missing: string[] = []
+    const a2 = requireForCheck(coefOf.get('m:x') ?? null, 'm:x（a2）', missing)
+    const a4 = requireForCheck(coefOf.get('m:x_w') ?? null, 'm:x_w（a4）', missing)
+    const bCoef = requireForCheck(coefOf.get('y:m') ?? null, 'y:m（b）', missing)
+    const broken: string[] = []
+    if (a4 !== null && bCoef !== null && indexLine) {
+      const idxVal = toNum(fields(indexLine)[1])
+      if (idxVal !== null) {
+        const dev = Math.abs(idxVal - a4 * bCoef)
+        if (dev > IDENTITY_TOL) {
+          broken.push(`index ≠ a4×b（偏差 ${fmtNum(dev, 6)}）`)
+        }
+      }
+    }
+    if (a2 !== null && a4 !== null && bCoef !== null) {
+      for (const [level, indirect] of condIndirect) {
+        const w0 = condWValue.get(level) ?? null
+        if (w0 === null) continue
+        const expected = (a2 + a4 * w0) * bCoef
+        const dev = Math.abs(indirect - expected)
+        if (dev > IDENTITY_TOL) {
+          broken.push(`条件间接效应(${level}) ≠ (a2 + a4·W)·b（偏差 ${fmtNum(dev, 6)}）`)
+        }
+        // a_cond 与 (a2 + a4·W) 也必须对上，否则表里「条件 a」列是装饰品
+        const aC = condA.get(level) ?? null
+        if (aC !== null) {
+          const devA = Math.abs(aC - (a2 + a4 * w0))
+          if (devA > IDENTITY_TOL) {
+            broken.push(`条件 a(${level}) ≠ a2 + a4·W（偏差 ${fmtNum(devA, 6)}）`)
+          }
+        }
+      }
+    }
+    kv['恒等式自检'] = selfCheckVerdict(broken, missing)
+    if (broken.length > 0) kv['恒等式偏差'] = broken.join('；')
+    if (missing.length > 0) kv['恒等式缺失字段'] = missing.join('、')
+  }
+
+  const notes = textLines(output, 'MM_NOTE')
+  if (notes.length > 0) kv['提示'] = notes.join('；')
+
+  const concl = conclusionOf(output)
+  if (concl) kv['结论'] = concl
+}
+
+/**
+ * 解析路径分析（Path Analysis）。
+ *
+ * 行契约（V032_CONTRACT.md 第四节）：
+ *   PATH_SPEC  |n|nodes|n_edges
+ *   PATH_EDGE  |from|to|coef|se|t|p_display|p_raw|std_coef
+ *   PATH_EQ    |dv|r2|adj_r2|f|p_display|p_raw
+ *   PATH_EFFECT|from|to|direct|indirect|total
+ *   PATH_NOTE  |text
+ *   CONCL      |text
+ *
+ * 本方法最容易"看起来对"的错位是 total 取成 direct（漏掉 indirect）。
+ * 二者只差一个 indirect，而 indirect 在样本量不大时常常只有 0.0x 量级，
+ * 肉眼看表根本发现不了。所以除了逐格断言，解析器还要在**展示层**做两件事：
+ *   1. 效应分解表里把 direct / indirect / total 三列并排，并单列一列
+ *      「total − direct」——它必须等于 indirect，用户一眼能核对；
+ *   2. 契约自检 `total == direct + indirect`，不一致时给出偏差值。
+ * 注意 `PATH_EFFECT` 是多行（每个 from→to 对一行），必须按 from/to 建复合键，
+ * 不能只取第一行（旧式 `firstTagged` 会静默丢掉第 2 条及以后的所有效应）。
+ */
+function parsePathAnalysis(
+  output: string,
+  tables: TableData[],
+  kv: Record<string, string | number>
+) {
+  // ── PATH_SPEC|n|nodes|n_edges ──
+  const spec = firstTagged(output, 'PATH_SPEC')
+  const nObs = spec ? toNum(fields(spec)[1]) : null
+  const nNodes = spec ? toNum(fields(spec)[2]) : null
+  const nEdges = spec ? toNum(fields(spec)[3]) : null
+  if (nObs !== null) kv['n'] = nObs
+  if (nNodes !== null) kv['节点数'] = nNodes
+  if (nEdges !== null) kv['边数'] = nEdges
+
+  // ── 表1：逐条路径 ──
+  // PATH_EDGE|from|to|coef|se|t|p_display|p_raw|std_coef
+  //   f[1]=from f[2]=to f[3]=coef f[4]=se f[5]=t f[6]=p展示串 f[7]=p原始值 f[8]=std_coef
+  {
+    const rows: (string | number)[][] = []
+    const edgeCoef = new Map<string, number>()
+    for (const line of tagged(output, 'PATH_EDGE')) {
+      const f = fields(line)
+      const from = (f[1] ?? '').trim()
+      const to = (f[2] ?? '').trim()
+      const coef = toNum(f[3])
+      const se = toNum(f[4])
+      const t = toNum(f[5])
+      const p = pPair(f[6], f[7])
+      const std = toNum(f[8])
+      if (coef !== null) edgeCoef.set(`${from}->${to}`, coef)
+      rows.push([
+        `${from} → ${to}`,
+        coef ?? '—',
+        se ?? '—',
+        t ?? '—',
+        pText(p),
+        std ?? '—'
+      ])
+      if (coef !== null) kv[`edge_${from}_${to}_coef`] = coef
+      if (std !== null) kv[`edge_${from}_${to}_std`] = std
+      if (p.value !== null) kv[`edge_${from}_${to}_p`] = p.value
+      if (p.display) kv[`edge_${from}_${to}_display`] = p.display
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  路径系数`,
+        headers: ['路径', '非标准化系数', 'SE', 't', 'p', '标准化系数'],
+        rows,
+        note:
+          '注：每条路径由 OLS 逐方程估计得到（首版不做 ML-SEM）；' +
+          '标准化系数为对全部变量 z 标准化后重估的系数，可用于比较不同路径的相对强度。'
+      })
+    }
+  }
+
+  // ── 表2：逐方程拟合 ──
+  // PATH_EQ|dv|r2|adj_r2|f|p_display|p_raw
+  //   f[1]=dv f[2]=r2 f[3]=adj_r2 f[4]=f f[5]=p展示串 f[6]=p原始值
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'PATH_EQ')) {
+      const f = fields(line)
+      const dv = (f[1] ?? '').trim()
+      const r2 = toNum(f[2])
+      const adjR2 = toNum(f[3])
+      const fStat = toNum(f[4])
+      const p = pPair(f[5], f[6])
+      rows.push([dv || '—', r2 ?? '—', adjR2 ?? '—', fStat ?? '—', pText(p)])
+      if (r2 !== null) kv[`eq_${dv}_r2`] = r2
+      if (adjR2 !== null) kv[`eq_${dv}_adj_r2`] = adjR2
+      if (fStat !== null) kv[`eq_${dv}_f`] = fStat
+      if (p.value !== null) kv[`eq_${dv}_p`] = p.value
+      if (p.display) kv[`eq_${dv}_pDisplay`] = p.display
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  各内生变量方程拟合`,
+        headers: ['内生变量', 'R²', '调整 R²', 'F', 'p'],
+        rows,
+        note:
+          '注：每个有入边的内生变量各跑一个 OLS：dv ~ 所有指向它的节点。' +
+          '首版采用 OLS 逐方程估计，不是联合 ML 估计——两者在**恰好识别**时等价，' +
+          '在过度识别时不等价，报告时须说明本结果来自逐方程 OLS。'
+      })
+    }
+  }
+
+  // ── 表3：效应分解 ──
+  // PATH_EFFECT|from|to|direct|indirect|total
+  //   f[1]=from f[2]=to f[3]=direct f[4]=indirect f[5]=total
+  {
+    const rows: (string | number)[][] = []
+    const broken: string[] = []
+    const missing: string[] = []
+    for (const line of tagged(output, 'PATH_EFFECT')) {
+      const f = fields(line)
+      const from = (f[1] ?? '').trim()
+      const to = (f[2] ?? '').trim()
+      const direct = toNum(f[3])
+      const indirect = toNum(f[4])
+      const total = toNum(f[5])
+      // 契约要求「无中介通路时 indirect 输出 0 而不是 NA」，
+      // 所以 indirect 为 0 是合法值、不是缺失；只有字段真的取不到才登记缺失。
+      if (direct === null) missing.push(`${from}→${to} 的 direct`)
+      if (indirect === null) missing.push(`${from}→${to} 的 indirect`)
+      if (total === null) missing.push(`${from}→${to} 的 total`)
+      // 「total − direct」独立成列：它必须等于 indirect。
+      // 这一列存在的唯一目的是让"total 漏掉 indirect"这类错位肉眼可见。
+      const diff = total !== null && direct !== null ? total - direct : null
+      rows.push([
+        `${from} → ${to}`,
+        direct ?? '—',
+        indirect ?? '—',
+        total ?? '—',
+        diff === null ? '—' : fmtNum(diff, 4)
+      ])
+      if (direct !== null) kv[`effect_${from}_${to}_direct`] = direct
+      if (indirect !== null) kv[`effect_${from}_${to}_indirect`] = indirect
+      if (total !== null) kv[`effect_${from}_${to}_total`] = total
+      if (direct !== null && indirect !== null && total !== null) {
+        const dev = Math.abs(total - (direct + indirect))
+        if (dev > IDENTITY_TOL) {
+          broken.push(`${from} → ${to}：total ≠ direct + indirect（偏差 ${fmtNum(dev, 6)}）`)
+        }
+      }
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  效应分解（直接 / 间接 / 总效应）`,
+        headers: ['路径', '直接效应', '间接效应', '总效应', '总效应 − 直接效应'],
+        rows,
+        note:
+          '注：direct 为直接路径系数（无直接路径时为 0）；indirect 为所有中介通路乘积之和；' +
+          'total = direct + indirect。「总效应 − 直接效应」必须等于「间接效应」列，可据此自查；' +
+          '若图中不存在任何中介通路，间接效应输出 0 而非 NA。'
+      })
+    }
+    if (broken.length > 0) {
+      kv['恒等式自检'] = '不一致'
+      kv['恒等式偏差'] = broken.join('；')
+    } else if (rows.length > 0) {
+      kv['恒等式自检'] = selfCheckVerdict(broken, missing)
+    }
+    if (missing.length > 0) kv['恒等式缺失字段'] = missing.join('、')
+  }
+
+  const notes = textLines(output, 'PATH_NOTE')
+  if (notes.length > 0) kv['提示'] = notes.join('；')
+
+  const concl = conclusionOf(output)
+  if (concl) kv['结论'] = concl
+}
+
+/**
+ * 解析结构方程模型（SEM）。
+ *
+ * 行契约（V032_CONTRACT.md 第五节）：
+ *   SEM_SPEC   |n|n_latent|n_obs
+ *   SEM_MEASURE|latent|indicator|std_load|unstd_load|se|z|p_display|p_raw|r2
+ *   SEM_STRUCT |from|to|coef|se|z|p_display|p_raw
+ *   SEM_LATENT |latent|r2
+ *   SEM_FIT    |chisq|df|p_display|p_raw|cfi|tli|rmsea|srmr
+ *   SEM_NOTE   |text
+ *   CONCL      |text
+ *
+ * 契约硬性要求「拟合指标公式与 v0.3.1 的 CFA 完全一致」——那不是一句说明，
+ * 而是一条**可断言的结构约束**：两边表题、表头、指标顺序、参考标准列
+ * 都必须是同一套（见 parser-fields-v032.test.ts 里的跨方法比对）。
+ * 本解析器因此刻意复用 CFA 的指标清单与参考标准文案，只把 χ²/df 之外
+ * 的来源标签换成 SEM 的口径（无零模型行——契约的 SEM_FIT 不含零模型）。
+ *
+ * CFI / TLI / RMSEA / SRMR 四个 0.9x / 0.0x 的小数并排躺在同一行，
+ * 互换后「拟合良好」依然成立，只是报告了错的指标——这正是 v0.3.1 CFA
+ * 那节的同类风险，故一并逐格断言。
+ */
+function parseSem(output: string, tables: TableData[], kv: Record<string, string | number>) {
+  // ── SEM_SPEC|n|n_latent|n_obs ──
+  const spec = firstTagged(output, 'SEM_SPEC')
+  const nObs = spec ? toNum(fields(spec)[1]) : null
+  const nLatent = spec ? toNum(fields(spec)[2]) : null
+  const nIndicators = spec ? toNum(fields(spec)[3]) : null
+  if (nObs !== null) kv['n'] = nObs
+  if (nLatent !== null) kv['潜变量数'] = nLatent
+  if (nIndicators !== null) kv['观测变量数'] = nIndicators
+
+  // ── 表1：测量模型 ──
+  // SEM_MEASURE|latent|indicator|std_load|unstd_load|se|z|p_display|p_raw|r2
+  //   f[1]=latent f[2]=indicator f[3]=std_load f[4]=unstd_load
+  //   f[5]=se f[6]=z f[7]=p展示串 f[8]=p原始值 f[9]=r2
+  {
+    const rows: (string | number)[][] = []
+    const loadRows: Array<{ latent: string; indicator: string; std: number; r2: number | null }> = []
+    for (const line of tagged(output, 'SEM_MEASURE')) {
+      const f = fields(line)
+      const latent = (f[1] ?? '').trim()
+      const indicator = (f[2] ?? '').trim()
+      const std = toNum(f[3])
+      const unstd = toNum(f[4])
+      const se = toNum(f[5])
+      const z = toNum(f[6])
+      const p = pPair(f[7], f[8])
+      const r2 = toNum(f[9])
+      rows.push([
+        latent || '—',
+        indicator || '—',
+        std ?? '—',
+        unstd ?? '—',
+        se ?? '—',
+        z ?? '—',
+        pText(p),
+        r2 ?? '—'
+      ])
+      if (std !== null) {
+        loadRows.push({ latent, indicator, std, r2 })
+        kv[`载荷_${latent}_${indicator}`] = std
+      }
+      if (unstd !== null) kv[`非标准化载荷_${latent}_${indicator}`] = unstd
+      if (r2 !== null) kv[`载荷R2_${latent}_${indicator}`] = r2
+      if (z !== null) kv[`载荷z_${latent}_${indicator}`] = z
+      if (p.value !== null) kv[`载荷p_${latent}_${indicator}`] = p.value
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  测量模型（标准化载荷）`,
+        headers: ['潜变量', '指标', '标准化载荷', '非标准化载荷', 'SE', 'z', 'p', 'R²'],
+        rows,
+        note:
+          '注：标准化载荷 = λ / √σ_jj；R² = 标准化载荷²，表示该指标被潜变量解释的方差比例。' +
+          '每潜变量的第一个指标为 marker 指标（非标准化载荷固定为 1），因此其 SE / z / p 不可解释。' +
+          'SE / z / p 由数值 Hessian 得到的近似信息矩阵计算（V = 2/(n−1)·H⁻¹）。'
+      })
+      // 载荷汇总（供 AI 解读；与表同源）
+      const loads = loadRows.map((r) => r.std)
+      if (loads.length > 0) {
+        const minLoad = Math.min(...loads)
+        const maxLoad = Math.max(...loads)
+        kv['标准化载荷范围'] = `${fmtNum(minLoad, 4)} ~ ${fmtNum(maxLoad, 4)}`
+        kv['最小标准化载荷'] = minLoad
+        // Heywood 案例的展示性提示；判定口径仍以 R 端 SEM_NOTE 为准
+        if (loads.some((v) => Math.abs(v) > 1)) kv['存在超界载荷'] = '是'
+      }
+      kv['载荷项数'] = rows.length
+    }
+  }
+
+  // ── 表2：结构模型 ──
+  // SEM_STRUCT|from|to|coef|se|z|p_display|p_raw
+  //   f[1]=from f[2]=to f[3]=coef f[4]=se f[5]=z f[6]=p展示串 f[7]=p原始值
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'SEM_STRUCT')) {
+      const f = fields(line)
+      const from = (f[1] ?? '').trim()
+      const to = (f[2] ?? '').trim()
+      const coef = toNum(f[3])
+      const se = toNum(f[4])
+      const z = toNum(f[5])
+      const p = pPair(f[6], f[7])
+      rows.push([`${from} → ${to}`, coef ?? '—', se ?? '—', z ?? '—', pText(p)])
+      if (coef !== null) kv[`结构_${from}_${to}_coef`] = coef
+      if (se !== null) kv[`结构_${from}_${to}_se`] = se
+      if (z !== null) kv[`结构_${from}_${to}_z`] = z
+      if (p.value !== null) kv[`结构_${from}_${to}_p`] = p.value
+      if (p.display) kv[`结构_${from}_${to}_pDisplay`] = p.display
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  结构模型（潜变量间的路径）`,
+        headers: ['路径', '系数', 'SE', 'z', 'p'],
+        rows,
+        note:
+          '注：结构模型为 η = Bη + ζ，Φ = (I−B)⁻¹Ψ(I−B)⁻ᵀ，潜变量方差固定为 1 识别。' +
+          '系数为潜变量尺度上的直接效应；z 为 Wald 检验统计量（系数 / 数值 Hessian 标准误）。'
+      })
+    }
+  }
+
+  // ── 表3：内生潜变量 R² + 拟合指标（同一张表，避免"表在但只有标题"）──
+  // SEM_LATENT|latent|r2
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'SEM_LATENT')) {
+      const f = fields(line)
+      const latent = (f[1] ?? '').trim()
+      const r2 = toNum(f[2])
+      rows.push([latent || '—', r2 ?? '—'])
+      if (r2 !== null) kv[`潜变量R2_${latent}`] = r2
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  内生潜变量解释率 R²`,
+        headers: ['潜变量', 'R²'],
+        rows,
+        note:
+          '注：R² = 1 − ζ 方差 / 潜变量方差，表示该内生潜变量被上游潜变量解释的比例；' +
+          '外生潜变量没有 R²，故不出现在本表。'
+      })
+    }
+  }
+
+  // ── 表4：拟合指标（指标清单与参考标准与 CFA 完全一致）──
+  // SEM_FIT|chisq|df|p_display|p_raw|cfi|tli|rmsea|srmr
+  //   f[1]=chisq f[2]=df f[3]=p展示串 f[4]=p原始值
+  //   f[5]=cfi f[6]=tli f[7]=rmsea f[8]=srmr
+  const fit = firstTagged(output, 'SEM_FIT')
+  if (fit) {
+    const f = fields(fit)
+    const chisq = toNum(f[1])
+    const df = toNum(f[2])
+    const p = pPair(f[3], f[4])
+    const cfi = toNum(f[5])
+    const tli = toNum(f[6])
+    const rmsea = toNum(f[7])
+    const srmr = toNum(f[8])
+    // χ²/df 是常见报告量；df = 0（恰好识别）时不可除，必须给占位而不是 Infinity
+    const chisqDf = chisq !== null && df !== null && df > 0 ? chisq / df : null
+    tables.push({
+      title: `表${tables.length + 1}  模型拟合指标`,
+      headers: ['指标', '数值', '参考标准'],
+      rows: [
+        ['χ²', chisq === null ? '—' : fmtNum(chisq, 4), '越小越好'],
+        ['df', df === null ? '—' : df, 'df = p(p+1)/2 − npar'],
+        ['p', pText(p), 'p > .05 表示模型与数据无显著失配'],
+        ['χ²/df', fmtNum(chisqDf, 4), '< 3 可接受，< 2 良好'],
+        ['CFI', fmtNum(cfi, 4), '≥ .90 可接受，≥ .95 良好'],
+        ['TLI', fmtNum(tli, 4), '≥ .90 可接受，≥ .95 良好'],
+        ['RMSEA', fmtNum(rmsea, 4), '≤ .08 可接受，≤ .06 良好'],
+        ['SRMR', fmtNum(srmr, 4), '≤ .08 良好']
+      ],
+      note:
+        '注：χ² 检验对样本量敏感，大样本下几乎必然显著，应结合 CFI / TLI / RMSEA / SRMR 综合判断。' +
+        '拟合指标公式与验证性因子分析（CFA）完全一致：CFI、TLI 由零模型卡方推导，' +
+        'df ≤ 0 时（恰好识别或不可识别）CFI = TLI = 1、RMSEA = 0。' +
+        '本表数值来自 ML 拟合（F_ML = ln|Σ| + tr(RΣ⁻¹) − ln|R| − p），' +
+        '与 CFA 同一套框架、同一套起点策略（optim BFGS，5 个起点取 F 最小者）。'
+    })
+    if (chisq !== null) kv['chi2'] = chisq
+    if (df !== null) kv['df'] = df
+    if (p.value !== null) kv['p'] = p.value
+    if (p.display) kv['pDisplay'] = p.display
+    if (chisqDf !== null) kv['chi2_df'] = chisqDf
+    if (cfi !== null) kv['CFI'] = cfi
+    if (tli !== null) kv['TLI'] = tli
+    if (rmsea !== null) kv['RMSEA'] = rmsea
+    if (srmr !== null) kv['SRMR'] = srmr
+  }
+
+  const notes = textLines(output, 'SEM_NOTE')
+  if (notes.length > 0) kv['提示'] = notes.join('；')
 
   const concl = conclusionOf(output)
   if (concl) kv['结论'] = concl

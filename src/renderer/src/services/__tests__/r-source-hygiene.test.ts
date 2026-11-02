@@ -22,6 +22,8 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { RService } from '../rService'
+import { mediationCode } from '../rGenerators/mediation'
+import { moderationCode } from '../rGenerators/moderation'
 
 /**
  * v0.3.2：R_COMMON 已抽到 rCommon.ts（rService.ts 已超 1400 行，无法再并行编辑）。
@@ -126,7 +128,10 @@ describe('R 源码卫生：生成器输出的 R 结构', () => {
     // v0.3.1：问卷效度进阶三件套
     ['cfa', () => RService.cfaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'])],
     ['cvi', () => RService.cviCode(['q1', 'q2', 'q3', 'q4'])],
-    ['harman', () => RService.harmanCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'])]
+    ['harman', () => RService.harmanCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'])],
+    // v0.3.2：中介 / 调节（已迁到 rGenerators/，直接调用纯函数）
+    ['mediation', () => mediationCode('x', 'm', 'y')],
+    ['moderation', () => moderationCode('x', 'w', 'y')]
   ]
 
   for (const [name, gen] of GENERATORS) {
@@ -146,6 +151,82 @@ describe('R 源码卫生：生成器输出的 R 结构', () => {
         }
       })
       expect(bad, `${name} 存在裸 else：\n${bad.join('\n')}`).toEqual([])
+    })
+  }
+})
+
+/**
+ * v0.3.2：新增生成器产出的 R 代码本身的卫生检查。
+ *
+ * R_COMMON 的反引号检查只覆盖 rCommon.ts。v0.3.2 起每个生成器都是一个独立的
+ * TS 模板字符串文件（rGenerators/*.ts）：只要模板**内部**混进一个反引号，
+ * 模板就会在该处提前结束，后续 R 代码被当成 JS 解析。
+ *
+ * 直接扫源码文件是错的（生成器文件的 JSDoc 里合法地写着反引号包裹的公式，
+ * 按行数奇偶判断会把正常注释误判成非法嵌套——第一版就踩了这个坑，
+ * 报出"第 42 行: return `"这种假阳性）。
+ *
+ * 正确的判据落在**产出的 R 代码**上：模板若被提前闭合，tsc 直接就编译不过
+ * （本文件能 import 成功即已排除了那种情况）；而产出串里真的带反引号，
+ * 说明 R 代码里混入了 R 的反引号列名语法——那是本项目明令禁止的写法。
+ */
+describe('R 源码卫生：生成器产出的 R 代码不含反引号', () => {
+  const GENERATED: Array<[string, () => string]> = [
+    ['mediation', () => mediationCode('x', 'm', 'y')],
+    ['moderation', () => moderationCode('x', 'w', 'y')]
+  ]
+
+  for (const [name, gen] of GENERATED) {
+    it(`${name}: 产出的 R 代码不含反引号`, () => {
+      const code = gen()
+      const offenders = code
+        .split('\n')
+        .map((line, i) => ({ line, i }))
+        .filter(({ line }) => line.includes('`'))
+        .map(({ line, i }) => `  第 ${i + 1} 行: ${line.trim()}`)
+      expect(offenders, `${name} 产出的 R 代码含反引号（R 反引号列名语法本项目禁用）：\n${offenders.join('\n')}`).toEqual([])
+    })
+
+    it(`${name}: 模板插值没有被意外保留为字面 ${'${'}...}`, () => {
+      const code = gen()
+      // 生成器只插值变量名（已 rEscape）。若产出里还残留 ${...}，
+      // 说明某处模板被 String.raw 或双层模板包住了，R 会把它们当字面量输出。
+      expect(code).not.toContain('${')
+    })
+  }
+})
+
+describe('R 源码卫生：生成器输出的 R 注释无错位风险', () => {
+  const GENERATED: Array<[string, string]> = [
+    ['mediation', mediationCode('x', 'm', 'y')],
+    ['moderation', moderationCode('x', 'w', 'y')]
+  ]
+
+  for (const [name, code] of GENERATED) {
+    it(`${name}: R 注释中不得有不配对的双引号`, () => {
+      const offenders: string[] = []
+      code.split('\n').forEach((line, i) => {
+        const hashIdx = findCommentStart(line)
+        if (hashIdx < 0) return
+        const comment = line.slice(hashIdx + 1)
+        let count = 0
+        for (let k = 0; k < comment.length; k++) {
+          if (comment[k] === '\\') {
+            k++
+            continue
+          }
+          if (comment[k] === '"') count++
+        }
+        if (count % 2 !== 0) offenders.push(`  第 ${i + 1} 行: ${comment.trim()}`)
+      })
+      expect(offenders, `${name} 的 R 注释里有不配对引号，会让剥离字符串工具错位：\n${offenders.join('\n')}`).toEqual([])
+    })
+
+    it(`${name}: 不得用 sprintf("%.4f") 输出 p 值`, () => {
+      expect(code).not.toMatch(/p\s*=\s*%\.4f/)
+      // 每个 p 值都必须成对输出：fmt_p(...) 紧跟 num_p(...)
+      expect(code).toContain('fmt_p(')
+      expect(code).toContain('num_p(')
     })
   }
 })

@@ -38,7 +38,14 @@ const GENERATORS: Record<string, () => string> = {
   normality: () => RService.normalityTestCode(['x'], 'data.csv'),
   nonparametric: () => RService.nonparametricCode('score', 'grp', 'data.csv'),
   frequency: () => RService.frequencyCode(['a'], 'data.csv'),
-  summary_by: () => RService.summaryByCode('grp', 'score', 'data.csv')
+  summary_by: () => RService.summaryByCode('grp', 'score', 'data.csv'),
+  // v0.3.2 因果链五方法。键名必须与 methodRegistry 的 id 完全一致
+  //（`method-registry.test.ts` 与下方「生成器数量与方法数量一致」都对键做精确比对）。
+  mediation: () => RService.mediationCode('x', 'm', 'y', 'data.csv'),
+  moderation: () => RService.moderationCode('x', 'w', 'y', 'data.csv'),
+  moderated_mediation: () => RService.moderatedMediationCode('x', 'm', 'y', 'w', 'data.csv'),
+  path_analysis: () => RService.pathAnalysisCode(['x', 'm', 'y'], 'x > m, m > y', 'data.csv'),
+  sem: () => RService.semCode({ F1: ['x1', 'x2'], F2: ['y1', 'y2'] }, 'F1 > F2', 'data.csv')
 }
 
 /**
@@ -189,6 +196,83 @@ const SAMPLE_OUTPUT: Record<string, string> = {
     'PRIMARY|q2|2',
     'PRIMARY|q5|1',
     'CONCL|KMO = 0.848（适合），Bartlett 检验显著（p < 0.001），数据适合做因子分析'
+  ].join('\n'),
+  /* ── v0.3.2 因果链五方法 ────────────────────────────────────────────────
+   * 只放**横幅 + 契约行格式的最小样本**，不复制整份真实 R 输出：
+   * 生成器后续微调字段时，这里不会因为"跟真实输出不同步"而假红；
+   * 又足以驱动「横幅判型」与「产出非空三线表」两条断言。
+   * 字段顺序严格照 V032_CONTRACT.md 一~五节的行格式表。
+   * ──────────────────────────────────────────────────────────────────── */
+  mediation: [
+    '=== 中介效应分析 ===',
+    'MED_SPEC|200|x|m|y',
+    'MED_PATH|a|0.5000|0.0600|8.33|p < 0.001|1e-14',
+    'MED_PATH|b|0.6000|0.0600|10.00|p < 0.001|1e-18',
+    'MED_PATH|c_prime|0.2000|0.0700|2.86|p = 0.005|0.0048',
+    'MED_PATH|c_total|0.5000|0.0650|7.69|p < 0.001|1e-12',
+    'MED_EFFECT|indirect|0.3000|0.0500|0.2062|0.4001|percentile',
+    'MED_EFFECT|direct|0.2000|0.0700|0.0628|0.3372|percentile',
+    'MED_EFFECT|total|0.5000|0.0650|0.3723|0.6277|percentile',
+    'MED_EFFECT|prop_mediated|0.6000|NA|NA|NA|NA',
+    'MED_SOBEL|4.30|p < 0.001|1.7e-05',
+    'MED_BOOT|5000|20260101|0.95|percentile',
+    'MED_STD|a_std|0.4000',
+    'MED_STD|b_std|0.5000',
+    'MED_STD|c_prime_std|0.1500',
+    'MED_STD|indirect_std|0.2000',
+    'CONCL|中介效应显著'
+  ].join('\n'),
+  moderation: [
+    '=== 调节效应分析 ===',
+    'MOD_SPEC|400|x|w|y|是',
+    'MOD_COEF|intercept|0.0500|0.0500|1.00|p = 0.318|0.3178',
+    'MOD_COEF|x|0.3000|0.0500|6.00|p < 0.001|2e-09',
+    'MOD_COEF|w|0.4000|0.0500|8.00|p < 0.001|1e-14',
+    'MOD_COEF|x_w|0.5000|0.0480|10.42|p < 0.001|1e-22',
+    'MOD_MODEL|0.3913|0.3867|85.0200|p < 0.001|1e-40|3|396',
+    'MOD_DELTA|0.2326|151.3000|1|396|p < 0.001|1.1e-28',
+    'MOD_SLOPE|-1SD|-1.0000|-0.2449|0.0530|-4.62|p < 0.001|1.1e-05',
+    'MOD_SLOPE|mean|0.0000|0.2613|0.0400|6.53|p < 0.001|1e-10',
+    'MOD_SLOPE|+1SD|1.0000|0.7676|0.0530|14.48|p < 0.001|5.5e-33',
+    'CONCL|调节效应显著'
+  ].join('\n'),
+  moderated_mediation: [
+    '=== 有调节的中介分析 ===',
+    'MM_SPEC|300|x|m|y|w',
+    'MM_COEF|m|x|0.4000|0.0550|7.27|p < 0.001|1e-11',
+    'MM_COEF|m|w|0.2000|0.0550|3.64|p < 0.001|0.0003',
+    'MM_COEF|m|x_w|0.1500|0.0520|2.88|p = 0.004|0.0042',
+    'MM_COEF|y|m|0.5000|0.0580|8.62|p < 0.001|1e-15',
+    'MM_COEF|y|x|0.1800|0.0580|3.10|p = 0.002|0.0021',
+    'MM_INDEX|0.0750|0.0280|0.0244|0.1349',
+    'MM_COND|-1SD|-1.0000|0.2500|0.1250|0.0421|0.2190',
+    'MM_COND|mean|0.0000|0.4000|0.2000|0.1120|0.3020',
+    'MM_COND|+1SD|1.0000|0.5500|0.2750|0.1710|0.3980',
+    'MM_BOOT|5000|20260101|0.95|percentile',
+    'CONCL|有调节的中介效应显著'
+  ].join('\n'),
+  path_analysis: [
+    '=== 路径分析 ===',
+    'PATH_SPEC|300|3|3',
+    'PATH_EDGE|x|m|0.5000|0.0500|10.00|p < 0.001|1e-18|0.4800',
+    'PATH_EDGE|m|y|0.6000|0.0500|12.00|p < 0.001|1e-24|0.5500',
+    'PATH_EDGE|x|y|0.2000|0.0600|3.33|p < 0.001|0.0007|0.1800',
+    'PATH_EQ|m|0.2500|0.2475|99.3300|p < 0.001|1e-15',
+    'PATH_EQ|y|0.4300|0.4262|112.2000|p < 0.001|1e-20',
+    'PATH_EFFECT|x|y|0.2000|0.3000|0.5000',
+    'CONCL|路径模型估计完成'
+  ].join('\n'),
+  sem: [
+    '=== 结构方程模型 (SEM) ===',
+    'SEM_SPEC|600|2|6',
+    'SEM_MEASURE|F1|x1|0.8350|0.8500|0.0410|20.73|p < 0.001|1e-30|0.6972',
+    'SEM_MEASURE|F1|x2|0.7280|0.7400|0.0390|18.97|p < 0.001|1e-28|0.5300',
+    'SEM_MEASURE|F2|y1|0.8120|0.8300|0.0400|20.75|p < 0.001|1e-30|0.6593',
+    'SEM_MEASURE|F2|y2|0.7450|0.7600|0.0390|19.49|p < 0.001|1e-28|0.5550',
+    'SEM_STRUCT|F1|F2|0.4827|0.0417|11.59|p < 0.001|4.8e-31',
+    'SEM_LATENT|F2|0.2330',
+    'SEM_FIT|15.7300|8|p = 0.046|0.0460|0.9936|0.9880|0.0402|0.0285',
+    'CONCL|结构模型拟合良好'
   ].join('\n')
 }
 
@@ -369,8 +453,8 @@ describe('解析器分派契约', () => {
       seen.add(type)
     }
     // correlation 与 correlation_spearman 映射到同一 type，故少 1
-    // v0.3.0：14（EFA 加入后）；v0.3.1：17（CFA / CVI / Harman）
-    expect(seen.size, '新增方法时必须同步更新 GENERATORS 与本处计数').toBe(17)
+    // v0.3.0：14（EFA 加入后）；v0.3.1：17（CFA / CVI / Harman）；v0.3.2：22（因果链五方法）
+    expect(seen.size, '新增方法时必须同步更新 GENERATORS 与本处计数').toBe(22)
   })
 
   it('分组统计行中的 " N=" 不会让 t 检验被误判为描述性统计', () => {
@@ -444,9 +528,10 @@ describe('向导方法注册表一致性', () => {
   it('METHODS 为空说明导出被破坏', () => {
     // v0.3.0：13 → 14（新增 EFA 探索性因子分析）
     // v0.3.1：14 → 17（新增 CFA / CVI / Harman）
+    // v0.3.2：17 → 22（新增 中介 / 调节 / 有调节的中介 / 路径分析 / SEM）
     // 这条断言只是"数量哨兵"。**新增方法时本文件的 GENERATORS 也必须同步加一行**，
     // 否则下面两条会以更难读懂的方式失败（"生成器不存在/有孤儿"）。
-    expect(METHODS.length, '新增方法时必须同步更新本文件与 GENERATORS').toBe(17)
+    expect(METHODS.length, '新增方法时必须同步更新本文件与 GENERATORS').toBe(22)
   })
 
   it('每个注册的方法 id 都有对应的 R 代码生成器（否则会执行空代码）', () => {

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { RService } from '../rService'
+import { mediationCode } from '../rGenerators/mediation'
+import { moderationCode } from '../rGenerators/moderation'
 
 /**
  * 「生成器产出的 R 代码必须是合法 R」契约（T20 验收要求）。
@@ -37,7 +39,11 @@ const CASES: Array<{ name: string; gen: () => string }> = [
   // v0.3.1：问卷效度进阶三件套（CFA / CVI / Harman），全部纯 base R
   { name: 'cfa', gen: () => RService.cfaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6']) },
   { name: 'cvi', gen: () => RService.cviCode(['q1', 'q2', 'q3', 'q4']) },
-  { name: 'harman', gen: () => RService.harmanCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6']) }
+  { name: 'harman', gen: () => RService.harmanCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6']) },
+  // v0.3.2：因果链前两件（中介 / 调节）。这两个已迁到 `rGenerators/<method>.ts`，
+  // 因此直接调用生成器的纯函数（rService 里的 static 方法只是薄封装转发）。
+  { name: 'mediation', gen: () => mediationCode('x', 'm', 'y') },
+  { name: 'moderation', gen: () => moderationCode('x', 'w', 'y') }
 ]
 
 /**
@@ -120,8 +126,8 @@ function structuralIssues(code: string): string[] {
 }
 
 describe('生成器产出必须是合法 R（无需安装 R 的结构检查）', () => {
-  it('covers all 17 generator outputs', () => {
-    expect(CASES).toHaveLength(17)
+  it('covers all 19 generator outputs', () => {
+    expect(CASES).toHaveLength(19)
     for (const c of CASES) expect(c.gen().length, `${c.name} 输出为空`).toBeGreaterThan(0)
   })
 
@@ -161,7 +167,10 @@ describe('生成器产出必须是合法 R（无需安装 R 的结构检查）',
       // v0.3.1 三个新生成器同样必须扛住注入
       RService.cfaCode(evil),
       RService.cviCode(evil),
-      RService.harmanCode(evil)
+      RService.harmanCode(evil),
+      // v0.3.2 中介 / 调节：变量名只进字符串字面量，绝不进公式
+      mediationCode(evil[0], evil[1], evil[2]),
+      moderationCode(evil[0], evil[3], evil[4])
     ]
     for (const code of outputs) {
       expect(structuralIssues(code)).toEqual([])
@@ -256,6 +265,99 @@ describe('生成器产出必须是合法 R（无需安装 R 的结构检查）',
       const found = code.match(/^cat\("=== .+? ===\\n"\)/gm)
       expect(found, '横幅必须恰好一个').toHaveLength(1)
       expect(code).toContain(`cat("${banner}\\n")`)
+    }
+  })
+
+  /**
+   * v0.3.2 中介 / 调节的**契约形状**断言。
+   *
+   * 这几条锁死的都是"写错了不会报错、只会静默给出错结论"的地方：
+   *
+   * 1. 中介恒等式 `c = c' + a*b` 必须真的被检查（而不是只写在注释里）。
+   *    原型实测这条误差是 0.00e+00；一旦三次回归跑在不同样本上它就不再为 0。
+   * 2. `prop_mediated` 必须显式判 total 接近 0 后输出 NA。直接写 `ind / total`
+   *    在 total 恰为 0 时得到 Inf，而 Inf 既不是数字也不是 NA，
+   *    会让下游表格出现"无穷大的中介比例"。
+   * 3. 简单斜率的 SE 必须用线性组合 `L' V L`（L = [0,1,0,w0]）。
+   *    换成"子集重回归"不会报错，只会把 p 从 2e-3 变成 0.56（已实测）。
+   * 4. ΔR²/ΔF 的对照模型必须是仅主效应（只有 3 列），不是嵌套的别的东西。
+   */
+  it('中介：恒等式自检被真实执行，且容差不松于 1e-8', () => {
+    const code = mediationCode('x', 'm', 'y')
+    expect(code).toMatch(/ident_err <- abs\(c_total - c_prime - a_coef \* b_coef\)/)
+    // 自检必须能中断流程（stop），否则"检查了但没用"等于没检查
+    expect(code).toMatch(/ident_err > 1e-8[\s\S]{0,200}?stop\(/)
+  })
+
+  it('中介：prop_mediated 在 total 接近 0 时输出 NA，绝不输出 Inf', () => {
+    const code = mediationCode('x', 'm', 'y')
+    // 必须先判分母再相除，而不是先除后过滤（先除就已经产生 Inf 了）
+    expect(code).toMatch(/total_near_zero <- !is\.finite\(c_total\) \|\| abs\(c_total\) <= total_eps/)
+    expect(code).toMatch(/if \(!total_near_zero\) \{\s*prop_val <- ind \/ c_total/)
+    // 兜底：Bootstrap 比例也要把非有限值抹成 NA
+    expect(code).toMatch(/prop_b\[!is\.finite\(prop_b\)\] <- NA_real_/)
+    // 契约要求的 NA 字样必须真的出现在输出行里
+    expect(code).toMatch(/MED_EFFECT\|prop_mediated/)
+  })
+
+  it('中介：Bootstrap 默认 B=5000 且固定种子，CI 标注为 percentile', () => {
+    const code = mediationCode('x', 'm', 'y')
+    expect(code).toMatch(/B <- 5000L/)
+    expect(code).toMatch(/boot_seed <- 20260101L/)
+    expect(code).toMatch(/set\.seed\(boot_seed\)/)
+    // 三处主效应 + 比例中介都必须如实标注 percentile（不得标 bca 给 percentile）
+    const methodTags = code.match(/percentile\\n/g) ?? []
+    expect(methodTags.length).toBeGreaterThanOrEqual(5)
+    expect(code).not.toContain('bca')
+  })
+
+  it('调节：简单斜率的 SE 用线性组合 L V L，不是子集重回归', () => {
+    const code = moderationCode('x', 'w', 'y')
+    // 正确写法：L = [0, 1, 0, w0]，方差 = t(L) %*% V %*% L
+    expect(code).toMatch(/L <- c\(0, 1, 0, w0\)/)
+    expect(code).toMatch(/var_v <- as\.numeric\(t\(L\) %\*% V_int %\*% L\)/)
+    // 关键：SE 必须是**这个方差**的平方根，中间不得有任何缩放。
+    // 只断言上面两行存在是不够的——实测把 var_v 乘 0.5（等价于把 se 打 0.707 倍）
+    // 仍然能通过"存在性"断言，而 p 值会从 2e-3 变成 6e-3。必须锁死这条链路：
+    const seLine = code.split('\n').find((l) => l.trim().startsWith('se_v <-'))!
+    expect(seLine, '未找到 se_v 赋值行').toBeTruthy()
+    expect(seLine.trim(), 'SE 必须直接取 var_v 的平方根，不得缩放').toBe(
+      'se_v <- if (is.finite(var_v) && var_v > 0) sqrt(var_v) else NA_real_'
+    )
+    // 反例必须不存在：不得出现 subset / 窗口过滤后重新 lm 的写法
+    expect(code).not.toMatch(/subset\(/)
+    expect(code).not.toMatch(/abs\(w_c - w0\)/)
+    // 斜率本身必须是 L' b（线性组合），不是某个子集回归的系数
+    expect(code).toMatch(/slope_v <- as\.numeric\(L %\*% fit_int\$coef\)/)
+  })
+
+  it('调节：ΔR² 的对照模型是仅主效应（3 列设计矩阵）', () => {
+    const code = moderationCode('x', 'w', 'y')
+    expect(code).toMatch(/X_main <- cbind\(1, x_c, w_c\)/)
+    expect(code).toMatch(/X_int <- cbind\(1, x_c, w_c, x_c \* w_c\)/)
+    expect(code).toMatch(/r2_change <- r2_int - r2_main/)
+    // ΔF 必须与交互项 t 平方交叉验证（同一模型的两种呈现必须一致）
+    expect(code).toMatch(/gap <- abs\(f_change - t_xw\^2\)/)
+  })
+
+  it('中介/调节的横幅唯一且与契约完全一致', () => {
+    const expected: Array<[string, string]> = [
+      [mediationCode('x', 'm', 'y'), '=== 中介效应分析 ==='],
+      [moderationCode('x', 'w', 'y'), '=== 调节效应分析 ===']
+    ]
+    for (const [code, banner] of expected) {
+      const found = code.match(/^cat\("=== .+? ===\\n"\)/gm)
+      expect(found, '横幅必须恰好一个').toHaveLength(1)
+      expect(code).toContain(`cat("${banner}\\n")`)
+    }
+  })
+
+  it('中介/调节都不把变量名拼进 R 公式（否则含引号的中文列名会 invalid term）', () => {
+    for (const code of [mediationCode('x', 'm', 'y'), moderationCode('x', 'w', 'y')]) {
+      expect(code).not.toMatch(/lm\(\s*"/)
+      expect(code).not.toMatch(/as\.formula\(/)
+      // 变量名只能作为字符串字面量与 data[["..."]] 出现
+      expect(code).toMatch(/data\[\[nm\]\]/)
     }
   })
 })

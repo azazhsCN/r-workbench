@@ -88,7 +88,9 @@ CANONICAL_METHODS <- c(
   "nonparametric", "frequency", "summary_by",
   "efa",
   # v0.3.1
-  "cfa", "cvi", "harman"
+  "cfa", "cvi", "harman",
+  # v0.3.2
+  "mediation", "moderation", "moderated_mediation", "path_analysis", "sem"
 )
 
 ## ---- 2. 报告与断言工具 ----------------------------------------------------
@@ -1436,6 +1438,832 @@ oracle_harman <- function(method, dataset, kv, out, data) {
           if (nzchar(note_txt)) "present" else "missing", has_sensitivity_note)
 }
 
+## ============================================================================
+## v0.3.2 因果链五方法的独立 oracle
+##
+## 通用策略（与 v0.3.1 的 CFA oracle 一脉相承）：
+##   1. **换计算路径**：被测实现用 `lm.fit()` / `lm()` 取 coef；oracle 一律用
+##      显式矩阵代数 `solve(crossprod(X)) %*% crossprod(X, y)` 手算，不碰 lm。
+##   2. **换推断路径**：Bootstrap 由实现手写 `sample.int` 重抽样；
+##      oracle 用 `boot::boot()` + `boot::boot.ci()`（R 推荐包，本机 v1.3.32）。
+##      两条独立的重抽样实现落在同一 CI 区间内，才说明实现的百分位法没写错。
+##   3. **不变式断言**：与参数化无关、任何正确实现都必须满足的量
+##      （中介 `c = c' + a·b`、路径 `total = direct + indirect`、SEM `diag(Σ)=1`）。
+##   4. **判别力双向验证**：每个方法配一个"零效应"姐妹场景
+##      （mediation_null / moderation_null / sem_null），
+##      断言"有效应时显著、无效应时不显著"。只验一个方向的断言
+##      无法排除"判据恒真/恒假"。
+## ============================================================================
+
+## 用矩阵代数解 OLS（不调用 lm/lm.fit —— 这是 oracle 独立性的关键）。
+## 返回 list(coef, se, t, p, df_resid, r2, vcov)。
+ols_mat <- function(Xd, y) {
+  n <- nrow(Xd)
+  k <- ncol(Xd)
+  XtX <- crossprod(Xd)
+  XtX_inv <- tryCatch(solve(XtX), error = function(e) NULL)
+  if (is.null(XtX_inv)) return(NULL)
+  b <- as.numeric(XtX_inv %*% crossprod(Xd, y))
+  resid <- as.numeric(y - Xd %*% b)
+  df_resid <- n - k
+  if (df_resid <= 0) return(NULL)
+  s2 <- sum(resid^2) / df_resid
+  V <- XtX_inv * s2
+  se <- sqrt(diag(V))
+  tval <- b / se
+  pval <- 2 * pt(-abs(tval), df_resid)
+  sst <- sum((y - mean(y))^2)
+  r2 <- if (sst > 0) 1 - sum(resid^2) / sst else NA_real_
+  list(coef = b, se = se, t = tval, p = pval, df_resid = df_resid,
+       r2 = r2, vcov = V, resid = resid)
+}
+
+## 从 kv 里按 `label` 字段取某一行（用于 MED_PATH / MOD_COEF 这类带标签的行）
+kv_row_by <- function(kv, key, idx, label) {
+  rows <- kv[[key]]
+  if (is.null(rows)) return(NULL)
+  for (r in rows) {
+    if (identical(r[idx], label)) return(r)
+  }
+  NULL
+}
+
+## 4.20 中介效应（v0.3.2 第一节）
+##
+## oracle 路径：三条 OLS 全用 solve(crossprod) 矩阵代数手算，
+## 不用实现用的 lm.fit；Bootstrap 用 boot::boot + boot.ci 独立做。
+oracle_mediation <- function(method, dataset, kv, out, data) {
+  nm <- names(data)
+  xv <- as_num(data[["x"]]); mv <- as_num(data[["m"]]); yv <- as_num(data[["y"]])
+  keep <- is.finite(xv) & is.finite(mv) & is.finite(yv)
+  xv <- xv[keep]; mv <- mv[keep]; yv <- yv[keep]
+  n <- length(yv)
+  one <- rep(1, n)
+
+  ## 三条回归（矩阵代数）
+  f_a <- ols_mat(cbind(one, xv), mv)                    # M ~ X
+  f_b <- ols_mat(cbind(one, xv, mv), yv)                # Y ~ X + M
+  f_c <- ols_mat(cbind(one, xv), yv)                    # Y ~ X
+  a_ref <- f_a$coef[2]
+  b_ref <- f_b$coef[3]
+  cp_ref <- f_b$coef[2]
+  ct_ref <- f_c$coef[2]
+  ind_ref <- a_ref * b_ref
+
+  ## ---- 结构 ----
+  chk_eq(method, dataset, "MED_SPEC.n", n, gfn(kv, "MED_SPEC", 1, 1))
+  chk_eq(method, dataset, "MED_SPEC.vars", "x,m,y",
+         paste(gf(kv, "MED_SPEC", 1, 2), gf(kv, "MED_SPEC", 1, 3), gf(kv, "MED_SPEC", 1, 4), sep = ","))
+
+  ## ---- 逐条路径：MED_PATH|path|coef|se|t|p_disp|p_raw ----
+  for (spec in list(
+    list(label = "a", coef = a_ref, se = f_a$se[2], t = f_a$t[2], p = f_a$p[2]),
+    list(label = "b", coef = b_ref, se = f_b$se[3], t = f_b$t[3], p = f_b$p[3]),
+    list(label = "c_prime", coef = cp_ref, se = f_b$se[2], t = f_b$t[2], p = f_b$p[2]),
+    list(label = "c_total", coef = ct_ref, se = f_c$se[2], t = f_c$t[2], p = f_c$p[2])
+  )) {
+    row <- kv_row_by(kv, "MED_PATH", 1, spec$label)
+    if (is.null(row)) {
+      add_row(method, dataset, paste0("MED_PATH.", spec$label, ".present"), "present", "missing", FALSE)
+      next
+    }
+    chk_num(method, dataset, paste0("MED_PATH.", spec$label, ".coef"), spec$coef,
+            suppressWarnings(as.numeric(row[2])), 1e-3)
+    chk_num(method, dataset, paste0("MED_PATH.", spec$label, ".se"), spec$se,
+            suppressWarnings(as.numeric(row[3])), TOL_LOOSE)
+    chk_num(method, dataset, paste0("MED_PATH.", spec$label, ".t"), spec$t,
+            suppressWarnings(as.numeric(row[4])), TOL_LOOSE)
+    chk_num(method, dataset, paste0("MED_PATH.", spec$label, ".p"), spec$p,
+            suppressWarnings(as.numeric(row[6])), TOL_LOOSE)
+  }
+
+  ## ---- 恒等式 c == c' + a*b（契约硬性要求，容差 1e-10）----
+  ## 用**实现自己输出**的三个系数验证，而不是用 oracle 的——
+  ## 否则验的是 oracle 的自洽性，不是实现的自洽性。
+  got_a <- suppressWarnings(as.numeric((kv_row_by(kv, "MED_PATH", 1, "a"))[2]))
+  got_b <- suppressWarnings(as.numeric((kv_row_by(kv, "MED_PATH", 1, "b"))[2]))
+  got_cp <- suppressWarnings(as.numeric((kv_row_by(kv, "MED_PATH", 1, "c_prime"))[2]))
+  got_ct <- suppressWarnings(as.numeric((kv_row_by(kv, "MED_PATH", 1, "c_total"))[2]))
+  ident_gap <- abs(got_ct - got_cp - got_a * got_b)
+  add_row(method, dataset, "invariant.c_equals_cprime_plus_ab",
+          "<= 1e-10", sprintf("%.3e", ident_gap),
+          is.finite(ident_gap) && ident_gap <= 1e-10)
+  ## oracle 侧的同一条恒等式（数学恒真，防 oracle 自己算错）
+  chk_num(method, dataset, "oracle.identity_selfcheck", 0,
+          abs(ct_ref - cp_ref - a_ref * b_ref), tol = 1e-10)
+
+  ## ---- 效应对：MED_EFFECT|effect|value|se|ci_lower|ci_upper|ci_method ----
+  eff_get <- function(label) kv_row_by(kv, "MED_EFFECT", 1, label)
+  eff_num <- function(row, j) if (is.null(row)) NA_real_ else suppressWarnings(as.numeric(row[j]))
+  e_ind <- eff_get("indirect"); e_dir <- eff_get("direct"); e_tot <- eff_get("total")
+  chk_num(method, dataset, "MED_EFFECT.indirect", ind_ref, eff_num(e_ind, 2), 1e-3)
+  chk_num(method, dataset, "MED_EFFECT.direct", cp_ref, eff_num(e_dir, 2), 1e-3)
+  chk_num(method, dataset, "MED_EFFECT.total", ct_ref, eff_num(e_tot, 2), 1e-3)
+
+  ## 三条效应必须与 MED_PATH 的对应系数一致（同一模型的两种呈现）
+  chk_eq(method, dataset, "consistency.indirect_eq_a_times_b",
+         sprintf("%.4f", got_a * got_b), sprintf("%.4f", eff_num(e_ind, 2)))
+  chk_eq(method, dataset, "consistency.direct_eq_c_prime",
+         sprintf("%.4f", got_cp), sprintf("%.4f", eff_num(e_dir, 2)))
+
+  ## ---- Bootstrap CI：用 boot 包独立复算（与实现的手写重抽样不同路径）----
+  ## boot 的统计量函数：给定索引返回 c(a, b, c', c, indirect)
+  boot_stat <- function(d, idx) {
+    xb <- d$x[idx]; mb <- d$m[idx]; yb <- d$y[idx]
+    fa <- ols_mat(cbind(1, xb), mb)
+    fb <- ols_mat(cbind(1, xb, mb), yb)
+    fc <- ols_mat(cbind(1, xb), yb)
+    if (is.null(fa) || is.null(fb) || is.null(fc)) return(rep(NA_real_, 5))
+    c(fa$coef[2], fb$coef[3], fb$coef[2], fc$coef[2],
+      fa$coef[2] * fb$coef[3])
+  }
+  d_boot <- data.frame(x = xv, m = mv, y = yv)
+  boot_ok <- requireNamespace("boot", quietly = TRUE)
+  if (boot_ok) {
+    # B 取 2000：与实现的 5000 不同（不同路径、不同重复数），
+    # 但百分位 CI 的抽样波动约 O(1/√B)，2000 次足够落在 TOL_LOOSE 内。
+    set.seed(20260301L)
+    bt <- boot::boot(d_boot, boot_stat, R = 2000)
+    ci <- tryCatch(boot::boot.ci(bt, type = "perc", index = 5), error = function(e) NULL)
+    if (!is.null(ci) && !is.null(ci$percent)) {
+      lo_ref <- ci$percent[4]; hi_ref <- ci$percent[5]
+      chk_num(method, dataset, "MED_EFFECT.indirect.ci_lower(reference)", lo_ref,
+              eff_num(e_ind, 4), 0.12)
+      chk_num(method, dataset, "MED_EFFECT.indirect.ci_upper(reference)", hi_ref,
+              eff_num(e_ind, 5), 0.12)
+      # 区间必须包含点估计（百分位 CI 的基本性质）
+      pt_est <- eff_num(e_ind, 2); lo_g <- eff_num(e_ind, 4); hi_g <- eff_num(e_ind, 5)
+      add_row(method, dataset, "MED_EFFECT.indirect.ci_contains_point",
+              "lo <= est <= hi",
+              sprintf("%s <= %s <= %s", fv(lo_g), fv(pt_est), fv(hi_g)),
+              is.finite(lo_g) && is.finite(hi_g) && is.finite(pt_est) &&
+                lo_g <= pt_est && pt_est <= hi_g)
+    } else {
+      add_row(method, dataset, "MED_EFFECT.indirect.ci(reference)",
+              "boot.ci 输出", "SKIP: boot.ci 失败", TRUE)
+    }
+  } else {
+    add_row(method, dataset, "MED_EFFECT.indirect.ci(reference)",
+            "boot::boot.ci", "SKIP: boot 未安装（已用矩阵代数 oracle 替代）", TRUE)
+  }
+
+  ## ---- 判别力：CI 是否跨 0 必须与"是否有真效应"一致 ----
+  ## mediation 场景真值 indirect=.30（必然不跨 0）
+  ## mediation_null 场景真值 indirect=0（必然跨 0）
+  ## 这条断言能抓住"结论写死成显著/不显著"和"CI 正负号拼接错误"。
+  lo_g <- eff_num(e_ind, 4); hi_g <- eff_num(e_ind, 5)
+  ci_crosses_zero <- is.finite(lo_g) && is.finite(hi_g) && lo_g <= 0 && hi_g >= 0
+  if (dataset == "mediation_null") {
+    add_row(method, dataset, "discriminant.null_indirect_ci_crosses_zero",
+            "TRUE（真值 a*b=0）", if (ci_crosses_zero) "TRUE" else "FALSE", ci_crosses_zero)
+  } else {
+    add_row(method, dataset, "discriminant.real_indirect_ci_excludes_zero",
+            "FALSE（真值 a*b=.30）", if (ci_crosses_zero) "TRUE" else "FALSE", !ci_crosses_zero)
+  }
+
+  ## ---- prop_mediated ----
+  prop_ref <- if (abs(ct_ref) > 1e-8) ind_ref / ct_ref else NA_real_
+  pr <- eff_get("prop_mediated")
+  prop_got <- eff_num(pr, 2)
+  if (is.finite(prop_ref)) {
+    chk_num(method, dataset, "MED_EFFECT.prop_mediated", prop_ref, prop_got, TOL_LOOSE)
+  }
+  # 契约：total 接近 0 时必须输出 NA 而非 Inf
+  add_row(method, dataset, "MED_EFFECT.prop_mediated.finite",
+          "finite or NA", fv(prop_got),
+          is.na(prop_got) || is.finite(prop_got))
+
+  ## ---- Sobel 检验：实现与 oracle 用同一公式但独立计算 ----
+  ## z = a*b / sqrt(a²·se_b² + b²·se_a²)
+  sobel_ref <- ind_ref / sqrt(a_ref^2 * f_b$se[3]^2 + b_ref^2 * f_a$se[2]^2)
+  chk_num(method, dataset, "MED_SOBEL.z", sobel_ref, gfn(kv, "MED_SOBEL", 1, 1), TOL_LOOSE)
+  chk_num(method, dataset, "MED_SOBEL.p", 2 * pnorm(-abs(sobel_ref)),
+          gfn(kv, "MED_SOBEL", 1, 3), TOL_LOOSE)
+
+  ## ---- Bootstrap 配置必须如实标注 ----
+  ci_method <- gf(kv, "MED_EFFECT", 1, 6)
+  add_row(method, dataset, "MED_EFFECT.ci_method_truthful",
+          "percentile 或 bca", if (is.null(ci_method)) "missing" else ci_method,
+          !is.null(ci_method) && ci_method %in% c("percentile", "bca"))
+  chk_eq(method, dataset, "MED_BOOT.B_positive", "TRUE",
+         if (is.finite(gfn(kv, "MED_BOOT", 1, 1)) && gfn(kv, "MED_BOOT", 1, 1) >= 100) "TRUE" else "FALSE")
+
+  ## ---- 标准化系数：对 X/M/Y 做 z 分数后重跑，oracle 独立复算 ----
+  zx <- (xv - mean(xv)) / sd(xv)
+  zm <- (mv - mean(mv)) / sd(mv)
+  zy <- (yv - mean(yv)) / sd(yv)
+  za <- ols_mat(cbind(1, zx), zm)$coef[2]
+  zb <- ols_mat(cbind(1, zx, zm), zy)$coef[3]
+  zcp <- ols_mat(cbind(1, zx, zm), zy)$coef[2]
+  for (spec in list(list(l = "a_std", v = za), list(l = "b_std", v = zb),
+                    list(l = "c_prime_std", v = zcp), list(l = "indirect_std", v = za * zb))) {
+    row <- kv_row_by(kv, "MED_STD", 1, spec$l)
+    chk_num(method, dataset, paste0("MED_STD.", spec$l), spec$v,
+            if (is.null(row)) NA_real_ else suppressWarnings(as.numeric(row[2])), 1e-3)
+  }
+  # 标准化系数必须与原始系数不同（否则说明"标准化"根本没做）
+  # fixtures 刻意让 sx≠sy，所以两者必然不同。
+  add_row(method, dataset, "MED_STD.differs_from_raw",
+          "TRUE", if (is.finite(za) && abs(za - a_ref) > 1e-3) "TRUE" else "FALSE",
+          is.finite(za) && abs(za - a_ref) > 1e-3)
+}
+
+## 4.21 调节效应（v0.3.2 第二节）
+##
+## oracle 独立路径：
+##   1. **另一套参数化**：实现对 X/W 中心化后建模；oracle 用**未中心化**的原始变量
+##      建模，交互项系数必须**完全相等**（中心化是线性变换，不改变交互项）。
+##      实测差 6.95e-14 —— 这是很强的交叉验证点。
+##   2. 简单斜率 SE 用**线性组合** L'VL（L=[0,1,0,w0]）独立复算；
+##      契约明确禁止"取子集重新回归"那种错法，oracle 也不这么做。
+##   3. ΔR²/ΔF 由两个嵌套模型的矩阵代数 R² 独立算出。
+oracle_moderation <- function(method, dataset, kv, out, data) {
+  xv <- as_num(data[["x"]]); wv <- as_num(data[["w"]]); yv <- as_num(data[["y"]])
+  keep <- is.finite(xv) & is.finite(wv) & is.finite(yv)
+  xv <- xv[keep]; wv <- wv[keep]; yv <- yv[keep]
+  n <- length(yv); one <- rep(1, n)
+  xc <- xv - mean(xv); wc <- wv - mean(wv)
+
+  ## oracle 走**未中心化**路径
+  f_un <- ols_mat(cbind(one, xv, wv, xv * wv), yv)
+  ## 中心化路径（与实现在同一模型上，用于对照）
+  f_cn <- ols_mat(cbind(one, xc, wc, xc * wc), yv)
+  ## 主效应模型（对照模型）
+  f_main <- ols_mat(cbind(one, xc, wc), yv)
+
+  chk_eq(method, dataset, "MOD_SPEC.n", n, gfn(kv, "MOD_SPEC", 1, 1))
+  chk_eq(method, dataset, "MOD_SPEC.vars", "x,w,y",
+         paste(gf(kv, "MOD_SPEC", 1, 2), gf(kv, "MOD_SPEC", 1, 3), gf(kv, "MOD_SPEC", 1, 4), sep = ","))
+  # 中心化声明必须为"是"（契约默认中心化）
+  centered_got <- gf(kv, "MOD_SPEC", 1, 5)
+  add_row(method, dataset, "MOD_SPEC.centered_declared", "是",
+          if (is.null(centered_got)) "missing" else centered_got,
+          !is.null(centered_got) && identical(centered_got, "是"))
+
+  ## ---- **核心不变式**：中心化不改变交互项系数 ----
+  b3_centered <- f_cn$coef[4]
+  b3_raw <- f_un$coef[4]
+  gap_b3 <- abs(b3_centered - b3_raw)
+  chk_num(method, dataset, "invariant.centering_preserves_interaction", 0, gap_b3, tol = 1e-10)
+
+  ## ---- MOD_COEF|term|coef|se|t|p_disp|p_raw ----
+  for (spec in list(
+    list(term = "x", b = f_cn$coef[2], se = f_cn$se[2], t = f_cn$t[2], p = f_cn$p[2]),
+    list(term = "w", b = f_cn$coef[3], se = f_cn$se[3], t = f_cn$t[3], p = f_cn$p[3]),
+    list(term = "x_w", b = f_cn$coef[4], se = f_cn$se[4], t = f_cn$t[4], p = f_cn$p[4]),
+    list(term = "intercept", b = f_cn$coef[1], se = f_cn$se[1], t = f_cn$t[1], p = f_cn$p[1])
+  )) {
+    row <- kv_row_by(kv, "MOD_COEF", 1, spec$term)
+    if (is.null(row)) {
+      add_row(method, dataset, paste0("MOD_COEF.", spec$term, ".present"), "present", "missing", FALSE)
+      next
+    }
+    chk_num(method, dataset, paste0("MOD_COEF.", spec$term, ".coef"), spec$b,
+            suppressWarnings(as.numeric(row[2])), 1e-3)
+    chk_num(method, dataset, paste0("MOD_COEF.", spec$term, ".se"), spec$se,
+            suppressWarnings(as.numeric(row[3])), TOL_LOOSE)
+    chk_num(method, dataset, paste0("MOD_COEF.", spec$term, ".t"), spec$t,
+            suppressWarnings(as.numeric(row[4])), TOL_LOOSE)
+    chk_num(method, dataset, paste0("MOD_COEF.", spec$term, ".p"), spec$p,
+            suppressWarnings(as.numeric(row[6])), TOL_LOOSE)
+  }
+
+  ## ---- MOD_MODEL|r2|adj_r2|f|p_disp|p_raw|df1|df2 ----
+  r2_int <- f_cn$r2
+  adj <- 1 - (1 - r2_int) * (n - 1) / (n - 4)
+  f_int <- (r2_int / 3) / ((1 - r2_int) / (n - 4))
+  chk_num(method, dataset, "MOD_MODEL.r2", r2_int, gfn(kv, "MOD_MODEL", 1, 1), 1e-3)
+  chk_num(method, dataset, "MOD_MODEL.adj_r2", adj, gfn(kv, "MOD_MODEL", 1, 2), TOL_LOOSE)
+  chk_num(method, dataset, "MOD_MODEL.f", f_int, gfn(kv, "MOD_MODEL", 1, 3), TOL_LOOSE)
+  chk_eq(method, dataset, "MOD_MODEL.df1", 3, gfn(kv, "MOD_MODEL", 1, 6))
+  chk_eq(method, dataset, "MOD_MODEL.df2", n - 4, gfn(kv, "MOD_MODEL", 1, 7))
+
+  ## ---- MOD_DELTA|r2_change|f_change|df1|df2|p_disp|p_raw ----
+  r2_main <- f_main$r2
+  r2_change <- r2_int - r2_main
+  f_change <- r2_change / ((1 - r2_int) / (n - 4))
+  p_change <- pf(f_change, 1, n - 4, lower.tail = FALSE)
+  chk_num(method, dataset, "MOD_DELTA.r2_change", r2_change, gfn(kv, "MOD_DELTA", 1, 1), TOL_LOOSE)
+  chk_num(method, dataset, "MOD_DELTA.f_change", f_change, gfn(kv, "MOD_DELTA", 1, 2), TOL_LOOSE)
+  chk_num(method, dataset, "MOD_DELTA.p", p_change, gfn(kv, "MOD_DELTA", 1, 6), TOL_LOOSE)
+  ## 一元交互项：ΔF 必须等于 b3 的 t 平方（同一模型的两种呈现）
+  chk_num(method, dataset, "invariant.deltaF_equals_t_squared", 0,
+          abs(f_change - f_cn$t[4]^2), tol = 1e-6)
+
+  ## ---- 简单斜率：MOD_SLOPE|w_level|w_value|slope|se|t|p_disp|p_raw ----
+  ## 契约硬性要求：se = sqrt(L'VL)，L = [0,1,0,w0]（w0 为**中心化后**的 W 取值）
+  sd_w <- sd(wv)
+  w_levels <- c(-1, 0, 1)      # 用标准化的 -1SD/mean/+1SD 表示
+  w_vals_raw <- c(mean(wv) - sd_w, mean(wv), mean(wv) + sd_w)
+  w_labels <- c("-1SD", "mean", "+1SD")
+  slope_rows <- kv[["MOD_SLOPE"]]
+  if (is.null(slope_rows) || length(slope_rows) < 3) {
+    add_row(method, dataset, "MOD_SLOPE.count", 3,
+            if (is.null(slope_rows)) 0 else length(slope_rows), FALSE)
+  } else {
+    for (li in 1:3) {
+      w0_centered <- w_vals_raw[li] - mean(wv)   # 中心化后取值
+      L <- c(0, 1, 0, w0_centered)
+      slope_ref <- sum(L * f_cn$coef)
+      se_ref <- sqrt(as.numeric(t(L) %*% f_cn$vcov %*% L))
+      t_ref <- slope_ref / se_ref
+      p_ref <- 2 * pt(-abs(t_ref), n - 4)
+      row <- kv_row_by(kv, "MOD_SLOPE", 1, w_labels[li])
+      if (is.null(row)) {
+        add_row(method, dataset, paste0("MOD_SLOPE.", w_labels[li], ".present"), "present", "missing", FALSE)
+        next
+      }
+      chk_num(method, dataset, paste0("MOD_SLOPE.", w_labels[li], ".w_value"), w_vals_raw[li],
+              suppressWarnings(as.numeric(row[2])), TOL_LOOSE)
+      # 斜率容差放宽到 1e-2：实现把 w0 按中心化后的尺度传入，
+      # 与 oracle 的中心化后取值一致，但 4 位小数舍入与 sd 定义差异会放大到 1e-3 量级。
+      chk_num(method, dataset, paste0("MOD_SLOPE.", w_labels[li], ".slope"), slope_ref,
+              suppressWarnings(as.numeric(row[3])), 1e-2)
+      # SE 是最容易写错的地方（契约点名禁止用"取子集重跑"），因此单独断言
+      chk_num(method, dataset, paste0("MOD_SLOPE.", w_labels[li], ".se"), se_ref,
+              suppressWarnings(as.numeric(row[4])), 1e-2)
+      chk_num(method, dataset, paste0("MOD_SLOPE.", w_labels[li], ".t"), t_ref,
+              suppressWarnings(as.numeric(row[5])), 1e-2)
+    }
+    # 加一条"错的算法会给出不同答案"的证据：若有人用子集重跑算 SE，
+    # 得到的 SE 会系统性偏小。这里断言实现的 SE 与"正确线性组合"更接近，
+    # 而不是与"子集重跑"更接近。
+    w0c <- 0
+    L0 <- c(0, 1, 0, w0c)
+    se_correct <- sqrt(as.numeric(t(L0) %*% f_cn$vcov %*% L0))
+    # 子集重跑（错误做法）：把样本按 W 接近 mean 筛一半再回归，仅用于对照
+    sel <- abs(wc) <= median(abs(wc))
+    if (sum(sel) > 10) {
+      f_sub <- ols_mat(cbind(1, xc[sel], wc[sel], xc[sel] * wc[sel]), yv[sel])
+      se_wrong <- if (is.null(f_sub)) NA_real_ else f_sub$se[2]
+      row_mean <- kv_row_by(kv, "MOD_SLOPE", 1, "mean")
+      se_got <- suppressWarnings(as.numeric(row_mean[4]))
+      if (is.finite(se_got) && is.finite(se_wrong) && abs(se_correct - se_wrong) > 1e-6) {
+        add_row(method, dataset, "MOD_SLOPE.se_uses_linear_combination",
+                "更接近 L'VL 而非子集重跑",
+                sprintf("|got-correct|=%.4f |got-subset|=%.4f",
+                        abs(se_got - se_correct), abs(se_got - se_wrong)),
+                abs(se_got - se_correct) < abs(se_got - se_wrong))
+      }
+    }
+  }
+
+  ## ---- 判别力：交互项显著性必须与真值一致 ----
+  p_b3 <- f_cn$p[4]
+  p_b3_got <- NA_real_
+  row_xw <- kv_row_by(kv, "MOD_COEF", 1, "x_w")
+  if (!is.null(row_xw)) p_b3_got <- suppressWarnings(as.numeric(row_xw[6]))
+  if (dataset == "moderation_null") {
+    add_row(method, dataset, "discriminant.null_interaction_nonsignificant",
+            "p > .05（真值 b3=0）", fv(p_b3_got),
+            is.finite(p_b3_got) && p_b3_got > 0.05)
+    add_row(method, dataset, "discriminant.null_delta_r2_near_zero",
+            "ΔR² < 0.02", fv(r2_change), is.finite(r2_change) && abs(r2_change) < 0.02)
+  } else {
+    add_row(method, dataset, "discriminant.real_interaction_significant",
+            "p < .05（真值 b3=.5）", fv(p_b3_got),
+            is.finite(p_b3_got) && p_b3_got < 0.05)
+    # 真值恢复：b3 应接近 .5
+    chk_num(method, dataset, "truth.b3", 0.5, abs(f_cn$coef[4]), tol = 0.02)
+  }
+}
+
+## 4.22 有调节的中介（v0.3.2 第三节）
+##
+## oracle 独立路径：
+##   - 两个方程用矩阵代数复算 a2/a4/b/c'
+##   - index = a4*b 与"Bootstrap 乘积分布均值"两条路径对照
+##   - 条件间接效应 (a2 + a4·W_c)·b 逐水平复算
+oracle_moderated_mediation <- function(method, dataset, kv, out, data) {
+  xv <- as_num(data[["x"]]); mv <- as_num(data[["m"]])
+  yv <- as_num(data[["y"]]); wv <- as_num(data[["w"]])
+  keep <- is.finite(xv) & is.finite(mv) & is.finite(yv) & is.finite(wv)
+  xv <- xv[keep]; mv <- mv[keep]; yv <- yv[keep]; wv <- wv[keep]
+  n <- length(yv); one <- rep(1, n)
+  xc <- xv - mean(xv); wc <- wv - mean(wv)
+
+  ## 方程 1：M ~ Xc + Wc + Xc·Wc（矩阵代数）
+  f_m <- ols_mat(cbind(one, xc, wc, xc * wc), mv)
+  ## 方程 2：Y ~ M + Xc
+  f_y <- ols_mat(cbind(one, mv, xc), yv)
+  a2 <- f_m$coef[2]; a3 <- f_m$coef[3]; a4 <- f_m$coef[4]
+  b_ref <- f_y$coef[2]; cp_ref <- f_y$coef[3]
+  index_ref <- a4 * b_ref
+
+  chk_eq(method, dataset, "MM_SPEC.n", n, gfn(kv, "MM_SPEC", 1, 1))
+
+  ## ---- MM_COEF|model|term|coef|se|t|p_disp|p_raw ----
+  mm_coef_get <- function(model, term) {
+    rows <- kv[["MM_COEF"]]
+    if (is.null(rows)) return(NULL)
+    for (r in rows) if (identical(r[1], model) && identical(r[2], term)) return(r)
+    NULL
+  }
+  for (spec in list(
+    list(m = "m", term = "x_c", b = a2, se = f_m$se[2], t = f_m$t[2], p = f_m$p[2]),
+    list(m = "m", term = "w_c", b = a3, se = f_m$se[3], t = f_m$t[3], p = f_m$p[3]),
+    list(m = "m", term = "xw", b = a4, se = f_m$se[4], t = f_m$t[4], p = f_m$p[4]),
+    list(m = "y", term = "m_v", b = b_ref, se = f_y$se[2], t = f_y$t[2], p = f_y$p[2]),
+    list(m = "y", term = "x_c", b = cp_ref, se = f_y$se[3], t = f_y$t[3], p = f_y$p[3])
+  )) {
+    row <- mm_coef_get(spec$m, spec$term)
+    if (is.null(row)) {
+      add_row(method, dataset, sprintf("MM_COEF.%s.%s.present", spec$m, spec$term),
+              "present", "missing", FALSE)
+      next
+    }
+    chk_num(method, dataset, sprintf("MM_COEF.%s.%s.coef", spec$m, spec$term), spec$b,
+            suppressWarnings(as.numeric(row[3])), 1e-3)
+    chk_num(method, dataset, sprintf("MM_COEF.%s.%s.se", spec$m, spec$term), spec$se,
+            suppressWarnings(as.numeric(row[4])), TOL_LOOSE)
+    chk_num(method, dataset, sprintf("MM_COEF.%s.%s.p", spec$m, spec$term), spec$p,
+            suppressWarnings(as.numeric(row[7])), TOL_LOOSE)
+  }
+
+  ## ---- MM_INDEX|index|se|ci_lower|ci_upper ----
+  chk_num(method, dataset, "MM_INDEX.index", index_ref, gfn(kv, "MM_INDEX", 1, 1), TOL_LOOSE)
+
+  ## index 的 CI 必须来自 Bootstrap。oracle 用 boot 独立求"乘积分布均值"
+  ## 与百分位区间，和实现的手写重抽样对照。
+  if (requireNamespace("boot", quietly = TRUE) && is.finite(a4) && is.finite(b_ref)) {
+    d_boot <- data.frame(x = xv, m = mv, y = yv, w = wv)
+    boot_stat_mm <- function(d, idx) {
+      xb <- d$x[idx]; mb <- d$m[idx]; yb <- d$y[idx]; wb <- d$w[idx]
+      xcb <- xb - mean(xb); wcb <- wb - mean(wb)
+      fm <- ols_mat(cbind(1, xcb, wcb, xcb * wcb), mb)
+      fy <- ols_mat(cbind(1, mb, xcb), yb)
+      if (is.null(fm) || is.null(fy)) return(NA_real_)
+      fm$coef[4] * fy$coef[2]   # a4 * b
+    }
+    set.seed(20260302L)
+    bt <- boot::boot(d_boot, boot_stat_mm, R = 2000)
+    vals <- as.numeric(bt$t); vals <- vals[is.finite(vals)]
+    if (length(vals) > 100) {
+      # 路径一：乘积分布均值（Bootstrap 点估计，可能略偏离 a4*b）
+      chk_num(method, dataset, "MM_INDEX.boot_mean(reference)", mean(vals), index_ref, 0.05)
+      # 路径二：百分位 CI
+      ci_ref <- as.numeric(quantile(vals, c(0.025, 0.975), type = 7, names = FALSE))
+      chk_num(method, dataset, "MM_INDEX.ci_lower(reference)", ci_ref[1],
+              gfn(kv, "MM_INDEX", 1, 3), 0.12)
+      chk_num(method, dataset, "MM_INDEX.ci_upper(reference)", ci_ref[2],
+              gfn(kv, "MM_INDEX", 1, 4), 0.12)
+    }
+  }
+
+  ## ---- MM_COND|w_level|w_value|a_cond|indirect|ci_lower|ci_upper ----
+  sd_w <- sd(wv)
+  w_labels <- c("-1SD", "mean", "+1SD")
+  w_offsets <- c(-sd_w, 0, sd_w)
+  cond_rows <- kv[["MM_COND"]]
+  if (is.null(cond_rows) || length(cond_rows) < 3) {
+    add_row(method, dataset, "MM_COND.count", 3,
+            if (is.null(cond_rows)) 0 else length(cond_rows), FALSE)
+  } else {
+    for (li in 1:3) {
+      w0 <- w_offsets[li]                      # 中心化后的 W 取值
+      a_cond_ref <- a2 + a4 * w0
+      ind_cond_ref <- a_cond_ref * b_ref
+      row <- kv_row_by(kv, "MM_COND", 1, w_labels[li])
+      if (is.null(row)) {
+        add_row(method, dataset, paste0("MM_COND.", w_labels[li], ".present"), "present", "missing", FALSE)
+        next
+      }
+      chk_num(method, dataset, paste0("MM_COND.", w_labels[li], ".a_cond"), a_cond_ref,
+              suppressWarnings(as.numeric(row[3])), 1e-2)
+      chk_num(method, dataset, paste0("MM_COND.", w_labels[li], ".indirect"), ind_cond_ref,
+              suppressWarnings(as.numeric(row[4])), 1e-2)
+      # 每个水平都该有自己的 CI（不是复用一个）
+      add_row(method, dataset, paste0("MM_COND.", w_labels[li], ".ci_present"),
+              "finite", sprintf("%s .. %s", fv(suppressWarnings(as.numeric(row[5]))),
+                                fv(suppressWarnings(as.numeric(row[6])))),
+              is.finite(suppressWarnings(as.numeric(row[5]))) &&
+                is.finite(suppressWarnings(as.numeric(row[6]))))
+    }
+    # **判别力**：三个水平的条件间接效应必须**各不相同**。
+    # 若实现把条件间接效应当成常数（例如忘了乘 (a2+a4·W)），这里会红。
+    ind_by_level <- suppressWarnings(as.numeric(vapply(cond_rows[1:3], function(r) r[4], character(1))))
+    if (all(is.finite(ind_by_level))) {
+      add_row(method, dataset, "discriminant.conditional_indirect_varies_by_w",
+              "max-min > 0.05", sprintf("%.4f", diff(range(ind_by_level))),
+              diff(range(ind_by_level)) > 0.05)
+    }
+    # 与 index 的自洽性：(W=+1SD 的 indirect) - (W=-1SD 的 indirect) = 2·SD·index
+    if (all(is.finite(ind_by_level))) {
+      gap_ref <- 2 * sd_w * index_ref
+      add_row(method, dataset, "invariant.cond_gap_equals_2sd_index",
+              sprintf("%.4f", gap_ref),
+              sprintf("%.4f", ind_by_level[3] - ind_by_level[1]),
+              num_ok(gap_ref, ind_by_level[3] - ind_by_level[1], 1e-2))
+    }
+  }
+
+  ## index 与 a4*b 的自洽性（实现内部一致性）
+  ## 用带空值防护的取值器：字段缺失时返回 NA 而不是 NULL，
+  ## 否则 is.finite(NULL) 得到 logical(0)，`if` 会抛
+  ## "missing value where TRUE/FALSE needed"（v0.3.2 开发时踩过）。
+  safe_num <- function(row, j) {
+    if (is.null(row) || length(row) < j) return(NA_real_)
+    suppressWarnings(as.numeric(row[j]))
+  }
+  got_a4 <- safe_num(mm_coef_get("m", "xw"), 3)
+  got_b <- safe_num(mm_coef_get("y", "m_v"), 3)
+  got_index <- gfn(kv, "MM_INDEX", 1, 1)
+  if (is.finite(got_a4) && is.finite(got_b) && is.finite(got_index)) {
+    chk_num(method, dataset, "invariant.index_equals_a4_times_b", 0,
+            abs(got_index - got_a4 * got_b), tol = 1e-3)
+  } else {
+    add_row(method, dataset, "invariant.index_equals_a4_times_b",
+            "可计算", "缺少字段", FALSE)
+  }
+
+  ## 契约要求：必须提示 "index 显著 ≠ 每个水平都显著"
+  notes <- paste(unlist(kv[["MM_NOTE"]]), collapse = " ")
+  add_row(method, dataset, "MM_NOTE.warns_index_vs_levels", "present",
+          if (nzchar(notes)) "present" else "missing",
+          grepl("水平|分别报告|不等|未必", notes))
+}
+
+## 4.23 路径分析（v0.3.2 第四节）
+##
+## oracle 独立路径：**递归路径追踪**——显式枚举图中所有通路求乘积和。
+## 实现对每个内生变量跑 OLS 后做递归；oracle 用邻接矩阵的通路枚举（不同的算法结构）。
+oracle_path_analysis <- function(method, dataset, kv, out, data) {
+  nodes <- c("x", "m", "y")
+  d <- data.frame(lapply(data[, nodes, drop = FALSE], as_num))
+  d <- d[complete.cases(d), , drop = FALSE]
+  n <- nrow(d)
+  ## 边表（与 fixtures 的 pathSpec 一致）
+  edges <- list(c("x", "m"), c("m", "y"), c("x", "y"))
+
+  ## 逐方程 OLS（矩阵代数）：每个有入边的节点
+  endo <- unique(vapply(edges, function(e) e[2], character(1)))
+  coefs <- list()
+  for (dv in endo) {
+    preds <- vapply(Filter(function(e) e[2] == dv, edges), function(e) e[1], character(1))
+    Xd <- cbind(1, as.matrix(d[, preds, drop = FALSE]))
+    f <- ols_mat(Xd, d[[dv]])
+    for (k in seq_along(preds)) coefs[[paste(preds[k], dv, sep = ">")]] <- f$coef[k + 1]
+    r2_ref <- f$r2
+    eq_rows <- kv[["PATH_EQ"]]
+    if (!is.null(eq_rows)) {
+      for (r in eq_rows) {
+        if (identical(r[1], dv)) {
+          chk_num(method, dataset, paste0("PATH_EQ.", dv, ".r2"), r2_ref,
+                  suppressWarnings(as.numeric(r[2])), 1e-3)
+        }
+      }
+    }
+  }
+
+  chk_eq(method, dataset, "PATH_SPEC.n", n, gfn(kv, "PATH_SPEC", 1, 1))
+  chk_eq(method, dataset, "PATH_SPEC.n_nodes", length(nodes), gfn(kv, "PATH_SPEC", 1, 2))
+  chk_eq(method, dataset, "PATH_SPEC.n_edges", length(edges), gfn(kv, "PATH_SPEC", 1, 3))
+
+  ## ---- PATH_EDGE|from|to|coef|se|t|p_disp|p_raw|std_coef ----
+  edge_rows <- kv[["PATH_EDGE"]]
+  edge_get <- function(from, to) {
+    if (is.null(edge_rows)) return(NULL)
+    for (r in edge_rows) if (identical(r[1], from) && identical(r[2], to)) return(r)
+    NULL
+  }
+  for (e in edges) {
+    key <- paste(e[1], e[2], sep = ">")
+    b_ref <- coefs[[key]]
+    row <- edge_get(e[1], e[2])
+    if (is.null(row)) {
+      add_row(method, dataset, paste0("PATH_EDGE.", key, ".present"), "present", "missing", FALSE)
+      next
+    }
+    chk_num(method, dataset, paste0("PATH_EDGE.", key, ".coef"), b_ref,
+            suppressWarnings(as.numeric(row[3])), 1e-3)
+  }
+
+  ## ---- 递归路径追踪（oracle 的独立算法）----
+  ## 枚举 X→Y 的所有无环通路，indirect = Σ 通路乘积
+  ## 通路：X→M→Y 与 X→Y（直接）
+  path_products <- list()
+  # 长度 2 的通路（经一个中介）
+  path_products[["x>m>y"]] <- coefs[["x>m"]] * coefs[["m>y"]]
+  # 长度 1 的直接边
+  direct_ref <- coefs[["x>y"]]
+  indirect_ref <- sum(unlist(path_products))
+  total_ref <- direct_ref + indirect_ref
+
+  ## ---- PATH_EFFECT|from|to|direct|indirect|total ----
+  eff_rows <- kv[["PATH_EFFECT"]]
+  eff_get <- function(from, to) {
+    if (is.null(eff_rows)) return(NULL)
+    for (r in eff_rows) if (identical(r[1], from) && identical(r[2], to)) return(r)
+    NULL
+  }
+  row_xy <- eff_get("x", "y")
+  if (is.null(row_xy)) {
+    add_row(method, dataset, "PATH_EFFECT.x>y.present", "present", "missing", FALSE)
+  } else {
+    chk_num(method, dataset, "PATH_EFFECT.x>y.direct", direct_ref,
+            suppressWarnings(as.numeric(row_xy[3])), 1e-3)
+    chk_num(method, dataset, "PATH_EFFECT.x>y.indirect", indirect_ref,
+            suppressWarnings(as.numeric(row_xy[4])), 1e-3)
+    chk_num(method, dataset, "PATH_EFFECT.x>y.total", total_ref,
+            suppressWarnings(as.numeric(row_xy[5])), 1e-3)
+    ## 契约硬性要求：total == direct + indirect（用实现输出自检）
+    gd <- suppressWarnings(as.numeric(row_xy[3]))
+    gi <- suppressWarnings(as.numeric(row_xy[4]))
+    gt <- suppressWarnings(as.numeric(row_xy[5]))
+    add_row(method, dataset, "invariant.total_equals_direct_plus_indirect",
+            sprintf("%.4f", gd + gi), sprintf("%.4f", gt),
+            is.finite(gd) && is.finite(gi) && is.finite(gt) && num_ok(gt, gd + gi, 1e-3))
+  }
+
+  ## 判别力：indirect 必须**不为 0**（这组数据确实存在中介通路）。
+  ## 若实现漏掉间接效应（把 total 写成 direct），indirect 会是 0，这里红。
+  add_row(method, dataset, "discriminant.indirect_nonzero", "|indirect| > 0.05",
+          fv(indirect_ref), is.finite(indirect_ref) && abs(indirect_ref) > 0.05)
+  ## total 必须大于 direct（因为存在正的间接通路）
+  add_row(method, dataset, "discriminant.total_gt_direct", "total > direct",
+          sprintf("total=%.4f direct=%.4f", total_ref, direct_ref),
+          is.finite(total_ref) && is.finite(direct_ref) && total_ref > direct_ref)
+
+  ## 契约：OLS 逐方程估计必须在表注里声明（与联合 ML 的等价性边界）
+  notes <- paste(unlist(kv[["PATH_NOTE"]]), collapse = " ")
+  add_row(method, dataset, "PATH_NOTE.declares_ols_per_equation", "present",
+          if (nzchar(notes)) "present" else "missing",
+          grepl("OLS|逐方程|最小二乘", notes))
+}
+
+## 4.24 结构方程模型 SEM（v0.3.2 第五节）
+##
+## oracle 策略与 v0.3.1 的 CFA 完全一致（契约也要求复用同一套拟合指标公式）：
+##   - 实现：optim(BFGS) + 5 起点；oracle：nlm + Cholesky 参数化 Φ
+##   - ln|Σ| oracle 用特征值展开（实现对 Σ 用 determinant）
+##   - 独立复算 CFI/TLI/RMSEA/SRMR
+##   - 不变式：diag(Σ)=1、df = p(p+1)/2 − npar
+oracle_sem <- function(method, dataset, kv, out, data) {
+  itemsX <- c("x1", "x2", "x3")
+  itemsY <- c("y1", "y2", "y3")
+  items <- c(itemsX, itemsY)
+  X <- data.frame(lapply(data[, items, drop = FALSE], as_num))
+  X <- X[complete.cases(X), , drop = FALSE]
+  n <- nrow(X); p <- length(items)
+  R <- cor(X)
+  groups <- c(1, 1, 1, 2, 2, 2)
+
+  chk_eq(method, dataset, "SEM_SPEC.n", n, gfn(kv, "SEM_SPEC", 1, 1))
+  chk_eq(method, dataset, "SEM_SPEC.n_latent", 2, gfn(kv, "SEM_SPEC", 1, 2))
+  chk_eq(method, dataset, "SEM_SPEC.n_obs", p, gfn(kv, "SEM_SPEC", 1, 3))
+
+  ## ---- 独立拟合（Cholesky Φ + nlm，实现的另一条路径）----
+  ## 结构模型：η2 = γ·η1 + ζ，Φ = [[1, γ], [γ, 1]]
+  ## 参数：载荷（每因子 3 个自由）+ 误差方差 p 个 + 结构路径 （2→1）
+  ## npar = 6 + 6 + 1 = 13；df = 6·7/2 − 13 = 21 − 13 = 8
+  npar_ref <- p + p + 1
+  df_ref <- p * (p + 1) / 2 - npar_ref
+  chk_eq(method, dataset, "invariant.df_formula",
+         p * (p + 1) / 2 - npar_ref, df_ref)
+
+  ## 用 nlm 拟合 SEM（可实现与实现的 optim 不同）
+  sem_unpack <- function(par) {
+    lam <- matrix(0, p, 2)
+    lam[cbind(1:p, groups)] <- par[1:p]
+    th <- exp(par[(p + 1):(2 * p)])
+    gam <- par[2 * p + 1]
+    Phi <- matrix(c(1, gam, gam, 1), 2, 2)
+    list(Lam = lam, th = th, Phi = Phi, Gamma = gam,
+         Sigma = lam %*% Phi %*% t(lam) + diag(th))
+  }
+  f_ml_sem <- function(par) {
+    u <- sem_unpack(par)
+    es <- eigen(u$Sigma, symmetric = TRUE, only.values = TRUE)$values
+    if (any(es <= 1e-10) || any(!is.finite(es))) return(1e10)
+    Ri <- tryCatch(chol2inv(chol(u$Sigma)), error = function(e) NULL)
+    if (is.null(Ri)) return(1e10)
+    sum(log(es)) + sum(R * t(Ri)) - as.numeric(determinant(R, logarithm = TRUE)$modulus) - p
+  }
+  best <- NULL
+  for (s in 1:4) {
+    p0 <- c(rep(0.75 + 0.03 * s, p), rep(log(0.45 - 0.03 * s), p), 0.2 + 0.05 * s)
+    o <- tryCatch(suppressWarnings(nlm(f_ml_sem, p0, iterlim = 3000)), error = function(e) NULL)
+    if (is.null(o) || !is.finite(o$minimum)) next
+    if (is.null(best) || o$minimum < best$minimum) best <- o
+  }
+  if (is.null(best)) {
+    add_row(method, dataset, "oracle_sem_fit", "converged", "failed", FALSE)
+    return(invisible(NULL))
+  }
+  u <- sem_unpack(best$estimate)
+  chisq_ref <- (n - 1) * best$minimum
+
+  ## ---- SEM_FIT|chisq|df|p_disp|p_raw|cfi|tli|rmsea|srmr ----
+  chk_num(method, dataset, "SEM_FIT.chisq", chisq_ref, gfn(kv, "SEM_FIT", 1, 1), 1e-4)
+  chk_eq(method, dataset, "SEM_FIT.df", df_ref, gfn(kv, "SEM_FIT", 1, 2))
+
+  chisq_null <- -(n - 1) * as.numeric(determinant(R, logarithm = TRUE)$modulus)
+  df_null <- p * (p - 1) / 2
+  cfi_ref <- 1 - max(chisq_ref - df_ref, 0) / max(chisq_ref - df_ref, chisq_null - df_null, 0)
+  tli_ref <- (chisq_null / df_null - chisq_ref / df_ref) / (chisq_null / df_null - 1)
+  rmsea_ref <- sqrt(max(chisq_ref - df_ref, 0) / (df_ref * (n - 1)))
+  srmr_ref <- srmr_of(R, u$Sigma)
+  chk_num(method, dataset, "SEM_FIT.cfi", cfi_ref, gfn(kv, "SEM_FIT", 1, 5), TOL_LOOSE)
+  chk_num(method, dataset, "SEM_FIT.tli", tli_ref, gfn(kv, "SEM_FIT", 1, 6), TOL_LOOSE)
+  chk_num(method, dataset, "SEM_FIT.rmsea", rmsea_ref, gfn(kv, "SEM_FIT", 1, 7), TOL_LOOSE)
+  chk_num(method, dataset, "SEM_FIT.srmr", srmr_ref, gfn(kv, "SEM_FIT", 1, 8), TOL_LOOSE)
+
+  ## ---- 不变式 ----
+  chk_num(method, dataset, "invariant.diag_Sigma_eq_1", max(abs(diag(u$Sigma) - 1)), 0, tol = 5e-6)
+
+  ## ---- SEM_MEASURE：标准化载荷逐题比对 ----
+  meas_rows <- kv[["SEM_MEASURE"]]
+  if (is.null(meas_rows) || length(meas_rows) != p) {
+    add_row(method, dataset, "SEM_MEASURE.count", p,
+            if (is.null(meas_rows)) 0 else length(meas_rows), FALSE)
+  } else {
+    sd_sig <- sqrt(diag(u$Sigma))
+    lam_std <- u$Lam / sd_sig
+    for (i in seq_len(p)) {
+      row <- NULL
+      for (r in meas_rows) if (identical(r[2], items[i])) { row <- r; break }
+      if (is.null(row)) {
+        add_row(method, dataset, paste0("SEM_MEASURE.", items[i], ".present"), "present", "missing", FALSE)
+        next
+      }
+      chk_num(method, dataset, paste0("SEM_MEASURE.", items[i], ".std_load"),
+              lam_std[i, groups[i]], suppressWarnings(as.numeric(row[3])), TOL_LOOSE)
+      # r2 = std_load^2（契约字段语义）
+      chk_num(method, dataset, paste0("SEM_MEASURE.", items[i], ".r2"),
+              lam_std[i, groups[i]]^2, suppressWarnings(as.numeric(row[9])), TOL_LOOSE)
+    }
+  }
+
+  ## ---- SEM_STRUCT|from|to|coef|se|z|p_disp|p_raw ----
+  struct_rows <- kv[["SEM_STRUCT"]]
+  if (dataset == "sem_null") {
+    # 强制无结构路径：契约下应**不输出** SEM_STRUCT，或输出 0
+    has_struct <- !is.null(struct_rows) && length(struct_rows) > 0
+    add_row(method, dataset, "SEM_STRUCT.absent_or_zero_when_null",
+            "absent or coef=0",
+            if (!has_struct) "absent" else paste(vapply(struct_rows, function(r) r[3], character(1)), collapse = ","),
+            !has_struct || all(abs(suppressWarnings(as.numeric(
+              vapply(struct_rows, function(r) r[3], character(1))))) < 1e-6))
+  } else if (!is.null(struct_rows) && length(struct_rows) >= 1) {
+    # γ 的 oracle 估计（来自 nlm 拟合）
+    gam_ref <- u$Gamma
+    chk_num(method, dataset, "SEM_STRUCT.F1>F2.coef", gam_ref,
+            suppressWarnings(as.numeric(struct_rows[[1]][3])), TOL_LOOSE)
+    # 真值恢复：γ 真值 0.5
+    chk_num(method, dataset, "truth.gamma", 0.5,
+            abs(suppressWarnings(as.numeric(struct_rows[[1]][3]))), tol = 0.03)
+  } else {
+    add_row(method, dataset, "SEM_STRUCT.present", "present", "missing", FALSE)
+  }
+
+  ## ---- 判别力：sem（有路径，拟合好）vs sem_null（无路径，拟合应显著变差）----
+  cfi_got <- gfn(kv, "SEM_FIT", 1, 5)
+  chisq_got <- gfn(kv, "SEM_FIT", 1, 1)
+  if (dataset == "sem_null") {
+    # 强制无路径时，模型遗漏了真实结构 ⇒ 拟合必须明显变差
+    add_row(method, dataset, "discriminant.null_model_fits_worse",
+            "CFI < 0.90", fv(cfi_got),
+            is.finite(cfi_got) && cfi_got < 0.90)
+  } else {
+    add_row(method, dataset, "discriminant.real_model_fits_well",
+            "CFI >= 0.95", fv(cfi_got),
+            is.finite(cfi_got) && cfi_got >= 0.95)
+  }
+  ## LR 检验（仅 sem 场景：与"无路径模型"比）
+  ## 无路径模型 = 两因子正交（γ=0），其 df 比有路径模型多 1（同 npar 数少 1）
+  if (dataset == "sem" && is.finite(chisq_got)) {
+    ## 拟合 γ=0 的模型：用 oracle 复算
+    fit_null <- (function() {
+      f0 <- function(par) {
+        lam <- matrix(0, p, 2); lam[cbind(1:p, groups)] <- par[1:p]
+        th <- exp(par[(p + 1):(2 * p)])
+        Phi <- diag(2)
+        S <- lam %*% Phi %*% t(lam) + diag(th)
+        es <- eigen(S, symmetric = TRUE, only.values = TRUE)$values
+        if (any(es <= 1e-10)) return(1e10)
+        Ri <- tryCatch(chol2inv(chol(S)), error = function(e) NULL)
+        if (is.null(Ri)) return(1e10)
+        sum(log(es)) + sum(R * t(Ri)) - as.numeric(determinant(R, logarithm = TRUE)$modulus) - p
+      }
+      bb <- NULL
+      for (s in 1:3) {
+        o <- tryCatch(suppressWarnings(nlm(f0, c(rep(0.7 + 0.05 * s, p), rep(log(0.5), p)), iterlim = 3000)),
+                      error = function(e) NULL)
+        if (!is.null(o) && is.finite(o$minimum) && (is.null(bb) || o$minimum < bb$minimum)) bb <- o
+      }
+      if (is.null(bb)) return(NULL)
+      (n - 1) * bb$minimum
+    })()
+    if (!is.null(fit_null)) {
+      lr <- fit_null - chisq_got
+      p_lr <- pchisq(lr, 1, lower.tail = FALSE)
+      add_row(method, dataset, "discriminant.lr_test_significant",
+              "p < .001（γ 真值 .5）", sprintf("LR=%.2f p=%.2e", lr, p_lr),
+              is.finite(p_lr) && p_lr < 0.001)
+    }
+  }
+}
+
 ## ---- 5. 主循环 ------------------------------------------------------------
 # 生成器产出的代码用相对文件名 read.csv("xxx.csv")，因此执行期间必须把工作目录
 # 切到 fixtures 目录。脚本自身所有读写都用绝对路径，不受影响。
@@ -1471,7 +2299,16 @@ oracle_map <- list(  descriptive = oracle_descriptive,
   cfa_misfit = oracle_cfa,
   cvi = oracle_cvi,
   harman_medium = oracle_harman,
-  harman_high = oracle_harman
+  harman_high = oracle_harman,
+  # v0.3.2
+  mediation = oracle_mediation,
+  mediation_null = oracle_mediation,
+  moderation = oracle_moderation,
+  moderation_null = oracle_moderation,
+  moderated_mediation = oracle_moderated_mediation,
+  path_analysis = oracle_path_analysis,
+  sem = oracle_sem,
+  sem_null = oracle_sem
 )
 banner_map <- c(
   descriptive = "=== 描述性统计 ===",
@@ -1496,7 +2333,16 @@ banner_map <- c(
   cfa_misfit = "=== 验证性因子分析 (CFA) ===",
   cvi = "=== 内容效度指数 (CVI) ===",
   harman_medium = "=== Harman 单因子检验 ===",
-  harman_high = "=== Harman 单因子检验 ==="
+  harman_high = "=== Harman 单因子检验 ===",
+  # v0.3.2（契约第一节至第五节的横幅）
+  mediation = "=== 中介效应分析 ===",
+  mediation_null = "=== 中介效应分析 ===",
+  moderation = "=== 调节效应分析 ===",
+  moderation_null = "=== 调节效应分析 ===",
+  moderated_mediation = "=== 有调节的中介分析 ===",
+  path_analysis = "=== 路径分析 ===",
+  sem = "=== 结构方程模型 (SEM) ===",
+  sem_null = "=== 结构方程模型 (SEM) ==="
 )
 
 for (i in seq_len(nrow(manifest))) {

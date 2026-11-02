@@ -521,5 +521,13 @@ export const METHOD_PLOT_MAP: Record<string, { type: string; label: string }[]> 
   normality: [{ type: 'histogram', label: '直方图' }, { type: 'density', label: '核密度图' }],
   nonparametric: [{ type: 'boxplot', label: '分组箱线图' }],
   frequency: [{ type: 'bar', label: '频数柱状图' }],
-  summary_by: [{ type: 'mean_bar', label: '均值柱状图' }, { type: 'boxplot', label: '箱线图' }]
+  summary_by: [{ type: 'mean_bar', label: '均值柱状图' }, { type: 'boxplot', label: '箱线图' }],
+  // v0.3.2 因果链五方法：全部复用既有图表类型，不新增 generatePlotCode 分支。
+  // 这些方法真正的"路径图"需要专门的节点-边绘制，generatePlotCode 目前没有实现，
+  // 所以这里只给**能正确画出来的**通用图：折线看趋势、散点看两两关系、条目均值看测量质量。
+  mediation: [{ type: 'line', label: '折线图' }, { type: 'scatter', label: '散点图' }],
+  moderation: [{ type: 'scatter', label: '散点图' }, { type: 'line', label: '折线图' }],
+  moderated_mediation: [{ type: 'line', label: '折线图' }, { type: 'scatter', label: '散点图' }],
+  path_analysis: [{ type: 'line', label: '折线图' }, { type: 'item_mean', label: '条目均值图' }],
+  sem: [{ type: 'item_mean', label: '条目均值图' }, { type: 'line', label: '折线图' }]
 }

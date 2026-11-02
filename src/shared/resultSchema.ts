@@ -484,7 +484,229 @@ export interface HarmanResult extends ResultBase {
 }
 
 /* ═══════════════════════════════════════════════════════════════
- * 四、联合类型与类型守卫
+ * 四、因果链（v0.3.2 新增）
+ *
+ * 五个方法的风险点与 v0.2.x 的四次事故同构：一批量纲各异的 4 位小数
+ * （回归系数、CI 端点、R²、ΔR²、Bootstrap 分位数）并排躺在同一条 `TAG|...` 行里，
+ * 任何一个 `|` 字段错位都会得到一个"看起来完全合法"的数字：
+ *   - 中介的 indirect / direct / total 都是回归量级的系数，错位后
+ *     `c = c′ + a·b` 这条恒等式仍然"差不多成立"，不会被任何范围检查拦下；
+ *   - 有调节的中介的 index（a4·b）与条件间接效应（(a2+a4·W)·b）同为小数量级，
+ *     错位后正负号依旧合理；
+ *   - SEM 的 CFI 与 TLI 都是 0.9x，互换后"拟合良好"依然成立（只是报告了错的指标）；
+ *   - 路径分析的 total 与 direct 只差一个 indirect，取错后差异小到肉眼不可见。
+ * 此外还有一条 v0.3.1 留下的教训：**只写单方向的透传断言会漏掉半吊子重复实现**，
+ * 所以这批类型的字段一律只作映射，判定口径（显著与否、是否达标）留在 R 端。
+ * 字段名严格对着 V032_CONTRACT.md 的行格式，一个下标都不留。
+ * ═══════════════════════════════════════════════════════════════ */
+
+/** 中介效应：`M = i1 + aX`；`Y = i2 + c′X + bM`；`c = c′ + a·b` */
+export interface MediationResult extends ResultBase {
+  kind: 'mediation'
+  n: number
+  variables: { x: string; m: string; y: string }
+  /** 逐条路径（MED_PATH）；`c_prime` 为控制 M 后的 X → Y，`c_total` 为简单回归的 X → Y */
+  paths: Array<{
+    path: 'a' | 'b' | 'c_prime' | 'c_total'
+    coef: number
+    se: number | null
+    t: number | null
+    p: PValue
+  }>
+  /** 效应分解（MED_EFFECT）；indirect = a·b，direct = c′，total = c，prop_mediated = indirect/total */
+  effects: Array<{
+    effect: 'indirect' | 'direct' | 'total' | 'prop_mediated'
+    value: number | null
+    se: number | null
+    /** Bootstrap 分位数下限（主推断，不是正态近似） */
+    ci_lower: number | null
+    ci_upper: number | null
+    /** 实际使用的方法：percentile 或 bca；不得标 bca 却给 percentile */
+    ci_method: string
+  }>
+  /** Sobel 检验（正态近似，仅作对照） */
+  sobel: { z: number | null; p: PValue } | null
+  /** Bootstrap 配置（MED_BOOT）；`b` 为重复次数 B */
+  bootstrap: { b: number | null; seed: number | null; ci_level: number | null; method: string } | null
+  /** 标准化系数（MED_STD） */
+  std_paths: Array<{
+    path: 'a_std' | 'b_std' | 'c_prime_std' | 'indirect_std'
+    std_coef: number | null
+  }>
+  notes: string[]
+  diagnostics: Diagnostic[]
+  conclusion?: string
+}
+
+/** 调节效应：`Y = b0 + b1·X + b2·W + b3·(X·W)`，默认对 X / W 中心化 */
+export interface ModerationResult extends ResultBase {
+  kind: 'moderation'
+  n: number
+  variables: { x: string; w: string; y: string }
+  /** MOD_SPEC.centered 的透传值；null 表示 R 端未声明 */
+  centered: boolean | null
+  /** 系数表（MOD_COEF）；x_w 即交互项 b3，必须与 delta 的显著性一致 */
+  coefficients: Array<{
+    term: 'x' | 'w' | 'x_w' | 'intercept'
+    coef: number
+    se: number | null
+    t: number | null
+    p: PValue
+  }>
+  /** 含交互项模型的整体拟合（MOD_MODEL） */
+  model: {
+    r2: number | null
+    adj_r2: number | null
+    f: number | null
+    p: PValue
+    df1: number | null
+    df2: number | null
+  }
+  /** 相对「仅主效应模型 Y ~ X + W」的 ΔR²/ΔF（MOD_DELTA） */
+  delta: {
+    r2_change: number | null
+    f_change: number | null
+    df1: number | null
+    df2: number | null
+    p: PValue
+  }
+  /** 简单斜率（MOD_SLOPE）；slope = b1 + b3·w0，w_level 为 -1SD / mean / +1SD */
+  simple_slopes: Array<{
+    w_level: string
+    w_value: number | null
+    slope: number
+    se: number | null
+    t: number | null
+    p: PValue
+  }>
+  /** Johnson-Neyman 区间（可选；失败不中断） */
+  johnson_neyman: Array<{ region: string; lower: number | null; upper: number | null }>
+  notes: string[]
+  diagnostics: Diagnostic[]
+  conclusion?: string
+}
+
+/** 有调节的中介：W 调节 X → M（前半段）；条件间接效应 = (a2 + a4·W)·b */
+export interface ModeratedMediationResult extends ResultBase {
+  kind: 'moderated_mediation'
+  n: number
+  variables: { x: string; m: string; y: string; w: string }
+  /** 两个回归方程的系数（MM_COEF）；model 为 `m`（X→M）或 `y`（结果方程） */
+  coefficients: Array<{
+    model: 'm' | 'y'
+    term: string
+    coef: number
+    se: number | null
+    t: number | null
+    p: PValue
+  }>
+  /** index of moderated mediation = a4·b（MM_INDEX），CI 必须来自 Bootstrap */
+  index: {
+    index: number | null
+    se: number | null
+    ci_lower: number | null
+    ci_upper: number | null
+  }
+  /** 条件间接效应（MM_COND），W 取 mean−1SD / mean / mean+1SD 三个水平 */
+  conditional: Array<{
+    w_level: string
+    w_value: number | null
+    a_cond: number | null
+    indirect: number | null
+    ci_lower: number | null
+    ci_upper: number | null
+  }>
+  /** Bootstrap 配置（MM_BOOT） */
+  bootstrap: { b: number | null; seed: number | null; ci_level: number | null; method: string } | null
+  notes: string[]
+  diagnostics: Diagnostic[]
+  conclusion?: string
+}
+
+/** 路径分析：观测变量、路径图给定；首版 OLS 逐方程估计（非 ML-SEM） */
+export interface PathAnalysisResult extends ResultBase {
+  kind: 'path_analysis'
+  n: number
+  nodes: string[]
+  n_edges: number
+  /** 逐条边（PATH_EDGE） */
+  edges: Array<{
+    from: string
+    to: string
+    coef: number
+    se: number | null
+    t: number | null
+    p: PValue
+    std_coef: number | null
+  }>
+  /** 逐方程 OLS 拟合（PATH_EQ） */
+  equations: Array<{
+    dv: string
+    r2: number | null
+    adj_r2: number | null
+    f: number | null
+    p: PValue
+  }>
+  /** 效应分解（PATH_EFFECT）；必须满足 total = direct + indirect */
+  effects: Array<{
+    from: string
+    to: string
+    direct: number | null
+    indirect: number | null
+    total: number | null
+  }>
+  notes: string[]
+  diagnostics: Diagnostic[]
+  conclusion?: string
+}
+
+/** 结构方程模型：测量模型 + 结构模型，ML 拟合，与 CFA 同一套指标公式 */
+export interface SemResult extends ResultBase {
+  kind: 'sem'
+  n: number
+  n_latent: number
+  n_obs: number
+  /** 测量模型（SEM_MEASURE）；unstd_load 为原始尺度载荷（marker 指标固定为 1） */
+  measure: Array<{
+    latent: string
+    indicator: string
+    std_load: number | null
+    unstd_load: number | null
+    se: number | null
+    z: number | null
+    p: PValue
+    /** 指标 R² */
+    r2: number | null
+  }>
+  /** 结构路径（SEM_STRUCT），潜变量之间 */
+  structure: Array<{
+    from: string
+    to: string
+    coef: number
+    se: number | null
+    z: number | null
+    p: PValue
+  }>
+  /** 内生潜变量 R²（SEM_LATENT） */
+  latent_r2: Array<{ latent: string; r2: number | null }>
+  /** 拟合指标（SEM_FIT），公式与 CFA 完全一致 */
+  fit: {
+    chisq: number | null
+    /** df = p(p+1)/2 − npar；df < 0 时模型不可识别（R 端已 stop） */
+    df: number | null
+    p: PValue
+    cfi: number | null
+    tli: number | null
+    rmsea: number | null
+    srmr: number | null
+  }
+  notes: string[]
+  diagnostics: Diagnostic[]
+  conclusion?: string
+}
+
+/* ═══════════════════════════════════════════════════════════════
+ * 五、联合类型与类型守卫
  * ═══════════════════════════════════════════════════════════════ */
 
 export type StructuredResult =
@@ -505,6 +727,11 @@ export type StructuredResult =
   | CfaResult
   | CviResult
   | HarmanResult
+  | MediationResult
+  | ModerationResult
+  | ModeratedMediationResult
+  | PathAnalysisResult
+  | SemResult
 
 /** kind → 类型 的映射，供类型守卫与穷尽性检查使用 */
 export interface ResultKindMap {
@@ -525,6 +752,11 @@ export interface ResultKindMap {
   cfa: CfaResult
   cvi: CviResult
   harman: HarmanResult
+  mediation: MediationResult
+  moderation: ModerationResult
+  moderated_mediation: ModeratedMediationResult
+  path_analysis: PathAnalysisResult
+  sem: SemResult
 }
 
 export type ResultKind = keyof ResultKindMap
@@ -547,7 +779,12 @@ export const RESULT_KINDS = [
   'efa',
   'cfa',
   'cvi',
-  'harman'
+  'harman',
+  'mediation',
+  'moderation',
+  'moderated_mediation',
+  'path_analysis',
+  'sem'
 ] as const satisfies readonly ResultKind[]
 
 /** 协议版本；升级字段含义时递增，解析器据此走兼容分支 */

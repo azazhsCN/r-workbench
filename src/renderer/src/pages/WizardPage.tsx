@@ -43,7 +43,54 @@ const FALLBACK_LABELS: Record<string, { name: string; desc: string; category: st
   normality: { name: 'Normality test', desc: 'Shapiro-Wilk test for normality', category: 'Basic' },
   nonparametric: { name: 'Nonparametric test', desc: 'Mann-Whitney U when normality fails', category: 'Difference tests' },
   frequency: { name: 'Frequency', desc: 'Counts and percentages of categories', category: 'Basic' },
-  summary_by: { name: 'Summary by group', desc: 'Group-wise means and SDs', category: 'Basic' }
+  summary_by: { name: 'Summary by group', desc: 'Group-wise means and SDs', category: 'Basic' },
+  // v0.3.2 因果链五方法
+  mediation: { name: 'Mediation analysis', desc: 'Indirect effect of X on Y through M with bootstrap percentile CI', category: 'Causal' },
+  moderation: { name: 'Moderation analysis', desc: 'Interaction of X and W on Y, ΔR² and simple slopes', category: 'Causal' },
+  moderated_mediation: { name: 'Moderated mediation', desc: 'W moderates the X→M path: index of moderated mediation', category: 'Causal' },
+  path_analysis: { name: 'Path analysis', desc: 'Equation-by-equation OLS with direct / indirect / total effects', category: 'Causal' },
+  sem: { name: 'Structural equation modelling', desc: 'Joint ML estimation of measurement and structural models', category: 'Causal' }
+}
+
+/**
+ * 解析 SEM 的「因子结构」文本 → `Record<因子名, 指标[]>`。
+ *
+ * 输入形如 `F1: i1, i2; F2: i3, i4`：
+ *   - 顶层用分号分隔因子，`:` 或中文全角 `：` 分隔因子名与指标；
+ *   - 指标之间用半角或全角逗号分隔，两端空白剔除、空项丢弃；
+ *   - **同名因子合并**而不是覆盖：`F1: i1, i2; F1: i3` 得到 `F1: [i1, i2, i3]`。
+ *     早期版本直接赋值，第二块会静默吃掉第一块（用户少填的指标不会报错，
+ *     SEM 只是拟合了一个指标更少的模型）——正是 v0.3.2 要消灭的静默失败。
+ *
+ * 任何解析不出来的片段都**直接丢弃**（返回空对象的一部分），而不是猜一个默认因子名：
+ * 猜错的因子结构会静默产出一份看起来正常的 SEM 结果。
+ * 完全解析不出因子时由 `canProceed()` 拦下，用户看到的是「还不能开始」。
+ */
+function parseItemsByFactor(input: string): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  for (const block of input.split(/[;；]/)) {
+    const seg = block.trim()
+    if (!seg) continue
+    const idx = seg.search(/[:：]/)
+    // idx <= 0 表示没有冒号，或因子名为空（`": i1, i2"`）
+    if (idx <= 0) continue
+    const factor = seg.slice(0, idx).trim()
+    const items = seg
+      .slice(idx + 1)
+      .split(/[,，]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (!factor || items.length === 0) continue
+    // 同名因子合并、指标去重（保留首次出现的顺序）。
+    // 块内重复（`F1: i1, i1, i2`）与跨块重复（`F1: i1, i2; F1: i3`）都要处理：
+    // 重复指标会让 R 端的测量模型矩阵出现重复列，拟合失败或载荷错位。
+    const merged = out[factor] ?? []
+    for (const item of items) {
+      if (!merged.includes(item)) merged.push(item)
+    }
+    out[factor] = merged
+  }
+  return out
 }
 
 export default function WizardPage() {
@@ -60,6 +107,17 @@ export default function WizardPage() {
   const [correlationMethod, setCorrelationMethod] = useState<'pearson' | 'spearman'>('pearson')
   /** CFA 的因子数（v0.3.1：auto = 由 EFA 特征值 > 1 自动判定；'1'..'4' 为强制指定） */
   const [cfaFactors, setCfaFactors] = useState<string>('auto')
+  /**
+   * 具名变量角色 → 变量名（v0.3.2）。
+   *
+   * 键是 `METHODS[].roles[].id`（'x' / 'm' / 'y' / 'w'），值是列名。
+   * **这是 v0.3.2 的核心改造**：中介/调节类方法里变量含义由角色决定，不能靠位置。
+   * `M = aX + e ; Y = c'X + bM + e` 中交换 X 与 M 会得到完全不同的模型，
+   * 且错了不会报错——只会静默输出一个含义相反的结论。
+   */
+  const [roleVars, setRoleVars] = useState<Record<string, string>>({})
+  /** `textInputs` 的文本参数（路径分析的路径列表、SEM 的因子结构与结构路径） */
+  const [textValues, setTextValues] = useState<Record<string, string>>({})
   const [, setIsExecuting] = useState(false) // S8: 无 getter，步骤切换已覆盖加载状态
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [interpretation, setInterpretation] = useState<string>('')
@@ -70,6 +128,8 @@ export default function WizardPage() {
     setSelectedMethod(null)
     setDepVars([])
     setGroupVar('')
+    setRoleVars({})
+    setTextValues({})
     setResult(null)
     setInterpretation('')
   }, [])
@@ -78,6 +138,8 @@ export default function WizardPage() {
     setSelectedMethod(method)
     setDepVars([])
     setGroupVar('')
+    setRoleVars({})
+    setTextValues({})
     setStep('configure')
   }
 
@@ -87,10 +149,60 @@ export default function WizardPage() {
     )
   }
 
+  /** 具名角色选择：同一角色重复点同一变量 = 取消该角色（不做「已选则忽略」的静默行为） */
+  const setRoleVar = (roleId: string, varName: string) => {
+    setRoleVars((prev) => {
+      const next = { ...prev }
+      if (next[roleId] === varName) delete next[roleId]
+      else next[roleId] = varName
+      return next
+    })
+  }
+
+  const setTextValue = (id: string, value: string) => {
+    setTextValues((prev) => ({ ...prev, [id]: value }))
+  }
+
+  /**
+   * 角色 id → 该角色选中的变量名；未选返回空串。
+   *
+   * 只对声明了 `roles` 的方法有意义。未声明的方法不会调用它
+   * （进入配置页时 `roleVars` 已清空，两套语义不会混用）。
+   */
+  const roleValue = (roleId: string): string => roleVars[roleId] ?? ''
+
+  /**
+   * 能否进入「开始分析」。
+   *
+   * 三条互斥的变量口径（v0.3.2 起）：
+   *   1. 声明 `roles` → 每个角色都必须选中（角色数即变量数，minVars/maxVars 不参与）；
+   *   2. 否则照旧按 `depVars.length >= minVars` + `needsGroup`；
+   *   3. 最后统一校验必填的 `textInputs` 非空。
+   *
+   * 第 1 条是硬约束：**不允许**用"已选够 3 个变量"来放行中介分析，
+   * 那正是"看起来正常、含义相反"的静默错误来源。
+   */
   const canProceed = (): boolean => {
     if (!selectedMethod) return false
-    if (depVars.length < selectedMethod.minVars) return false
-    if (selectedMethod.needsGroup && !groupVar) return false
+    if (selectedMethod.roles && selectedMethod.roles.length > 0) {
+      const allRolesFilled = selectedMethod.roles.every((r) => Boolean(roleValue(r.id)))
+      if (!allRolesFilled) return false
+    } else {
+      if (depVars.length < selectedMethod.minVars) return false
+      if (selectedMethod.needsGroup && !groupVar) return false
+    }
+    // 必填 textInputs：只校验"非空"，不校验格式——格式错误由 R 端给出可操作报错，
+    // 在这里用正则猜一遍只会把合法输入（全角符号、多余空格）挡在外面。
+    for (const ti of selectedMethod.textInputs ?? []) {
+      if (!textValues[ti.id]?.trim()) return false
+    }
+    // 例外：SEM 的因子结构必须**至少解析出一个因子**才放行。
+    // 只判"非空"不够——用户填了 `F1`（漏冒号）时文本非空但解析结果为空对象，
+    // 那会生成一份测量模型为空的 R 代码。这里宁可先不许开始。
+    if (selectedMethod.id === 'sem') {
+      const parsed = parseItemsByFactor(textValues['itemsByFactor'] ?? '')
+      if (Object.keys(parsed).length === 0) return false
+    }
     return true
   }
 
@@ -126,7 +238,14 @@ export default function WizardPage() {
       normality: () => RService.normalityTestCode(depVars, dataFile),
       nonparametric: () => RService.nonparametricCode(depVars[0], groupVar, dataFile),
       frequency: () => RService.frequencyCode(depVars, dataFile),
-      summary_by: () => RService.summaryByCode(groupVar, depVars[0], dataFile)
+      summary_by: () => RService.summaryByCode(groupVar, depVars[0], dataFile),
+      // v0.3.2 因果链：变量按**角色**取值（roleVars['x'] 等），不再靠 depVars 的位置。
+      // 下面五行必须保持单行 —— method-registry.test.ts 用正则逐行静态解析这张表。
+      mediation: () => RService.mediationCode(roleValue('x'), roleValue('m'), roleValue('y'), dataFile),
+      moderation: () => RService.moderationCode(roleValue('x'), roleValue('w'), roleValue('y'), dataFile),
+      moderated_mediation: () => RService.moderatedMediationCode(roleValue('x'), roleValue('m'), roleValue('y'), roleValue('w'), dataFile),
+      path_analysis: () => RService.pathAnalysisCode(depVars, textValues['pathSpec'] ?? '', dataFile),
+      sem: () => RService.semCode(parseItemsByFactor(textValues['itemsByFactor'] ?? ''), textValues['structure'] ?? '', dataFile)
     }
     const generate = generators[method]
     code = generate ? generate() : ''
@@ -194,6 +313,19 @@ export default function WizardPage() {
     () => (result?.success && result.output ? parseROutput(result.output) : null),
     [result]
   )
+
+  /**
+   * 传给 `PlotViewer` 的变量列表（v0.3.2）。
+   *
+   * - 具名角色方法：按 `roles` 的声明顺序取各角色选中的变量 —— 顺序有意义（x→m→y），
+   *   与生成器拿到的角色一致，图表侧的散点/折线才不会张冠李戴；
+   * - 其余方法：沿用位置式的 `depVars`。
+   *
+   * 放在结果页渲染前计算，避免在 JSX 里写三目嵌套（也便于上面 `chartVars.length > 0` 判断）。
+   */
+  const chartVars = selectedMethod?.roles?.length
+    ? selectedMethod.roles.map((r) => roleValue(r.id)).filter(Boolean)
+    : depVars
 
   // 解析方法/描述/类别的本地化文本。
   // 语言包缺键时回退到英文标签（而不是中文 name/description），
@@ -278,42 +410,110 @@ export default function WizardPage() {
               ← {t('wizard.backToSelect')}
             </button>
 
-            <div className="var-section">
-              <div className="var-section-title">
-                {selectedMethod.needsGroup ? '选择因变量（数值型）' : `选择变量（${selectedMethod.minVars === selectedMethod.maxVars ? `选${selectedMethod.minVars}个` : `至少选${selectedMethod.minVars}个`}）`}
+            {/* v0.3.2：声明了 roles 的方法按**角色**渲染，每个角色独立一块选择区。
+                未声明的（含路径分析 / SEM 这类同质节点方法）走下面原有的位置式选择区。 */}
+            {selectedMethod.roles && selectedMethod.roles.length > 0 ? (
+              <>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                    {t('wizard.roles.title')}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+                    {t('wizard.roles.desc')}
+                  </div>
+                </div>
+                {selectedMethod.roles.map((role) => {
+                  const candidates =
+                    role.varType === 'numeric' ? getNumericColumns() : getStringColumns()
+                  const chosen = roleValue(role.id)
+                  // 同一变量不能被两个角色同时占用：x 与 m 取了同一列，
+                  // 中介模型就退化成"X 中介 X"，同样是不报错的静默错配。
+                  // 已被**其他**角色占用的列渲染为禁用，点不动（先在原角色取消即可腾出）。
+                  const takenByOthers = new Set(
+                    selectedMethod.roles!
+                      .filter((r) => r.id !== role.id)
+                      .map((r) => roleValue(r.id))
+                      .filter(Boolean)
+                  )
+                  return (
+                    <div className="var-section" key={role.id}>
+                      <div className="var-section-title">
+                        {t(role.labelKey, { defaultValue: role.label })}
+                      </div>
+                      <div className="var-section-desc">
+                        {role.descKey
+                          ? t(role.descKey, { defaultValue: role.desc ?? '' })
+                          : role.desc}
+                      </div>
+                      <div className="var-tags">
+                        {candidates.map((v) => {
+                          const taken = takenByOthers.has(v) && chosen !== v
+                          return (
+                            <span
+                              key={v}
+                              className={`var-tag ${chosen === v ? 'selected' : ''} ${taken ? 'disabled' : ''}`}
+                              title={taken ? t('wizard.role.taken') : undefined}
+                              onClick={() => {
+                                if (!taken) setRoleVar(role.id, v)
+                              }}
+                            >
+                              {v}
+                            </span>
+                          )
+                        })}
+                        {candidates.length === 0 && (
+                          <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+                            {t('wizard.noVarMatch')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="var-count">
+                        {chosen
+                          ? t('wizard.role.selected', { name: chosen })
+                          : t('wizard.role.unselected')}
+                      </div>
+                    </div>
+                  )
+                })}
+              </>
+            ) : (
+              <div className="var-section">
+                <div className="var-section-title">
+                  {selectedMethod.needsGroup ? '选择因变量（数值型）' : `选择变量（${selectedMethod.minVars === selectedMethod.maxVars ? `选${selectedMethod.minVars}个` : `至少选${selectedMethod.minVars}个`}）`}
+                </div>
+                <div className="var-section-desc">
+                  {selectedMethod.id === 'regression'
+                    ? t('wizard.depVarHint')
+                    : selectedMethod.id === 'ttest_paired'
+                    ? t('wizard.pairedHint')
+                    : selectedMethod.id === 'correlation'
+                    ? t('wizard.corrHint')
+                    : t('wizard.clickSelect')}
+                </div>
+                <div className="var-tags">
+                  {getAvailableVars().map((v) => (
+                    <span
+                      key={v}
+                      className={`var-tag ${depVars.includes(v) ? 'selected' : ''} ${!depVars.includes(v) && depVars.length >= selectedMethod.maxVars ? 'disabled' : ''}`}
+                      onClick={() => toggleVar(v)}
+                    >
+                      {v}
+                    </span>
+                  ))}
+                  {getAvailableVars().length === 0 && (
+                    <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+                      {t('wizard.noVarMatch')}
+                    </span>
+                  )}
+                </div>
+                <div className="var-count">
+                  {t('wizard.selectedCount', { selected: depVars.length, max: selectedMethod.maxVars })}
+                  {depVars.length > 0 && (
+                    <span>：{depVars.join('、')}</span>
+                  )}
+                </div>
               </div>
-              <div className="var-section-desc">
-                {selectedMethod.id === 'regression'
-                  ? t('wizard.depVarHint')
-                  : selectedMethod.id === 'ttest_paired'
-                  ? t('wizard.pairedHint')
-                  : selectedMethod.id === 'correlation'
-                  ? t('wizard.corrHint')
-                  : t('wizard.clickSelect')}
-              </div>
-              <div className="var-tags">
-                {getAvailableVars().map((v) => (
-                  <span
-                    key={v}
-                    className={`var-tag ${depVars.includes(v) ? 'selected' : ''} ${!depVars.includes(v) && depVars.length >= selectedMethod.maxVars ? 'disabled' : ''}`}
-                    onClick={() => toggleVar(v)}
-                  >
-                    {v}
-                  </span>
-                ))}
-                {getAvailableVars().length === 0 && (
-                  <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
-                    {t('wizard.noVarMatch')}
-                  </span>
-                )}
-              </div>
-              <div className="var-count">
-                {t('wizard.selectedCount', { selected: depVars.length, max: selectedMethod.maxVars })}
-                {depVars.length > 0 && (
-                  <span>：{depVars.join('、')}</span>
-                )}
-              </div>
-            </div>
+            )}
 
             {selectedMethod.needsGroup && (
               <div className="var-section">
@@ -405,6 +605,34 @@ export default function WizardPage() {
                 </div>
               </div>
             )}
+
+            {/* v0.3.2：文本型结构参数（路径列表 / SEM 因子结构与结构路径）。
+                这类结构无法用枚举表达，只能让用户填文本；值为空时 canProceed() 拦下。 */}
+            {(selectedMethod.textInputs ?? []).map((ti) => (
+              <div className="var-section" key={ti.id}>
+                <div className="var-section-title">
+                  {t(ti.labelKey, { defaultValue: ti.label })}
+                </div>
+                {ti.descKey && (
+                  <div className="var-section-desc">
+                    {t(ti.descKey, { defaultValue: ti.desc ?? '' })}
+                  </div>
+                )}
+                <input
+                  type="text"
+                  value={textValues[ti.id] ?? ''}
+                  placeholder={ti.placeholder}
+                  onChange={(e) => setTextValue(ti.id, e.target.value)}
+                  style={{
+                    width: '100%',
+                    maxWidth: 520,
+                    padding: '6px 12px',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-md)'
+                  }}
+                />
+              </div>
+            ))}
 
             <div style={{ display: 'flex', gap: 12 }}>
               <button
@@ -570,15 +798,35 @@ export default function WizardPage() {
               )
             })()}
 
-            {/* 图表可视化 */}
-            {selectedMethod && depVars.length > 0 && (
+            {/* 图表可视化。
+                v0.3.2：变量来源按方法类型分叉 —— 具名角色方法传角色里选中的变量（按角色声明顺序），
+                其余方法仍传位置式的 depVars。PlotViewer 只按 `variables[]` 画图，
+                拿不到角色语义，所以对中介/调节类它只能画"两两散点"这类通用图；
+                配对的统计表由 generateAnalysisCode 那边显式返回 null（原因写在注释里）。 */}
+            {chartVars.length > 0 && (
               <div style={{ marginTop: 16 }}>
                 <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{t('wizard.chart.title')}</h3>
                 <PlotViewer
                   methodId={selectedMethod.id}
-                  variables={depVars}
+                  variables={chartVars}
                   groupVar={groupVar || undefined}
                 />
+              </div>
+            )}
+
+            {/* v0.3.2：因果链方法的前置提示 —— 中介/调节的前提是测量工具本身站得住 */}
+            {selectedMethod && selectedMethod.categoryKey === 'wizard.category.causal' && (
+              <div
+                style={{
+                  background: 'var(--primary-bg)',
+                  border: '1px solid var(--primary)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: 12,
+                  marginTop: 16,
+                  fontSize: 13
+                }}
+              >
+                💡 {t('wizard.causalHint')}
               </div>
             )}
 

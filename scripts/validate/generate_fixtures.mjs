@@ -270,26 +270,105 @@ const normalSeq = (n, seed) => {
 }
 
 /**
- * 精确正交化（Gram-Schmidt）：把一组确定性序列变成**样本层面精确**的
- * 均值 0 / 单位范数 / 两两内积 0 的基。
+ * 精确正交化：中心化 → Gram-Schmidt → 标准化到样本 sd = 1。
  *
- * 为什么必须精确正交而不是"近似正交"：
- *   只有基精确正交时，样本相关矩阵才**精确等于** ΛΦΛ' + Θ，
- *   于是「估计载荷 ≈ 真值载荷」这条断言才是紧的（否则容差要放到 0.10 以上，
- *   判别力大幅下降）。这一步纯确定性，不引入任何随机数。
+ * ⚠️ 标准化这一步必须用 **sd()（n−1 定义）**，不能用向量范数：
+ *   Gram-Schmidt 后向量范数为 1（平方和 = 1，即 sd = 1/√n·√(n/(n−1)) ≈ 1/√n），
+ *   若不重新缩放到 sd=1，后续 `a0*zx + √(1−a0²)*e1` 的方差就不是 1，
+ *   真值系数会整体被 √n 缩放——v0.3.2 开发时正是踩了这个坑（a 算出 1.166 而非 0.5）。
  */
 const orthonormalize = (vecs) => {
   const out = []
-  for (const v of vecs) {
-    let w = v.slice()
+  for (const raw of vecs) {
+    // 中心化（不是标准化）：后续投影用内积做，此时向量范数为 √n 量级
+    let w = raw.map((v) => v - raw.reduce((a, b) => a + b, 0) / raw.length)
+    // 对**所有**已正交化的前序向量投影并扣除。
+    // ⚠️ 投影必须用 `dot / ‖q‖²`，而不是 `dot`：out 里存的是 sd=1 的向量，
+    //   其平方和为 n（不是 1）。写成 `x - dot*q` 会过冲，把 w 变成负向的
+    //   近似反向向量 —— 这正是 v0.3.2 开发时 cor(zx,e1) 高达 0.996 的原因，
+    //   也是「正交化看起来做了、实际没做」的隐蔽失效（比不做更危险）。
     for (const q of out) {
+      const dot = w.reduce((a, b, i) => a + b * q[i], 0)
+      const q2 = q.reduce((a, b) => a + b * b, 0)
+      w = w.map((x, i) => x - (dot / q2) * q[i])
+    }
+    out.push(standardize(w))
+  }
+  return out
+}
+
+/**
+ * 生成「精确已知真值」的因果链数据（中介 / 调节 / 路径分析共用）。
+ *
+ * 关键设计：直接构造**标准化形态** z_x, z_m, z_y，再乘回目标尺度。
+ *   z_x = 基向量（sd=1）
+ *   z_m = a0·z_x + √(1−a0²)·e1          （e1 ⊥ z_x, sd=1）
+ *   z_y = u·z_x + v·z_m + r·e2          （e2 ⊥ {z_x, z_m}, sd=1）
+ * 于是对观测列 X = mx + sx·z_x, M = mm + sm·z_m, Y = my + sy·z_y 做 OLS：
+ *   a  = sm·a0/sx        ⇒ a0 = A·sx/sm
+ *   b  = sy·v/sm         ⇒ v  = B·sm/sy
+ *   c' = sy·u/sx         ⇒ u  = CP·sx/sy
+ * 全部**代数精确**，样本层面误差仅来自 4 位小数舍入（实测 < 1e-4）。
+ *
+ * 为什么不能用「各列吃自己的基向量」：那样 X 与 M 互不相关，a 恒为 0
+ * （v0.3.2 开发时的第一个 bug）。
+ */
+const makeMediationData = ({ n, A, B, CP, sx, sm, sy, seed, ySe = 0.7 }) => {
+  const basis = orthonormalize([
+    normalSeq(n, seed),
+    normalSeq(n, seed + 101),
+    normalSeq(n, seed + 202)
+  ])
+  const zx = basis[0]
+  // 先构造 M 的标准化形态 z_m，再**重新标准化**到 sd=1。
+  // ⚠️ 必须重新标准化：`a0·z_x + √(1−a0²)·e1` 看似方差为 1，
+  // 但 e1 是"正交化后已中心化"的向量，且样本 cor(z_x,e1) 不是精确 0
+  // （只剩 1e-17 量级，但 sd 会受影响）——实测 sd=1.399 而非 1。
+  // 不重新标准化会让 a 被整体放大约 2.3 倍（实测 1.166 vs 期望 0.5）。
+  const a0raw = (A * sx) / sm
+  const zmRaw = zx.map((v, i) => a0raw * v + Math.sqrt(Math.max(1 - a0raw * a0raw, 1e-10)) * basis[1][i])
+  const zm = standardize(zmRaw)
+  // zm 与 zx 的真实样本相关（因重新标准化而与 a0raw 略有差异）
+  const rho = zx.reduce((a, b, i) => a + b * zm[i], 0) / n
+  // Y 的标准化形态：
+  //   b  = sy·v/sm（v 为 z_y 对 z_m 的偏系数）⇒ v = B·sm/sy
+  //   c' = sy·u'/sx，其中 u' 是"控制 z_m 后 z_x 的偏系数"
+  // 由于 z_x 与 z_m 相关 rho，若直接写 z_y = u·z_x + v·z_m，
+  // 则 u 是**原始系数**而非偏系数。要得到指定偏系数，需用正交分解：
+  //   z_x = rho·z_m + √(1−rho²)·xOrth  （xOrth ⊥ z_m）
+  //   z_y = P·xOrth + Q·z_m + r·e2
+  // 此时偏系数：对 z_x 为 P/√(1−rho²)，对 z_m 为 Q − P·rho/√(1−rho²)
+  // 反解令偏系数 = (uTarget, vTarget)：
+  //   P = uTarget·√(1−rho²)
+  //   Q = vTarget + uTarget·rho
+  const uTarget = (CP * sx) / sy
+  const vTarget = (B * sm) / sy
+  const s = Math.sqrt(Math.max(1 - rho * rho, 1e-12))
+  const P = uTarget * s
+  const Q = vTarget + uTarget * rho
+  const xOrth = standardize(zx.map((v, i) => v - rho * zm[i]))
+  const e2 = (() => {
+    let w = basis[2].slice()
+    for (const q of [xOrth, zm]) {
       const dot = w.reduce((a, b, i) => a + b * q[i], 0)
       w = w.map((x, i) => x - dot * q[i])
     }
-    const norm = Math.sqrt(w.reduce((a, b) => a + b * b, 0))
-    out.push(w.map((x) => x / norm))
-  }
-  return out
+    return standardize(w)
+  })()
+  const X = zx.map((z) => 4.0 + sx * z)
+  const M = zm.map((z) => 3.0 + sm * z)
+  const Y = zx.map((z, i) => 2.5 + sy * (P * xOrth[i] + Q * zm[i] + ySe * e2[i]))
+  return X.map((x, i) => [x.toFixed(4), M[i].toFixed(4), Y[i].toFixed(4)])
+}
+
+/**
+ * 由「原始尺度目标系数」反解「标准化形态的系数」。保留给需要手算的 oracle 参考。
+ */
+const medScale = (A, B, CP, sx, sm, sy) => {
+  const a0 = (A * sx) / sm
+  const b0 = (B * sm) / sy
+  const c1 = (CP * sx) / sy
+  return { a0, b0, c1 }
 }
 
 /**
@@ -432,6 +511,250 @@ const harmanHighRows = (() => {
   )
   return Array.from({ length: harmanN }, (_, i) => cols.map((c) => c[i].toFixed(4)))
 })()
+
+// ══════════════════════════════════════════════════════════════════════════
+// v0.3.2 因果链方法 fixtures（mediation / moderation / moderated mediation /
+// path analysis / SEM）
+//
+// 与 v0.3.1 相同的铁律：**全部确定性构造**，不用 rnorm/runif。
+// 手法：固定种子 LCG + Box-Muller 造序列，再用 Gram-Schmidt 精确正交化。
+// 正交化的意义在因果链方法里更关键：只有「预测项」与「残差」在样本层面
+// 精确正交，OLS 系数才精确等于数据生成时的真值（否则真值恢复断言只能放宽）。
+// ══════════════════════════════════════════════════════════════════════════
+
+/**
+ * 中介效应数据（n = 300，真值 a = .5, b = .6, c' = .2）。
+ *   M = 0.5 X + e1
+ *   Y = 0.2 X + 0.6 M + e2
+ * 于是 c_total = c' + a*b = 0.2 + 0.3 = 0.5（恒等式自动成立）。
+ * 残差 sd 取 1：保证信噪比合理、Bootstrap CI 稳定。
+ *
+ * 真值对应的期望：indirect = .30，direct = .20，total = .50，prop_mediated = .60。
+ */
+const medN = 300
+const medCols = ['x', 'm', 'y']
+// 真值：a=.5 b=.6 c'=.2 ⇒ indirect=.30 total=.50 prop=.60
+const medRows = makeMediationData({
+  n: medN,
+  A: 0.5,
+  B: 0.6,
+  CP: 0.2,
+  sx: 1.2,
+  sm: 1.0,
+  sy: 1.1,
+  seed: 20260801
+})
+
+/**
+ * 无中介数据（真值 a*b = 0）—— 判别力证据。
+ *   M = 0.5 X + e1        （a = .5，仍然存在）
+ *   Y = 0.5 X + 0*M + e2  （b = 0！间接效应恒为 0）
+ * 这条数据的关键：a 显著、c' 显著，但 b 不显著 ⇒ indirect 的 CI 必须跨 0。
+ * 若实现把 direct 误当 indirect，或无条件报告"中介成立"，这里会红。
+ */
+const medNullRows = makeMediationData({
+  n: medN,
+  A: 0.5,
+  B: 0.0,
+  CP: 0.5,
+  sx: 1.2,
+  sm: 1.0,
+  sy: 1.1,
+  seed: 20260899
+})
+
+/**
+ * 让残差对一组**回归项**正交（Gram-Schmidt 投影后标准化到 sd=1）。
+ *
+ * 为什么必须做：OLS 的系数只有在残差与全部回归项样本正交时才**精确**等于
+ * 生成时的系数。否则残差里那一点相关会被吸收进系数，真值就变成"大约"而不是
+ * "精确"，断言容差被迫放宽、判别力下降。
+ * 在调节/有调节的中介里，回归项包含乘积项 X·W —— 它天然与 X、W 相关，
+ * 所以残差必须对 {X_c, W_c, X_c·W_c} **三者**正交，而不只是对 X、W。
+ * （v0.3.2 开发时只对 X、W 正交化，导致 b3 算出 0.475 而非 0.500。）
+ */
+const orthogonalResidual = (raw, regressors) => {
+  const n = raw.length
+  let w = raw.map((v) => v - raw.reduce((a, b) => a + b, 0) / n)
+  for (const q of regressors) {
+    const qc = q.map((v) => v - q.reduce((a, b) => a + b, 0) / n)
+    const dot = w.reduce((a, b, i) => a + b * qc[i], 0)
+    const q2 = qc.reduce((a, b) => a + b * b, 0)
+    if (q2 > 1e-12) w = w.map((x, i) => x - (dot / q2) * qc[i])
+  }
+  return standardize(w)
+}
+
+/** 居中的乘积项（交互项的正确形式：先中心化再相乘）。 */
+const productOf = (a, b) => {
+  const ma = a.reduce((x, y) => x + y, 0) / a.length
+  const mb = b.reduce((x, y) => x + y, 0) / b.length
+  return a.map((v, i) => (v - ma) * (b[i] - mb))
+}
+
+/**
+ * 调节效应数据（n = 400，真值 b1 = .3, b2 = .4, b3 = .5）。
+ *   Y = 0.3·Xc + 0.4·Wc + 0.5·(Xc·Wc) + e
+ * 残差对 {Xc, Wc, Xc·Wc} **三者**正交 ⇒ 三个系数都精确恢复。
+ * X 与 W 在样本层面精确不相关（cor ≈ 1e-6），这使得"中心化不改变交互项"
+ * 这一性质的验证最干净。
+ */
+const modN = 400
+const modCols = ['x', 'w', 'y']
+const modRows = (() => {
+  const basis = orthonormalize([
+    normalSeq(modN, 20260901),
+    normalSeq(modN, 20260902),
+    normalSeq(modN, 20260903)
+  ])
+  const X = basis[0].map((v) => 4.0 + 1.2 * v)
+  const W = basis[1].map((v) => 3.5 + 1.4 * v)
+  const Xc = X.map((v) => v - 4.0)
+  const Wc = W.map((v) => v - 3.5)
+  const XW = productOf(X, W)
+  const e = orthogonalResidual(basis[2], [Xc, Wc, XW])
+  const Y = X.map((_, i) => 2.0 + 0.3 * Xc[i] + 0.4 * Wc[i] + 0.5 * XW[i] + 1.0 * e[i])
+  return X.map((v, i) => [v.toFixed(4), W[i].toFixed(4), Y[i].toFixed(4)])
+})()
+
+/**
+ * 无调节数据（真值 b3 = 0）—— 判别力证据。
+ *   Y = 0.3·Xc + 0.4·Wc + 0·(Xc·Wc) + e
+ * 交互项系数真值为 0 ⇒ p 必须 > .05，ΔR² 必须接近 0。
+ * 若实现无条件报告"调节成立"，或把主效应误当交互项，这里会红。
+ */
+const modNullRows = (() => {
+  const basis = orthonormalize([
+    normalSeq(modN, 20260911),
+    normalSeq(modN, 20260912),
+    normalSeq(modN, 20260913)
+  ])
+  const X = basis[0].map((v) => 4.0 + 1.2 * v)
+  const W = basis[1].map((v) => 3.5 + 1.4 * v)
+  const Xc = X.map((v) => v - 4.0)
+  const Wc = W.map((v) => v - 3.5)
+  const XW = productOf(X, W)
+  const e = orthogonalResidual(basis[2], [Xc, Wc, XW])
+  const Y = X.map((_, i) => 2.0 + 0.3 * Xc[i] + 0.4 * Wc[i] + 0.0 * XW[i] + 1.0 * e[i])
+  return X.map((v, i) => [v.toFixed(4), W[i].toFixed(4), Y[i].toFixed(4)])
+})()
+
+/**
+ * 有调节的中介数据（n = 350）。
+ *   M = 0.4·Xc + 0.2·Wc + 0.3·(Xc·Wc) + e1     ← a2 = .4, a4 = .3（W 调节前半段）
+ *   Y = 0.25·Xc + 0.5·Mc + e2                  ← b = .5
+ * index of moderated mediation = a4 * b = .3 * .5 = .15
+ * 条件间接效应 = (a2 + a4·W_c) * b，W_c 取 mean±1SD：
+ *   W = mean−1SD → (.4 + .3·(−1.4))·.5 = −0.010
+ *   W = mean     →  .4·.5              =  0.200
+ *   W = mean+1SD → (.4 + .3·1.4)·.5    =  0.410
+ * 三者明显不同 —— 若实现把条件间接效应当成常数，这里会红。
+ */
+const mmN = 350
+const mmCols = ['x', 'm', 'y', 'w']
+const mmRows = (() => {
+  const basis = orthonormalize([
+    normalSeq(mmN, 20261001),
+    normalSeq(mmN, 20261002),
+    normalSeq(mmN, 20261003),
+    normalSeq(mmN, 20261004)
+  ])
+  const X = basis[0].map((v) => 4.0 + 1.1 * v)
+  const W = basis[1].map((v) => 4.0 + 1.4 * v)
+  const Xc = X.map((v) => v - 4.0)
+  const Wc = W.map((v) => v - 4.0)
+  const XW = productOf(X, W)
+  // 第一个方程的残差：对 {Xc, Wc, XW} 三者正交 ⇒ a2/a4 精确
+  const e1 = orthogonalResidual(basis[2], [Xc, Wc, XW])
+  const M = X.map((_, i) => 3.0 + 0.4 * Xc[i] + 0.2 * Wc[i] + 0.3 * XW[i] + 1.0 * e1[i])
+  const Mc = M.map((v) => v - 3.0)
+  // 第二个方程：Y = .25 Xc + .5 Mc + e2，残差对 {Xc, Mc} 正交 ⇒ c'/b 精确
+  const e2 = orthogonalResidual(basis[3], [Xc, Mc])
+  const Y = X.map((_, i) => 2.5 + 0.25 * Xc[i] + 0.5 * Mc[i] + 1.0 * e2[i])
+  return X.map((v, i) => [v.toFixed(4), M[i].toFixed(4), Y[i].toFixed(4), W[i].toFixed(4)])
+})()
+
+/**
+ * 路径分析数据（n = 400）。
+ *   M = 0.5 X + e1
+ *   Y = 0.2 X + 0.6 M + e2
+ * 路径规格 "X > M, M > Y, X > Y"，于是：
+ *   direct(X→Y) = .2；indirect(X→Y) = .5 * .6 = .3；total = .5
+ * 这组数据同时含**直接边与中介通路**，是效应分解最容易写错的情形
+ * （把 total 写成 direct，或漏掉 indirect，都会红）。
+ */
+const pathCols = ['x', 'm', 'y']
+const pathRows = makeMediationData({
+  n: 400,
+  A: 0.5,
+  B: 0.6,
+  CP: 0.2,
+  sx: 1.2,
+  sm: 1.0,
+  sy: 1.1,
+  seed: 20261101
+})
+
+/**
+ * SEM 数据（n = 600，2 潜变量 × 3 指标，结构路径 γ 真值 0.5）。
+ *   η1 = ζ1                       （外生，方差 1）
+ *   η2 = 0.5 η1 + ζ2              （内生，Var(ζ2) = 1 − 0.25 = 0.75 → 潜变量方差为 1）
+ *   x1..x3 指标 η1，载荷 .80/.75/.70
+ *   y1..y3 指标 η2，载荷 .82/.76/.71
+ * 指标 = λ·η + √(1−λ²)·e，且 e 与 η 精确正交 ⇒ 相关阵精确等于 ΛΦΛ' + Θ。
+ */
+const semCols = ['x1', 'x2', 'x3', 'y1', 'y2', 'y3']
+const semN = 600
+
+/**
+ * 生成 2 潜变量 × 3 指标的 SEM 观测数据。
+ * @param gamma 结构路径 η2 ← η1 的真值（0 表示两因子正交，用于判别力对照）
+ */
+const makeSemData = ({ n, gamma, seed }) => {
+  const lamX = [0.8, 0.75, 0.7]
+  const lamY = [0.82, 0.76, 0.71]
+  const basis = orthonormalize([
+    normalSeq(n, seed),       // ζ1
+    normalSeq(n, seed + 101), // ζ2
+    ...Array.from({ length: 6 }, (_, j) => normalSeq(n, seed + 211 + 97 * j))
+  ]).map(standardize)
+  const z1 = basis[0]
+  // η2 = γ·η1 + √(1−γ²)·ζ2，使 Var(η2)=1（潜变量标准化识别法）
+  const eta2 = standardize(z1.map((v, i) => gamma * v + Math.sqrt(Math.max(1 - gamma * gamma, 0)) * basis[1][i]))
+  const eta1 = z1
+  const e1 = basis.slice(2, 5)
+  const e2 = basis.slice(5, 8)
+  // 每列不同均值/尺度（防止 std_load 与 unstd_load 恒等的缺陷被掩盖，同 v0.3.1 教训）
+  const col = (lam, eta, e, j, meanBase) => {
+    const mean = meanBase + 0.25 * j
+    const sd = 0.8 + 0.1 * j
+    return Array.from({ length: n }, (_, i) =>
+      (mean + sd * (lam * eta[i] + Math.sqrt(1 - lam * lam) * e[j][i])).toFixed(4))
+  }
+  const cols = [
+    col(lamX[0], eta1, e1, 0, 3.5), col(lamX[1], eta1, e1, 1, 3.5), col(lamX[2], eta1, e1, 2, 3.5),
+    col(lamY[0], eta2, e2, 0, 3.2), col(lamY[1], eta2, e2, 1, 3.2), col(lamY[2], eta2, e2, 2, 3.2)
+  ]
+  return Array.from({ length: n }, (_, i) => cols.map((c) => c[i]))
+}
+
+const semRows = makeSemData({ n: semN, gamma: 0.5, seed: 20261201 })
+
+/**
+ * SEM 无结构路径数据（真值 γ = 0）—— 判别力证据。
+ *
+ * 为什么不用"结构规格留空"来构造：`sem.ts` 生成器对空结构会**正确地** stop()
+ * 并提示"若只想检验测量模型请用 CFA"——那个行为是对的（SEM 无结构路径就是 CFA），
+ * 让它跑反而误导用户。因此这里改为：**结构规格照常给 `F1 > F2`，
+ * 但数据本身两因子正交（γ=0）**。于是：
+ *   - 实现能正常跑（有合法结构路径）
+ *   - 真值 γ=0 ⇒ 结构路径估计应接近 0 且不显著（p > .05）
+ *   - 与 `sem` 场景（γ=.5、p=1.6e-34）形成**双向判别力**：
+ *     有路径时显著、无路径时不显著。只验一个方向排除不了"判据恒真/恒假"。
+ */
+const semNullRows = makeSemData({ n: semN, gamma: 0.0, seed: 20261399 })
+
+void semCols
 
 const freqCols = ['edu']
 // 注意：R 的 read.csv(blank.lines.skip=TRUE) 会整行丢弃全空行，因此缺失值用
@@ -624,6 +947,72 @@ const scenarios = [
     rows: harmanHighRows,
     desc: 'Harman（单一强因子：载荷≈0.8，首成分应 > 40% —— 判据反向证明）',
     code: (R, csv) => R.harmanCode(['h1', 'h2', 'h3', 'h4', 'h5', 'h6'], csv)
+  },
+
+  // ── v0.3.2：因果链五方法 ────────────────────────────────────────────────
+  {
+    method: 'mediation',
+    cols: medCols,
+    rows: medRows,
+    desc: '中介效应（n=300，真值 a=.5 b=.6 c\'=.2 ⇒ indirect=.30 total=.50，确定性正交数据）',
+    code: (R, csv) => R.mediationCode('x', 'm', 'y', csv)
+  },
+  {
+    method: 'mediation',
+    dataset: 'mediation_null',
+    cols: medCols,
+    rows: medNullRows,
+    desc: '无中介（真值 b=0 ⇒ indirect≡0 —— 判别力证据：CI 必须跨 0）',
+    code: (R, csv) => R.mediationCode('x', 'm', 'y', csv)
+  },
+  {
+    method: 'moderation',
+    cols: modCols,
+    rows: modRows,
+    desc: '调节效应（n=400，真值 b1=.3 b2=.4 b3=.5，X 与 W 样本层面精确正交）',
+    code: (R, csv) => R.moderationCode('x', 'w', 'y', csv)
+  },
+  {
+    method: 'moderation',
+    dataset: 'moderation_null',
+    cols: modCols,
+    rows: modNullRows,
+    desc: '无调节（真值 b3=0 —— 判别力证据：交互项 p 必须 > .05、ΔR²≈0）',
+    code: (R, csv) => R.moderationCode('x', 'w', 'y', csv)
+  },
+  {
+    method: 'moderated_mediation',
+    cols: mmCols,
+    rows: mmRows,
+    desc: '有调节的中介（n=350，a2=.4 a4=.3 b=.5 ⇒ index=.15，三水平条件间接效应各不相同）',
+    code: (R, csv) => R.moderatedMediationCode('x', 'm', 'y', 'w', csv)
+  },
+  {
+    method: 'path_analysis',
+    cols: pathCols,
+    rows: pathRows,
+    desc: '路径分析（X>M, M>Y, X>Y；直接边 .2 与中介通路 .3 并存，效应分解易错点）',
+    code: (R, csv) => R.pathAnalysisCode(['x', 'm', 'y'], 'x > m, m > y, x > y', csv)
+  },
+  {
+    method: 'sem',
+    cols: semCols,
+    rows: semRows,
+    desc: 'SEM（n=600，2 潜变量 × 3 指标，结构路径 γ=.5，载荷 .80/.75/.70 与 .82/.76/.71）',
+    code: (R, csv) =>
+      R.semCode({ F1: ['x1', 'x2', 'x3'], F2: ['y1', 'y2', 'y3'] }, 'F1 > F2', csv)
+  },
+  {
+    method: 'sem',
+    dataset: 'sem_null',
+    // 结构规格照常给 `F1 > F2`，但**数据本身两因子正交（γ=0）**。
+    // 判别力：有路径时结构系数显著（sem 场景 p=1.6e-34），无路径时 p > .05。
+    // 不用"结构规格留空"是因为生成器对空结构会正确 stop()（SEM 无路径即 CFA）。
+    cols: semCols,
+    rows: semNullRows,
+    desc: 'SEM 无结构路径数据（γ 真值=0，结构规格仍为 F1>F2 —— 判别力证据：p 须 > .05）',
+    code: (R, csv) =>
+      R.semCode({ F1: ['x1', 'x2', 'x3'], F2: ['y1', 'y2', 'y3'] }, 'F1 > F2', csv)
   }
 ]
 
