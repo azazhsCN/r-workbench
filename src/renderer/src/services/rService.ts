@@ -1446,4 +1446,87 @@ if (p_b < 0.05 && kmo_overall >= 0.6) {
 }
 `
   }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * v0.3.2 因果链：中介 / 调节 / 有调节的中介 / 路径分析 / SEM
+   *
+   * ⚠️ 以下五个方法先以「签名占位 + 明确报错」形式提交，使 UI / 解析器 /
+   * 验证脚本可以**并行开发并各自通过 typecheck**。真正的实现放在
+   * `services/rGenerators/<name>.ts`，本段只是薄封装（保持既有 API 不变，
+   * 让 method-registry.test.ts 的正则仍能匹配到 RService.xxx）。
+   *
+   * 占位版**不会**产出看似正确的结果：直接 stop()，避免"分析成功但表是空的"
+   * 这种更危险的失败模式。
+   * ═══════════════════════════════════════════════════════════════════════ */
+
+  /** 中介效应（X → M → Y）。`MED_*` 行格式见 V032_CONTRACT.md 第一节。 */
+  static mediationCode(x: string, m: string, y: string, dataFile = 'data.csv'): string {
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+${R_COMMON}
+cat("=== 中介效应分析 ===\\n")
+stop("中介效应生成器尚未实现（v0.3.2 开发中）")
+`
+  }
+
+  /** 调节效应（Y ~ X * W）。`MOD_*` 行格式见 V032_CONTRACT.md 第二节。 */
+  static moderationCode(x: string, w: string, y: string, dataFile = 'data.csv'): string {
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+${R_COMMON}
+cat("=== 调节效应分析 ===\\n")
+stop("调节效应生成器尚未实现（v0.3.2 开发中）")
+`
+  }
+
+  /** 有调节的中介（W 调节 X→M）。`MM_*` 行格式见 V032_CONTRACT.md 第三节。 */
+  static moderatedMediationCode(
+    x: string,
+    m: string,
+    y: string,
+    w: string,
+    dataFile = 'data.csv'
+  ): string {
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+${R_COMMON}
+cat("=== 有调节的中介分析 ===\\n")
+stop("有调节的中介生成器尚未实现（v0.3.2 开发中）")
+`
+  }
+
+  /** 路径分析。`pathSpec` 形如 `"X > M, M > Y"`。见契约第四节。 */
+  static pathAnalysisCode(nodes: string[], pathSpec: string, dataFile = 'data.csv'): string {
+    const nodeVec = nodes.map((v) => `"${rEscape(v)}"`).join(', ')
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+${R_COMMON}
+cat("=== 路径分析 ===\\n")
+nodes <- c(${nodeVec})
+path_spec <- "${rEscape(pathSpec)}"
+stop("路径分析生成器尚未实现（v0.3.2 开发中）")
+`
+  }
+
+  /** 结构方程模型。`itemsByFactor` 给出测量模型，`structure` 形如 `"F1 > F2"`。见契约第五节。 */
+  static semCode(
+    itemsByFactor: Record<string, string[]>,
+    structure: string,
+    dataFile = 'data.csv'
+  ): string {
+    const spec = JSON.stringify(itemsByFactor)
+    return `
+dataFile <- "${rEscape(dataFile)}"
+data <- ${READ_CSV}
+${R_COMMON}
+cat("=== 结构方程模型 (SEM) ===\\n")
+items_spec <- '${spec.replace(/\\/g, '\\\\')}'
+structure_spec <- "${rEscape(structure)}"
+stop("SEM 生成器尚未实现（v0.3.2 开发中）")
+`
+  }
 }

@@ -15,6 +15,38 @@
  * 缺一即测试红。
  */
 
+/**
+ * 变量角色声明（v0.3.2）。
+ *
+ * ── 为什么必须引入 ──
+ * v0.3.1 及之前，向导用**位置**表达变量含义：`depVars[0]` 是因变量、`depVars[1]` 是
+ * 第二个变量、`groupVar` 是分组变量。这套约定对 t 检验/相关这类「两个变量对称」的
+ * 方法够用，但对中介/调节完全不成立：
+ *
+ *   M = aX + e ; Y = c'X + bM + e
+ *
+ * X 与 M 谁放前面，得到的**是完全不同的分析结果**，而且错了不会报错——只会静默
+ * 输出一个看起来正常但含义相反的结论。用户在界面上看到的是「已选 3 个变量」
+ * 加一串变量名，根本无从知道哪个被当作中介。
+ *
+ * 所以 q 必须让**每个变量有名字**：
+ *   `roles: [{ id: 'x', label: '自变量 X' }, { id: 'm', label: '中介变量 M' } ...]`
+ * 界面据此为每个角色单独渲染一个选择区。
+ *
+ * 一旦声明了 `roles`，`minVars`/`maxVars`/`needsGroup` 就不再参与渲染
+ * （由角色数决定要选几个变量）。
+ */
+export interface VariableRole {
+  /** 角色标识，生成器按此取值，如 'x' / 'm' / 'y' / 'w' */
+  id: string
+  labelKey: string
+  label: string
+  descKey?: string
+  desc?: string
+  /** 该角色接受的变量类型 */
+  varType: 'numeric' | 'string'
+}
+
 export interface AnalysisMethod {
   id: string
   name: string
@@ -28,12 +60,29 @@ export interface AnalysisMethod {
   minVars: number
   maxVars: number
   varType: 'numeric' | 'string' | 'any'
+  /**
+   * 具名变量角色（v0.3.2）。声明后，UI 为每个角色渲染独立选择区，
+   * 并把结果以 `Record<roleId, variableName>` 传给生成器。
+   */
+  roles?: VariableRole[]
   /** 该方法的可选参数（v0.2.6：相关分析可选择 Pearson / Spearman） */
   options?: {
     id: string
     labelKey: string
     label: string
     values: { value: string; labelKey: string; label: string }[]
+  }[]
+  /**
+   * 需要用户额外填写的**文本**参数（v0.3.2）。
+   * 用于路径分析的边列表、SEM 的结构路径这类无法用枚举表达的结构。
+   */
+  textInputs?: {
+    id: string
+    labelKey: string
+    label: string
+    descKey?: string
+    desc?: string
+    placeholder: string
   }[]
 }
 
