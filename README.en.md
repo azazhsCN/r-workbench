@@ -53,6 +53,22 @@ This is the project's core design principle: **the AI understands and explains; 
 - The AI only reads the computed results and writes an academically formatted interpretation
 - **989 statistical-correctness assertions** are built in, cross-checked against independent oracles (hand-derived closed forms, exact permutation distributions, second R packages) — and you can run them yourself at any time
 
+### 🛡️ Dirty data won't silently ruin your conclusions
+
+A single mistyped `1000000` can turn an ANOVA from p < 0.001 into p = 0.39 — and most software
+will not tell you. This project checks **at import time** and **before every analysis**:
+
+- **Extreme values** (|z| > 4 or beyond the 3× IQR fence), **out-of-range** responses
+  (a 7 on a 5-point scale), **excessive missingness** (> 30%), **constant columns**
+- Two severity levels — critical issues in red, mild ones in yellow —
+  **so that false alarms don't drown out the real ones**
+- Click through to the exact row and check the raw data
+- **Alerts only; your data is never modified**: removing outliers is a statistical decision
+  that belongs to you
+
+> Covers all **22 methods**: the check is hooked into the single data-reading entry point
+> rather than added per method — so newly added methods can't miss it.
+
 ### 🔍 No black box: code, process and numbers are all transparent
 
 - **R code is visible** — the generated code is shown as-is, not hidden behind an opaque API call
