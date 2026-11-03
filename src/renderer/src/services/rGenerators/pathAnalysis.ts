@@ -335,7 +335,7 @@ for (j in seq_len(m)) {
 # 步骤 6：提示与结论
 # ─────────────────────────────────────────────────────────────
 if (n_dropped > 0) {
-  cat(sprintf("PATH_NOTE|因缺失值采用整列删除，剔除 %d 行，有效样本 %d\\n", n_dropped, n))
+  cat(sprintf("PATH_NOTE|因缺失值采用逐行删除（listwise / 个案剔除），剔除 %d 行，有效样本 %d\\n", n_dropped, n))
 }
 # 契约第四节明确要求声明估计口径，否则用户会把它当成 ML-SEM 解
 cat(sprintf("PATH_NOTE|估计方法：OLS 逐方程（每个内生变量一个回归），不是联合 ML；恰好识别时二者等价，过度识别时不等价\\n"))

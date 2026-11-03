@@ -225,10 +225,18 @@ for (q in seq_len(3)) {
 # 步骤 4：提示
 # ─────────────────────────────────────────────────────────────
 if (n_dropped > 0) {
-  cat(sprintf("MM_NOTE|因缺失值采用整列删除，剔除 %d 行，有效样本 %d\\n", n_dropped, n))
+  cat(sprintf("MM_NOTE|因缺失值采用逐行删除（listwise / 个案剔除），剔除 %d 行，有效样本 %d\\n", n_dropped, n))
 }
 cat(sprintf("MM_NOTE|X 与 W 均已做均数中心化（X 均值 %s，W 均值 %s），因此 a2 表示 W 处于均值时的条件前段效应\\n",
   num(mean(x_v)), num(mean(w_v))))
+# ── 模型设定声明（v0.3.3 / D04）──
+# 结局方程用的是 Y ~ M + X_c，**未纳入 W 的主效应**。
+# 这是 Hayes Model 7 的一种常见设定取舍（不同文献与实现并不一致），
+# 不是计算错误；但当 W 在理论上直接影响 Y（年龄、性别、负性情感、社会赞许性等
+# 背景/人格变量都属此类）时，b 路径与 index 会偏离「含 W」的设定（实测 0.7%~7.2%）。
+# 用户看不到这个取舍，就可能把设定差异误当成数据结论，因此必须显式声明。
+cat(sprintf("MM_NOTE|模型设定：中介方程 M ~ X_c + W_c + X_c:W_c；结局方程 Y ~ M + X_c。结局方程未纳入 W 的主效应（也未纳入 X_c:W_c），这是本工具的固定设定。若理论上 W 直接影响 Y，请改用含 W 主效应的设定或自行复核\\n"))
+cat(sprintf("MM_NOTE|能力边界：本工具仅支持调节前半段路径（X -> M）。第二阶段的调节（M x W -> Y，Process Model 14）、双阶段调节（Model 15）与多重中介链均不支持\\n"))
 cat(sprintf("MM_NOTE|index of moderated mediation = a4 x b = %s；CI 来自 %d 次 percentile Bootstrap（种子 %d，95%% 水平）\\n",
   num(index_val), n_boot, boot_seed))
 cat(sprintf("MM_NOTE|重要：index 显著只说明条件间接效应随 W 变化，不等于每个 W 水平上的间接效应都显著；两者必须分开报告\\n"))

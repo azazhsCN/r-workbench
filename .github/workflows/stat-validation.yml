@@ -47,7 +47,30 @@ jobs:
         with:
           r-version: 'release'
 
+      # ── v0.3.3 / D06：安装可选依赖，把"第二实现交叉验证"从 SKIP 变成强制门禁 ──
+      #
+      # 此前本 job 只装 base R，导致两条最有力的交叉断言默认 SKIP：
+      #   - ALPHA.psych_raw   （信度的第二个实现 psych::alpha）
+      #   - boot::boot.ci     （Bootstrap CI 的第二个实现）
+      # 也就是说"与权威实现一致"此前只是**口头承诺**，不是 CI 事实。
+      #
+      # 安装后用 RWB_REQUIRE_PSYCH=1 让 psych 缺失直接判 FAIL（而不是悄悄 SKIP）。
+      #
+      # 关于 lavaan：它是编译型重包，安装耗时且偶有失败。策略是
+      #   **"存在则跑、不存在则 SKIP"** —— 它提供的是额外背书，不该成为
+      #   阻塞发布的必要条件（与"base R 零依赖"的产品红线一致）。
+      - name: 安装可选依赖（第二实现交叉验证用）
+        run: |
+          Rscript -e 'install.packages(c("psych", "boot"), repos = "https://cloud.r-project.org", quiet = TRUE)'
+          # lavaan 单独装，失败不阻塞后续步骤
+          Rscript -e 'install.packages("lavaan", repos = "https://cloud.r-project.org", quiet = TRUE)' || \
+            echo "lavaan 安装失败（可选依赖，将跳过相关交叉断言）"
+          Rscript -e 'for (p in c("psych", "boot", "lavaan")) cat(p, ":", requireNamespace(p, quietly = TRUE), "\n")'
+
       - name: 运行统计验证（真实生成器 + 独立 oracle；失败即非 0 退出）
+        # RWB_REQUIRE_PSYCH=1：psych 缺失时判定为 FAIL，不再静默 SKIP
+        env:
+          RWB_REQUIRE_PSYCH: '1'
         run: Rscript scripts/validate/run_validation.R
 
       - name: 上传验证输出（作为补充材料 / 论文证据）

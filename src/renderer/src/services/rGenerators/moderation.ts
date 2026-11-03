@@ -297,7 +297,7 @@ if (!jn_ok) {
 # ─────────────────────────────────────────────────────────────
 cat(sprintf("MOD_NOTE|已对 X 与 W 做均值中心化（centered = %s）：交互项系数 b3 与显著性不受影响，b1/b2 改为中心化后的条件效应\\n", centered_txt))
 if (n_dropped > 0) {
-  cat(sprintf("MOD_NOTE|因缺失值采用整列删除，剔除 %d 行，两个嵌套模型使用同一批 %d 个有效样本\\n", n_dropped, n))
+  cat(sprintf("MOD_NOTE|因缺失值采用逐行删除（listwise / 个案剔除），剔除 %d 行，两个嵌套模型使用同一批 %d 个有效样本\\n", n_dropped, n))
 }
 inter_sig <- is.finite(p_change) && p_change < 0.05
 if (!inter_sig) {

@@ -619,7 +619,7 @@ if (inherits(o_null, "try-error")) {
 # 步骤 8：提示与结论
 # ─────────────────────────────────────────────────────────────
 if (n_dropped > 0) {
-  cat(sprintf("SEM_NOTE|因缺失值采用整列删除，剔除 %d 行，有效样本 %d\\n", n_dropped, n))
+  cat(sprintf("SEM_NOTE|因缺失值采用逐行删除（listwise / 个案剔除），剔除 %d 行，有效样本 %d\\n", n_dropped, n))
 }
 cat(sprintf("SEM_NOTE|估计方法：极大似然 ML（相关矩阵，纯 base R 实现，未使用 lavaan）；潜变量方差固定为 1 识别，因此结构系数已是标准化系数\\n"))
 cat(sprintf("SEM_NOTE|多起点一致性：%d/%d 个起点收敛，F_ML 绝对极差 %s（容差 %s，%s）；全部取 F 最小者，固定种子可复现\\n",

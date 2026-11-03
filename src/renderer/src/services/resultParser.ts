@@ -241,6 +241,28 @@ function collectDiagnostics(output: string): Diagnostic[] {
   for (const line of tagged(output, 'NOTE_DROPPED')) {
     out.push({ kind: 'warning', label: '缺失值处理', value: fields(line)[1] ?? '' })
   }
+  // ── 数据质量警告（v0.3.3 / D02+D03）──
+  // R 端 r_quality_check_all 输出的 DQ_WARN|变量|类型|计数|详情 行。
+  // 这类警告必须**到达用户**：实测单点极端值能让 ANOVA 从 p=5.6e-28 变成 0.374，
+  // 而此前项目**没有任何**离群值检测，用户完全无从察觉结果已被录入错误摧毁。
+  for (const line of tagged(output, 'DQ_WARN')) {
+    const f = fields(line)
+    const col = f[1] ?? ''
+    const kind = f[2] ?? ''
+    const count = f[3] ?? ''
+    const detail = f.slice(4).join('|')
+    const kindLabel: Record<string, string> = {
+      outlier: '极端值',
+      out_of_range: '值域越界',
+      high_missing: '高缺失',
+      constant: '常量列'
+    }
+    out.push({
+      kind: 'warning',
+      label: `数据质量${kindLabel[kind] ? `（${kindLabel[kind]}）` : ''}：${col}`,
+      value: `${count} 处${detail ? ` — ${detail}` : ''}`
+    })
+  }
   // EFA 的前提诊断：KMO 与 Bartlett 决定"能不能做因子分析"
   for (const line of tagged(output, 'KMO')) {
     const v = fields(line)[1] ?? ''

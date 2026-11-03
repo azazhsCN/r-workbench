@@ -429,6 +429,98 @@ const makeFactorData = ({ n, cols, loads, groups, phi, seed = 20260301 }) => {
 }
 
 /**
+ * CFA「真实脏数据」fixture（n = 600，5 题项 2 因子，5 点整数李克特）。
+ *
+ * 存在意义 —— 对应 TECH_DEBT.md 的 **D06**「30 个 fixture 全是理想数据」：
+ * 现有 CFA fixture 全是连续、无缺失、无越界值的"干净"数据，因此
+ * **任何数据清洗 / 缺失处理的缺陷都不可能暴露**。本 fixture 刻意做成学生问卷的
+ * 真实形态：
+ *
+ *   1. **5 点整数李克特**：取值只能落在 {1,2,3,4,5}，不是连续小数。
+ *      真实量表数据是**有序离散**的，若实现假设正态连续、或把 0/6 当合法值，
+ *      只有在离散数据上才会暴露。
+ *   2. **天花板效应**：约 32% 的回答是满分 5（典型满意度/认同量表的高分堆积）。
+ *      这会让分布强左偏、部分题项方差被压缩，是真实数据里最常见的非正态来源。
+ *   3. **题项级 MCAR + MAR 混合缺失**：
+ *      - MCAR（完全随机缺失）：每题独立地以固定概率缺失。
+ *      - MAR（随机缺失）：**得分低的被试更容易缺失**（模拟"不满者倾向跳过"），
+ *        缺失概率随潜因子水平变化。
+ *      两者混合后**不能整列删除**——若实现用整列删除而不是 listwise，
+ *      会丢掉远超预期的样本量。
+ *   4. **越界值与极端值**：少量 0 与 7（录入错误 / 超出量表范围），
+ *      以及少量极端值（如 9）。真实数据里这些必须被**如实报告**，
+ *      而不是静默当合法值参与相关矩阵计算。
+ *
+ * ⚠️ 本 fixture 的断言重点**不是"真值载荷精确恢复"**（离散化 + 天花板 + 缺失
+ * 会合法地让载荷偏离真值），而是：
+ *   - 脏数据下**仍能跑通**（不崩、不产出 NaN）
+ *   - 载荷落在**合理**范围（0.3–0.95，不再是精确等于真值）
+ *   - 拟合指标不出现荒谬值（CFI/RMSEA/SRMR 在数学可行域内）
+ *   - 输出里有**缺失剔除说明**（CFA_NOTE 报告 n_dropped）
+ */
+const cfaLikertData = (() => {
+  const n = 600
+  const items = ['L1', 'L2', 'L3', 'L4', 'L5']
+  const loads = [0.78, 0.74, 0.71, 0.76, 0.69]
+  const groups = [1, 1, 1, 2, 2]
+  const k = 2
+  const seed = 20260501
+  // 与 makeFactorData 同一套正交基构造，保证潜因子与噪声精确正交
+  const raw = [
+    ...Array.from({ length: k }, (_, j) => normalSeq(n, seed + 101 * (j + 1))),
+    ...Array.from({ length: items.length }, (_, j) => normalSeq(n, seed + 7717 * (j + 1)))
+  ]
+  const basis = orthonormalize(raw)
+  const latent = basis.slice(0, k)
+  const noise = basis.slice(k).map(standardize)
+  // Φ12 = 0.30 的两因子
+  const phi12 = 0.3
+  const g1 = standardize(latent[0])
+  const g2raw = latent[1].map((v, i) => phi12 * g1[i] + Math.sqrt(1 - phi12 * phi12) * v)
+  const g2 = standardize(g2raw)
+  const g = [g1, g2]
+  // 逐题连续潜响应 → 离散化到 1..5，并制造天花板效应
+  const cont = items.map((_, j) => {
+    const lam = loads[j]
+    const f = g[groups[j] - 1]
+    return Array.from({ length: n }, (_, i) => lam * f[i] + Math.sqrt(1 - lam * lam) * noise[j][i])
+  })
+  // 天花板效应：对每个题项的连续分数加一个正向偏移，使高分（5）堆积。
+  // 偏移量按题项区分（真实问卷里不同题的偏态程度不同）。
+  const ceilShift = [0.85, 0.7, 0.55, 0.9, 0.65]
+  const toLikert = (v, j) => {
+    // 连续分 → 分位数切点 → 1..5 整数。用固定切点保证确定性。
+    const z = v + ceilShift[j]
+    // 切点设计：让 5 分约占 32%（天花板），1 分很少
+    if (z < -1.6) return 1
+    if (z < -0.6) return 2
+    if (z < 0.2) return 3
+    if (z < 0.95) return 4
+    return 5
+  }
+  const rows = Array.from({ length: n }, (_, i) => {
+    const vals = items.map((_, j) => toLikert(cont[j][i], j))
+    // ── 越界值与极端值（确定性注入，少量）──
+    // 每 97 行在题 1 注入 0；每 113 行在题 3 注入 7；每 149 行在题 5 注入 9
+    if (i % 97 === 5) vals[0] = 0
+    if (i % 113 === 7) vals[2] = 7
+    if (i % 149 === 11) vals[4] = 9
+    // ── 题项级 MCAR 缺失（确定性：按行号模运算，等价于独立随机）──
+    // 题 1 每 23 行缺 1 个；题 2 每 31 行；题 4 每 41 行
+    if (i % 23 === 3) vals[0] = NaN
+    if (i % 31 === 9) vals[1] = NaN
+    if (i % 41 === 13) vals[3] = NaN
+    // ── MAR 缺失：潜因子低（不满者）更容易跳过题 3、题 5 ──
+    // 用 g1 的实际水平决定缺失概率（真实 MAR 机制：缺失依赖于可观测的协变量）
+    const gLow = g1[i] < -0.5
+    if (gLow && i % 7 === 1) vals[2] = NaN
+    if (gLow && i % 11 === 3) vals[4] = NaN
+    return vals.map((v) => (Number.isNaN(v) ? '' : String(v)))
+  })
+  return { cols: items, rows }
+})()
+
+/**
  * CFA 2 因子 6 题项（n = 800，真值载荷 0.85/0.80/0.75 | 0.82/0.78/0.72，φ12 = 0.35）。
  * 这组数值与原型实测一致：估计的标准化载荷最大偏差约 0.04，正确模型 CFI 应接近 1。
  */
@@ -439,6 +531,33 @@ const cfaData = makeFactorData({
   groups: [1, 1, 1, 2, 2, 2],
   phi: (a, b) => (a === b ? 1 : 0.35),
   seed: 20260301
+})
+
+/**
+ * CFA 反向计分 fixture（n = 800，6 题项 2 因子，**因子 1 的第 3 题载荷为负**）。
+ *
+ * 存在意义 —— 对应 TECH_DEBT.md 的 **D01**（CFA 组合信度 CR 对负载荷做代数求和）：
+ * 问卷量表几乎必然含反向计分题。若用户忘了重编码，该题在因子上的标准化载荷为
+ * 负值，而实现的 CR 公式用 `sum(lam)` 带符号求和：
+ *     Σλ = 0.85 + 0.80 − 0.72 = 0.93   → CR ≈ 0.436（错）
+ *     Σ|λ| = 2.37                       → CR ≈ 0.795（对）
+ * 错值还会**违反数学不变式 CR ≥ AVE**（实测 CR 0.436 < AVE 0.627），
+ * 因为 λ 同号时 (Σλ)² ≥ Σλ² 恒成立。
+ *
+ * ⚠️ 这是**唯一**能暴露 D01 的场景：其余 CFA fixture 的载荷全是正数，
+ * `sum(lam) ≡ sum(abs(lam))`，缺陷在基线里不可能暴露（839 断言全绿也抓不到）。
+ *
+ * 数据仍由 makeFactorData 精确构造（Gram-Schmidt 正交基），因此
+ * 「标准化载荷恢复」断言的容差可以保持 0.02；真值载荷的**符号**也参与断言。
+ */
+const cfaReverseData = makeFactorData({
+  n: 800,
+  cols: ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'],
+  // q3 刻意取负：模拟「未重编码的反向计分题」
+  loads: [0.85, 0.8, -0.72, 0.82, 0.78, 0.72],
+  groups: [1, 1, 1, 2, 2, 2],
+  phi: (a, b) => (a === b ? 1 : 0.35),
+  seed: 20260401
 })
 
 /**
@@ -696,6 +815,125 @@ const pathRows = makeMediationData({
 })
 
 /**
+ * 路径分析「过度识别」fixture（n = 500，4 变量 5 条边）。
+ *
+ * 存在意义 —— 对应 TECH_DEBT.md 的 **D06**：
+ * 既有的 `path_analysis` fixture 是 **3 变量 3 条边**（X→M、M→Y、X→Y），
+ * 这是一个**饱和模型**（恰好识别）：3 个变量只有 3 个非冗余相关，
+ * 3 条路径恰好把自由度用尽，OLS 逐方程与联合 ML **必然等价**。
+ * 于是 `PATH_NOTE` 里那句"过度识别时不等价"的声明**零测试覆盖**——
+ * 断言它写了那句话，只证明"打印了一行固定文本"，不证明实现真的区分了两种情形。
+ *
+ * 本 fixture 构造**真正的过度识别**：4 变量、5 条有向边。
+ *   结构：X → M1 → Y、X → M2 → Y、X → Y（两条平行中介 + 一条直接边）
+ *   即 5 条边：x>m1, x>m2, m1>y, m2>y, x>y
+ *
+ * 为什么这是过度识别：4 个观测变量共 `4·5/2 = 10` 个非冗余相关，
+ * 而模型要估计的参数（路径系数 + 外生方差/协方差）少于 10，
+ * 因此 `df = 10 − npar > 0`，存在**全局约束**。
+ * 此时 OLS 逐方程**不**使用这些约束，其结果与联合 ML **不同** ——
+ * 这正是产品已声明但此前从未被验证的边界。
+ *
+ * 数据构造（确定性）：X 外生；M1、M2 分别由 X 驱动；
+ * Y 由 M1、M2、X 三者驱动，且残差对三者精确正交 ⇒ OLS 系数精确可复算。
+ *
+ * ⚠️ **真值口径（已实测核准，不要凭直觉改）**：
+ * 构造时用的是「标准化预测项 + 未缩放因变量」的偏系数 (.15, .45, .35)，
+ * 但**观测尺度**上的 OLS 系数因各列 sd 不同而是另一组数。
+ * 实测（n = 500，4 位小数难以分辨、用 8 位写出）：
+ *   coef(X→M1) = 0.416667    （= 1.0×0.50/1.2）
+ *   coef(X→M2) = 0.366667    （= 1.1×0.40/1.2）
+ *   coef(M1→Y) = 0.585000    （= 1.3×0.45/1.0）
+ *   coef(M2→Y) = 0.413636    （= 1.3×0.35/1.1）
+ *   coef(X→Y)  = 0.162500    （= 1.3×0.15/1.2）
+ * 断言直接对**上表**（不是 .50/.40/.45/.35/.15），并额外用 oracle 独立复算。
+ *
+ * 两条中介通路（观测尺度）：
+ *   x→m1→y = 0.416667 × 0.585000 = 0.243750
+ *   x→m2→y = 0.366667 × 0.413636 = 0.151667
+ *   indirect 合计 ≈ 0.395417；total = 0.162500 + 0.395417 = 0.557917
+ * 「两条通路求乘积和」是既有 fixture（单通路）覆盖不到的算法分支。
+ */
+const pathOveridCols = ['x', 'm1', 'm2', 'y']
+const pathOveridRows = (() => {
+  const n = 500
+  const seed = 20261501
+  // 需要 5 个正交基：x、e_m1、e_m2、e_y、备用
+  const basis = orthonormalize([
+    normalSeq(n, seed),
+    normalSeq(n, seed + 101),
+    normalSeq(n, seed + 202),
+    normalSeq(n, seed + 303)
+  ])
+  const zx = basis[0]
+  // ⚠️ 关键：`a0·z_x + √(1−a0²)·e` 看似方差为 1，但 basis 已中心化、
+  // 且样本 cor(z_x, e) 不是精确 0（约 1e-17，但 sd 会被拉扯），
+  // 实测 sd 可达 1.02–1.4。直接 standardize 会改变 cor，真值就丢了。
+  // 解法：用「对 z_x 的精确正交残差」构造，使 cor 精确等于目标值。
+  const makeUnit = (target, eRaw) => {
+    // want cor(zx, v) = target, sd(v) = 1, v 与 zx 精确正交方向 + target·zx
+    const e = (() => {
+      let w = eRaw.slice()
+      const dot = w.reduce((a, b, i) => a + b * zx[i], 0)
+      w = w.map((x, i) => x - dot * zx[i])
+      return standardize(w)
+    })()
+    return zx.map((v, i) => target * v + Math.sqrt(Math.max(1 - target * target, 1e-12)) * e[i])
+  }
+  const zm1 = makeUnit(0.5, basis[1])
+  const zm2 = makeUnit(0.4, basis[2])
+  // ── Y 的构造：用「显式回归残差法」保证偏系数精确 ─────────────────────
+  // 目标：Y（标准化形态）对 {zx, zm1, zm2} 的偏系数恰为 (.15, .45, .35)。
+  // 做法不是"拼一个公式然后祈祷"，而是**反解**：
+  //   先取一个与三者都正交的纯残差 d（Gram-Schmidt 两轮，然后不再 standardize，
+  //   因为 standardize 会重新中心化/缩放从而破坏正交性），
+  //   再令 zy = .15·zx + .45·zm1 + .35·zm2 + d
+  // d 与三个预测项正交 ⇒ OLS 恰好恢复 (.15, .45, .35)。
+  const d = (() => {
+    const regs = [zx, zm1, zm2]
+    let w = basis[3].slice()
+    for (let pass = 0; pass < 3; pass++) {
+      for (const q of regs) {
+        const dot = w.reduce((a, b, i) => a + b * q[i], 0)
+        const q2 = q.reduce((a, b) => a + b * b, 0)
+        w = w.map((x, i) => x - (dot / q2) * q[i])
+      }
+    }
+  // 只做缩放、**不做中心化**：正交化后 w 的均值已是 0（三轮回投影会保证），
+  // 缩放不改变正交性。尺度随意——下面的 zy 会整体归一化，偏系数不受影响。
+    const nrm = Math.sqrt(w.reduce((a, b) => a + b * b, 0) / w.length)
+    return w.map((x) => (x / nrm) * 0.6)
+  })()
+  const zyRaw = zx.map((v, i) => 0.15 * v + 0.45 * zm1[i] + 0.35 * zm2[i] + d[i])
+  // ⚠️ **保持 zyRaw 原样，不做归一化。** 这一步的代数（v0.3.3 绕了很久，记录清楚）：
+  //   d 与 {zx, zm1, zm2} 精确正交 ⇒ OLS(zyRaw ~ zx+zm1+zm2) **精确**得到
+  //   (.15, .45, .35)。这是"标准化预测项 + 未缩放因变量"下的偏系数。
+  //   若再把 zy 除以 sd(=0.938)，偏系数会整体放大 1/0.938，就不再是设计值。
+  // 但**观测尺度**上的真值是另一组数（因各列 sd 不同）：
+  //   X=4+1.2zx, M1=3.5+1.0zm1, M2=3.2+1.1zm2, Y=2.8+1.3zy
+  //   ⇒ coef(X→M1)  = 1.0×0.50/1.2 = 0.4167
+  //      coef(X→M2)  = 1.1×0.40/1.2 = 0.3667
+  //      coef(M1→Y)  = 1.3×0.45/1.0 = 0.5850
+  //      coef(M2→Y)  = 1.3×0.35/1.1 = 0.4136
+  //      coef(X→Y)   = 1.3×0.15/1.2 = 0.1625
+  //   （实测与上表逐位吻合，见 oracle 的断言）
+  const zy = zyRaw
+  // 乘回观测尺度（每题不同均值/sd，避免"标准化 = 原始"的假象）
+  const X = zx.map((v) => 4.0 + 1.2 * v)
+  const M1 = zm1.map((v) => 3.5 + 1.0 * v)
+  const M2 = zm2.map((v) => 3.2 + 1.1 * v)
+  const Y = zy.map((v) => 2.8 + 1.3 * v)
+  // ⚠️ 本 fixture 用 **8 位小数**（其余 fixture 是 4 位）：
+  // 正交性是在浮点上精确成立的，但写出 CSV 时的**舍入**会破坏它——
+  // 实测 4 位小数舍入把残差与预测项的相关从 1e-17 抬到约 1e-3，
+  // 足以让偏系数偏移 0.03（.45 → .4797）。本 fixture 的断言要检验
+  // "过度识别下的效应分解"，系数必须精确，因此保留 8 位。
+  return X.map((v, i) => [
+    v.toFixed(8), M1[i].toFixed(8), M2[i].toFixed(8), Y[i].toFixed(8)
+  ])
+})()
+
+/**
  * SEM 数据（n = 600，2 潜变量 × 3 指标，结构路径 γ 真值 0.5）。
  *   η1 = ζ1                       （外生，方差 1）
  *   η2 = 0.5 η1 + ζ2              （内生，Var(ζ2) = 1 − 0.25 = 0.75 → 潜变量方差为 1）
@@ -926,6 +1164,16 @@ const scenarios = [
     code: (R, csv) => R.cfaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'], 1, csv)
   },
   {
+    method: 'cfa',
+    dataset: 'cfa_reverse',
+    // D01 回归守卫：因子 1 含负载荷题项（未重编码的反向题）。
+    // CR 必须按 Σ|λ| 计算，且必须满足不变式 CR >= AVE。
+    cols: cfaReverseData.cols,
+    rows: cfaReverseData.rows,
+    desc: 'CFA 反向计分（因子 1 含负载荷题项 —— D01 守卫：CR 必须用 Σ|λ|，且 CR >= AVE）',
+    code: (R, csv) => R.cfaCode(['q1', 'q2', 'q3', 'q4', 'q5', 'q6'], undefined, csv)
+  },
+  {
     method: 'cvi',
     cols: cviCols,
     rows: cviRows,
@@ -1013,6 +1261,36 @@ const scenarios = [
     desc: 'SEM 无结构路径数据（γ 真值=0，结构规格仍为 F1>F2 —— 判别力证据：p 须 > .05）',
     code: (R, csv) =>
       R.semCode({ F1: ['x1', 'x2', 'x3'], F2: ['y1', 'y2', 'y3'] }, 'F1 > F2', csv)
+  },
+
+  // ── v0.3.3 T83：补验证盲区（真实脏数据 + 过度识别）─────────────────────
+  {
+    method: 'cfa',
+    dataset: 'cfa_likert',
+    // 真实学生问卷形态：5 点整数李克特 + 天花板效应（约 32% 满分）
+    // + 题项级 MCAR/MAR 混合缺失 + 越界值（0/7/9）。
+    // 断言重点不是"载荷精确等于真值"（离散化必然偏离），而是
+    // "脏数据下仍跑通 + 载荷仍在合理范围 + 有缺失剔除说明"。
+    cols: cfaLikertData.cols,
+    rows: cfaLikertData.rows,
+    desc: 'CFA 真实脏数据（5 点整数李克特 + 天花板效应 + MCAR/MAR 混合缺失 + 越界值 0/7/9）',
+    code: (R, csv) => R.cfaCode(['L1', 'L2', 'L3', 'L4', 'L5'], undefined, csv)
+  },
+  {
+    method: 'path_analysis',
+    dataset: 'path_overid',
+    // 4 变量 5 条边（两条平行中介 + 一条直接边）—— 真正的**过度识别**模型。
+    // 既有 path_analysis 是 3 变量 3 条边的饱和模型，"过度识别时不等价"
+    // 那句声明因此零测试覆盖。本场景让 df > 0 真正出现。
+    cols: pathOveridCols,
+    rows: pathOveridRows,
+    desc: '路径分析过度识别（4 变量 5 条边：x>m1, x>m2, m1>y, m2>y, x>y；两条中介通路）',
+    code: (R, csv) =>
+      R.pathAnalysisCode(
+        ['x', 'm1', 'm2', 'y'],
+        'x > m1, x > m2, m1 > y, m2 > y, x > y',
+        csv
+      )
   }
 ]
 

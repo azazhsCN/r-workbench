@@ -51,6 +51,13 @@ export interface ParseWarning {
  * 这些值在中文问卷 / SPSS 导出中稳定表示缺失，且**不可能是有效观测**：
  * `NA` 是 R 自己的缺失标记；`.` 是 SPSS 的缺失标记；`-999`/`-99` 是常见
  * 的缺失编码。归一化后 `-999` 不再作为有效观测参与均值/标准差/t/r 计算。
+ *
+ * ⚠️ **本常量是缺失哨兵的单一真相**（v0.3.3 / D03）。R 端的 `READ_CSV`
+ * 通过 `missingSentinelsForR()` 从同一个数组生成 `na.strings`，
+ * 因此"绕过 JS 层直接往 CSV 里写 `-999`"也会被 R 当成缺失。
+ * 改动本数组会同时改变 JS 导入层与 R 读取层的行为——这是刻意的。
+ *
+ * 🚫 **绝不要把 `99`/`999` 加进来**。见 `SPSS_MISSING_SENTINELS` 的说明。
  */
 export const DEFAULT_MISSING_SENTINELS: readonly string[] = [
   'NA',

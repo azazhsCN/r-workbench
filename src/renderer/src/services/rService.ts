@@ -427,22 +427,48 @@ k <- ncol(item_data)
 if (k < 2) stop("信度分析至少需要 2 个项目")
 if (nrow(item_data) < 2) stop("有效样本量不足（至少需要 2 行）")
 dropped <- n_before - nrow(item_data)
+
+# ── 数据质量检查（v0.3.3 / D02）──
+# 极端值会让 alpha 严重失真（实测：单点 1e6 使 alpha 从 0.84 变 -0.00），
+# 而原实现没有任何检测，用户无从察觉。这里对每个题项做检查并输出 DQ_WARN 行。
+# 值域检查不设上限（量表点数未知），只报极端值与缺失。
+r_quality_check_all(item_data, item_names)
 if (dropped > 0) {
-  cat(sprintf("NOTE_DROPPED|因缺失值采用整列删除，有效样本从 %d 减少到 %d（剔除 %d 行）\\n", n_before, nrow(item_data), dropped))
+  cat(sprintf("NOTE_DROPPED|因缺失值采用逐行删除（listwise / 个案剔除），有效样本从 %d 减少到 %d（剔除 %d 行）\\n", n_before, nrow(item_data), dropped))
 }
-# 反向计分自动识别：与总分负相关的项目
+# ─────────────────────────────────────────────────────────────
+# 反向计分自动识别（v0.3.3 / D05：改为显式告知，不再静默修改）
+#
+# 原实现直接修改 item_data（静默改了用户的数据），与本项目「过程透明、可随时接管」
+# 的产品红线冲突：用户不知道自己的原始数据被改过。
+#
+# 现在改为：
+#   1. 仍然自动识别（否则用户拿到的是错的 alpha）
+#   2. 但明确输出「软件做了这件事」+ 每题的原始相关，让用户可见、可复核
+#   3. 同时给出 CITC 诊断：识别不成功但仍呈负相关时，明确提示可能漏判
+#
+# 为什么仍要自动做：检出未重编码的反向题后不处理，alpha 会严重偏低
+# （实测同一数据：自动反向后 0.8617，不反向 0.6130），用户更难发现原因。
+# 关键是「做了要说」，而不是「做了不说」。
+# ─────────────────────────────────────────────────────────────
 total_raw <- rowSums(item_data)
 reversed <- character(0)
+reversed_detail <- character(0)
 for (nm in names(item_data)) {
   r_it <- suppressWarnings(cor(item_data[[nm]], total_raw))
   if (!is.na(r_it) && r_it < 0) {
     rg <- range(item_data[[nm]], na.rm = TRUE)
     item_data[[nm]] <- (rg[1] + rg[2]) - item_data[[nm]]
     reversed <- c(reversed, nm)
+    reversed_detail <- c(reversed_detail, sprintf("%s(r=%+.3f)", nm, r_it))
   }
 }
 if (length(reversed) > 0) {
   cat(sprintf("REVERSED|%s\\n", paste(reversed, collapse = ",")))
+  cat(sprintf("RELIABILITY_NOTE|软件已将以下题项自动反向计分：%s。翻转方式是 (最小值+最大值)-原值。你的原始数据未被修改，但本次 alpha 用的是翻转后的值；如需以原始计分复算，请先自行重编码该题项\\n",
+    paste(reversed_detail, collapse = "、")))
+} else {
+  cat(sprintf("RELIABILITY_NOTE|未检出需要自动反向计分的题项（所有题项与总分相关均为正或无法计算）\\n"))
 }
 cat(sprintf("ITEMS|%d|%d\\n", k, nrow(item_data)))
 item_vars <- apply(item_data, 2, var)
@@ -466,11 +492,31 @@ if (!is.na(ci_lo) && !is.na(ci_hi)) {
   cat(sprintf("ALPHA_CI|%s|%s\\n", num(ci_lo, 4), num(ci_hi, 4)))
 }
 # 逐项统计分析
+# v0.3.3 / D05：CITC（校正题总相关）为负时的诊断。
+# 自动反向只处理「与总分显著负相关」的题项；若某题与总分的相关接近 0
+# （弱反向题、载荷很低的题），自动反向不会触发，但该题仍可能是
+# 未重编码的反向题或与量表异质的题。原实现只有数字、没有诊断。
+citc_neg <- character(0)
+alpha_if_better <- character(0)
 for (nm in names(item_data)) {
   rest <- rowSums(item_data[, setdiff(names(item_data), nm), drop = FALSE])
   r_it <- suppressWarnings(cor(item_data[[nm]], rest))
   a_drop <- (k - 1) / (k - 2) * (1 - sum(item_vars[setdiff(names(item_vars), nm)]) / var(rest))
   cat(sprintf("ITEM|%s|%s|%s|%s|%s\\n", nm, num(mean(item_data[[nm]])), num(sd(item_data[[nm]])), num(r_it, 4), num(a_drop, 4)))
+  if (!is.na(r_it) && r_it < 0) {
+    citc_neg <- c(citc_neg, sprintf("%s(CITC=%+.3f)", nm, r_it))
+  }
+  if (!is.na(a_drop) && !is.na(alpha) && a_drop > alpha + 1e-6) {
+    alpha_if_better <- c(alpha_if_better, sprintf("%s(删除后 %.4f)", nm, a_drop))
+  }
+}
+if (length(citc_neg) > 0) {
+  cat(sprintf("RELIABILITY_WARN|以下题项与量表其余题项呈负相关：%s。这极可能是未重编码的反向计分题（也有可能是与量表异质的题）。请先核对原始问卷的计分方向再报告 alpha\\n",
+    paste(citc_neg, collapse = "、")))
+}
+if (length(alpha_if_better) > 0) {
+  cat(sprintf("RELIABILITY_WARN|删除以下题项后 alpha 会上升：%s（当前 alpha = %s）。这提示该题与量表其余部分可能测量了不同内容，建议检查题项措辞或考虑剔除\\n",
+    paste(alpha_if_better, collapse = "、"), num(alpha, 4)))
 }
 cat(sprintf("CONCL|%s\\n", if (alpha >= 0.9) "信度非常好" else if (alpha >= 0.8) "信度好" else if (alpha >= 0.7) "信度可接受" else if (alpha >= 0.6) "信度尚可" else "信度不佳"))
 `
@@ -988,25 +1034,42 @@ if (n_fac >= 2) {
   }
 }
 
-# 组合信度 / 平均方差抽取量（λ 用标准化载荷，θ 用 1 − λ*² 的标准化误差）
+# 组合信度 / 平均方差抽取量（λ 用标准化载荷，θ 用 1 − λ² 的标准化误差方差）
+#
+# ⚠️ D01（v0.3.3）：CR 的分子必须用 **Σ|λ|**，不能用带符号的 Σλ。
+# 组合信度衡量「各题项共同反映因子的程度」，与题项方向无关；反向计分题
+# （未重编码）在本模型里表现为负载荷，带符号求和会让正负项相互抵消：
+#   λ = (0.85, 0.80, −0.72) → Σλ = 0.93 → CR ≈ 0.436（错，严重低估）
+#                           → Σ|λ| = 2.37 → CR ≈ 0.795（对）
+# 错值还会**违反数学不变式 CR >= AVE**（λ 同号时 (Σλ)² >= Σλ²），
+# 用户会据此得出"我的量表不可靠"的相反结论。
+# 验证脚本 scripts/validate/run_validation.R 的 cfa_reverse 场景与
+# CFA_RELIAB.*.cr_ge_ave 断言专门守这一条（把 abs() 去掉就会变红）。
 for (j in seq_len(n_fac)) {
   idx <- which(fac_of == j)
   lam_j <- std_lam[idx]
   err_j <- pmax(1 - lam_j^2, 0)
-  sum_lam <- sum(lam_j)
+  # AVE 用 λ²，与符号无关；CR 用 |λ| 求和（见上方 D01 说明）
+  sum_abs_lam <- sum(abs(lam_j))
+  sum_lam_sq <- sum_abs_lam^2
   sum_err <- sum(err_j)
-  cr_j <- if ((sum_lam^2 + sum_err) > 0) (sum_lam^2) / (sum_lam^2 + sum_err) else NA_real_
+  cr_j <- if ((sum_lam_sq + sum_err) > 0) sum_lam_sq / (sum_lam_sq + sum_err) else NA_real_
   ave_j <- if ((sum(lam_j^2) + sum_err) > 0) sum(lam_j^2) / (sum(lam_j^2) + sum_err) else NA_real_
   cat(sprintf("CFA_RELIAB|F%d|%s|%s|%s\\n", j, num(cr_j), num(ave_j),
     num(if (is.na(ave_j)) NA_real_ else sqrt(max(ave_j, 0)))))
 }
+# v0.3.3 / D11：CFA_RELIAB 只有裸数字，用户极易把第 3 列当成 Cronbach alpha。
+# 这里补一行字段语义表头（顺序与 CFA_RELIAB 列一致），解析器据它建表头；
+# 再用 CFA_NOTE 用自然语言解释，避免误读。
+cat(sprintf("CFA_RELIAB_HEAD|factor|CR|AVE|sqrt_AVE\n"))
+cat(sprintf("CFA_NOTE|CFA_RELIAB 各列含义：第 2 列因子名；第 3 列 CR（组合信度，composite reliability）；第 4 列 AVE（平均方差抽取量，average variance extracted）；第 5 列 sqrt(AVE)（与因子间相关比较用，sqrt(AVE) 大于该因子与其他因子的相关即支持区分效度）。常用标准 CR >= 0.70、AVE >= 0.50。注意：CR 是组合信度，不等于 Cronbach alpha\\n"))
 
 # ─────────────────────────────────────────────────────────────
 # 步骤 6：诊断与结论
 # ─────────────────────────────────────────────────────────────
 heywood <- any(theta <= 1e-6) || any(abs(std_lam) > 1)
 if (n_dropped > 0) {
-  cat(sprintf("CFA_NOTE|因缺失值采用整列删除，剔除 %d 行，有效样本 %d\\n", n_dropped, n))
+  cat(sprintf("CFA_NOTE|因缺失值采用逐行删除（listwise / 个案剔除），剔除 %d 行，有效样本 %d\\n", n_dropped, n))
 }
 cat(sprintf("CFA_NOTE|估计方法：极大似然 ML（相关矩阵，纯 base R 实现，未使用 lavaan）\\n"))
 cat(sprintf("CFA_NOTE|因子结构由同一数据集的 EFA（主成分 + varimax）导出，属探索—验证同源，理想做法是在独立样本上复核\\n"))
@@ -1240,7 +1303,7 @@ cat(sprintf("HARMAN_SUMMARY|%d|%s|%s|%s\\n", n_gt1, num(first_pct, 2), num(thr_p
   if (ok_flag) "是" else "否"))
 
 if (n_dropped > 0) {
-  cat(sprintf("HARMAN_NOTE|因缺失值采用整列删除，剔除 %d 行，有效样本 %d\\n", n_dropped, n))
+  cat(sprintf("HARMAN_NOTE|因缺失值采用逐行删除（listwise / 个案剔除），剔除 %d 行，有效样本 %d\\n", n_dropped, n))
 }
 cat(sprintf("HARMAN_NOTE|方法：未旋转主成分分析（相关矩阵，按特征值 > 1 提取成分），未做任何旋转\\n"))
 cat(sprintf("HARMAN_NOTE|判据：首成分解释率 < 40%% 且特征值 > 1 的成分多于 1 个，视为未发现严重共同方法偏差\\n"))
@@ -1423,7 +1486,7 @@ for (i in seq_len(p)) {
 }
 
 if (n_dropped > 0) {
-  cat(sprintf("NOTE_DROPPED|因缺失值采用整列删除，剔除 %d 行，有效样本 %d\\n", n_dropped, n))
+  cat(sprintf("NOTE_DROPPED|因缺失值采用逐行删除（listwise / 个案剔除），剔除 %d 行，有效样本 %d\\n", n_dropped, n))
 }
 
 # ── 结论（KMO + Bartlett 组合判断）──

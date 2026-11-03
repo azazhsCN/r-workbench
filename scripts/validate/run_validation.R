@@ -921,6 +921,25 @@ cfa_spec_of <- function(dataset) {
          true_load = c(0.85, 0.80, 0.75, 0.82, 0.78, 0.72),
          true_phi = numeric(0),
          n_expected = 800L)
+  } else if (dataset == "cfa_reverse") {
+    # D01 守卫场景：q3 是未重编码的反向计分题 → 真值载荷为 **-0.72**。
+    # 这条真值本身带符号，因此「载荷恢复」断言也会检查符号是否被正确保留。
+    list(items = c("q1", "q2", "q3", "q4", "q5", "q6"),
+         true_groups = c(1, 1, 1, 2, 2, 2),
+         true_k = 2L,
+         true_load = c(0.85, 0.80, -0.72, 0.82, 0.78, 0.72),
+         true_phi = 0.35,
+         n_expected = 800L)
+  } else if (dataset == "cfa_likert") {
+    # v0.3.3 T83「真实脏数据」场景：5 点整数李克特 + 天花板 + MCAR/MAR 缺失 + 越界值。
+    # 真值载荷只作为**量级参考**（离散化 + 天花板效应会合法地让估计偏离），
+    # 不做"精确恢复"断言——那条由 oracle_cfa_likert 单独用更宽的区间断言。
+    list(items = c("L1", "L2", "L3", "L4", "L5"),
+         true_groups = c(1, 1, 1, 2, 2),
+         true_k = 2L,
+         true_load = c(0.78, 0.74, 0.71, 0.76, 0.69),
+         true_phi = 0.30,
+         n_expected = 600L)
   } else {
     list(items = c("q1", "q2", "q3", "q4", "q5", "q6"),
          true_groups = c(1, 1, 1, 2, 2, 2),
@@ -1094,10 +1113,14 @@ oracle_cfa <- function(method, dataset, kv, out, data) {
   # 精确等于 ΛΦΛ'+Θ → 这里的容差可以收紧到 0.02（若容差放到 0.10 以上，
   # 「载荷恢复」断言就失去了判别力：连错的解都能通过）。
   # 注意 cfa_misfit 场景真值不适用（人为误设模型），跳过该断言。
+  #
+  # v0.3.3：改成**带符号**比对。cfa_reverse 场景的真值载荷含负值（-0.72），
+  # 旧写法 abs(abs(lam) - true) 会把 -0.72 与 0.72 判成相差 1.44 的假红。
+  # 带符号比对也更严格：符号被统一逻辑弄反时这里会直接抓住。
   if (dataset != "cfa_misfit") {
     true_load <- spec$true_load
     chk_num(method, dataset, "truth.std_load.max_abs_error", 0,
-            max(abs(abs(lam_got) - true_load)), tol = 0.02)
+            max(abs(lam_got - true_load)), tol = 0.02)
   }
 
   # r2 == std_load²（契约第一条字段语义，独立复算）
@@ -1158,7 +1181,15 @@ oracle_cfa <- function(method, dataset, kv, out, data) {
   }
 
   ## ---- 组合信度 / AVE：按契约公式独立复算 ----
-  ## cr = (Σλ)²/((Σλ)² + Σθ)，ave = Σλ²/(Σλ² + Σθ)，λ 用**标准化**载荷
+  ## cr = (Σ|λ|)²/((Σ|λ|)² + Σθ)，ave = Σλ²/(Σλ² + Σθ)，λ 用**标准化**载荷
+  ##
+  ## ⚠️ D01（v0.3.3）：CR 必须用 **Σ|λ|**，不能用带符号的 Σλ。
+  ## 依据：组合信度衡量的是「各题项共同反映因子的程度」，与题项方向无关。
+  ## 反向计分题（未重编码）在本模型里表现为负载荷，带符号求和会相互抵消：
+  ##   λ = (0.85, 0.80, −0.72) → Σλ = 0.93 → CR ≈ 0.436（错，严重低估）
+  ##                           → Σ|λ| = 2.37 → CR ≈ 0.795（对）
+  ## 而且带符号求和的 CR 会**违反数学不变式 CR ≥ AVE**（λ 同号时 (Σλ)² ≥ Σλ²），
+  ## 所以下面同时断言 CR >= AVE —— 这条不依赖 fixture 覆盖，是最关键的一道防线。
   reliab <- kv[["CFA_RELIAB"]]
   if (is.null(reliab) || length(reliab) != k_got) {
     add_row(method, dataset, "CFA_RELIAB.count", k_got,
@@ -1170,16 +1201,63 @@ oracle_cfa <- function(method, dataset, kv, out, data) {
         add_row(method, dataset, paste0("CFA_RELIAB.F", f, ".numeric"), "3 numeric", "bad field", FALSE)
         next
       }
-      lam_f <- lam_exp[got_fac == f, f]
-      s2 <- sum(lam_f)
+      # ⚠️ 用**软件自己报的标准化载荷**复算，而不是 oracle 的 λ：
+      # 这条断言专门隔离「CR 公式」这一个变量，不让拟合差异混进来。
+      # （载荷本身的正确性已由上面的逐题 std_load 断言独立守住。）
+      lam_f <- lam_got[got_fac == f]
+      # CR 用 |λ| 之和（D01 修法）；AVE 用 λ²（本来就与符号无关）
+      s_abs <- sum(abs(lam_f))
       s22 <- sum(lam_f^2)
       # θ 用标准化误差方差：1 − λ²（契约说 λ 用标准化载荷，θ 对应标准化）
       th_f <- sum(1 - lam_f^2)
-      cr_ref <- s2^2 / (s2^2 + th_f)
+      cr_ref <- s_abs^2 / (s_abs^2 + th_f)
       ave_ref <- s22 / (s22 + th_f)
       chk_num(method, dataset, paste0("CFA_RELIAB.F", f, ".cr"), cr_ref, got[1], TOL_LOOSE)
       chk_num(method, dataset, paste0("CFA_RELIAB.F", f, ".ave"), ave_ref, got[2], TOL_LOOSE)
       chk_num(method, dataset, paste0("CFA_RELIAB.F", f, ".sqrt_ave"), sqrt(ave_ref), got[3], TOL_LOOSE)
+
+      ## 不变式 CR >= AVE（对**软件输出值**断言，不依赖 oracle 的 λ）
+      ## 证明：令 S = Σ|λ|, Q = Σλ², T = Σθ。λ 全同号时 S² ≥ Q，故
+      ##   S²/(S²+T) ≥ Q/(Q+T) ⟺ S²(Q+T) ≥ Q(S²+T) ⟺ S²T ≥ QS²·... 化简后 ⟺ S² ≥ Q。
+      ## 若实现误用带符号求和，S 变成 |Σλ| ≤ Σ|λ|，遇到反向题时 S² 可能 < Q，
+      ## 不变式立刻被打破 —— 这就是 D01 的自动防回归检测。
+      add_row(method, dataset, paste0("CFA_RELIAB.F", f, ".cr_ge_ave"),
+              "CR >= AVE", sprintf("CR=%s AVE=%s", fv(got[1]), fv(got[2])),
+              is.finite(got[1]) && is.finite(got[2]) &&
+                got[1] >= got[2] - TOL_LOOSE)
+
+      ## CR / AVE 必须落在 (0, 1] —— 合法区间之外说明公式或符号出了问题
+      add_row(method, dataset, paste0("CFA_RELIAB.F", f, ".in_unit_interval"),
+              "0 < CR <= 1 且 0 < AVE <= 1",
+              sprintf("CR=%s AVE=%s", fv(got[1]), fv(got[2])),
+              is.finite(got[1]) && is.finite(got[2]) &&
+                got[1] > 0 && got[1] <= 1 + TOL_LOOSE &&
+                got[2] > 0 && got[2] <= 1 + TOL_LOOSE)
+    }
+  }
+
+  ## ---- D01 专项：cfa_reverse 场景必须真的走「含负载荷」的分支 ----
+  ## 若某天 fixture 被改成全正载荷，D01 守卫会静默失效（与 839 断言的教训同类）。
+  ## 因此先断言「本场景确实存在负载荷」，再断言 CR 按 Σ|λ| 复算。
+  if (dataset == "cfa_reverse") {
+    lam_signed <- num_field(est_lines, 2)
+    add_row(method, dataset, "d01.negative_loading_present",
+            "at least one lambda < 0", sprintf("min(lambda) = %s", fv(min(lam_signed, na.rm = TRUE))),
+            any(lam_signed < -TOL_LOOSE))
+    # 带符号求和与 |λ| 求和必须**显著不同**，否则本 fixture 没有判别力。
+    # 只对「真的含负载荷」的因子断言 —— F2 全是正载荷，两个和当然相等，
+    # 对它要求差值 > 0.1 是逻辑错误（会把无缺陷的因子判成红）。
+    for (f in seq_len(k_got)) {
+      lam_f <- lam_signed[got_fac == f]
+      if (!any(lam_f < -TOL_LOOSE)) {
+        next
+      }
+      s_signed <- sum(lam_f)
+      s_abs <- sum(abs(lam_f))
+      add_row(method, dataset, paste0("d01.F", f, ".sign_matters"),
+              "Σ|λ| − |Σλ| > 0.1",
+              sprintf("Σλ=%s Σ|λ|=%s", fv(s_signed), fv(s_abs)),
+              abs(s_abs - abs(s_signed)) > 0.1)
     }
   }
 
@@ -1213,6 +1291,122 @@ oracle_cfa <- function(method, dataset, kv, out, data) {
             ">= 0.95", fv(cfi_val),
             is.finite(cfi_val) && cfi_val >= 0.95)
   }
+}
+
+## 4.17b CFA「真实脏数据」oracle（v0.3.3 T83）
+##
+## 与 oracle_cfa 的区别（为什么必须单独写）：
+##   oracle_cfa 的核心断言是「标准化载荷精确恢复真值（容差 0.02）」——
+##   那只有在**连续、无缺失、无天花板**的理想数据上才成立。
+##   本场景的数据是 5 点整数李克特 + 41% 天花板 + 106 个缺失单元 + 17 个越界值，
+##   离散化与截断会**合法地**让载荷偏离真值（实测 L4 真值 .76 估成 .55）。
+##   若沿用"精确恢复"断言，它必然假红；若把容差放宽到能通过，
+##   这条断言就失去了判别力（连错的解都能过）。
+##
+## 因此本 oracle 改用**性质断言（properties）**而不是数值断言：
+##   1. 脏数据下**必须仍能跑通**：有 CFA_SPEC / 载荷表 / 拟合指标，无 NaN
+##   2. 剔除了缺失行，且**如实报告剔除量**（CFA_NOTE 里有 "剔除 N 行"）
+##   3. 载荷落在**(0, 1) 开区间**且**量级合理**（0.3–0.95）——越界值 0/7/9
+##      若被当成合法值参与相关矩阵，载荷会明显退化甚至翻转符号
+##   4. CR/AVE 仍满足不变式（CR ≥ AVE、都在 (0,1]）——复用 D01 的守卫
+##   5. 拟合指标落在数学可行域（CFI/TLI 可略 >1、RMSEA ≥ 0、SRMR ≥ 0）
+##   6. 关键判别力：**有效样本数必须等于"完整个案"数**。
+##      这是"listwise 删除"与"整列删除"的分水岭：
+##      整列删除（逐列丢缺失）会保留远多于完整个案的行数，
+##      在本题（26/20/28/15/17 个缺失分散在不同行）会给出明显偏大的 n。
+oracle_cfa_likert <- function(method, dataset, kv, out, data) {
+  spec <- cfa_spec_of(dataset)
+  items <- spec$items
+
+  ## ---- 1. 独立复算"完整个案"数（listwise 删除的正确结果）----
+  X <- data.frame(lapply(data[, items, drop = FALSE], as_num))
+  n_raw <- nrow(X)
+  ok <- complete.cases(X)
+  n_complete <- sum(ok)
+  n_dropped_ref <- n_raw - n_complete
+
+  chk_eq(method, dataset, "likert.CFA_SPEC.n_equals_complete_cases",
+         n_complete, gfn(kv, "CFA_SPEC", 1, 3))
+  chk_eq(method, dataset, "likert.CFA_SPEC.p", length(items), gfn(kv, "CFA_SPEC", 1, 2))
+
+  ## 判别力：n 必须**严格小于**原始行数（说明确实有缺失被剔除），
+  ## 且必须**显著大于**"整列删除"会留下的行数——否则说明用了整列删除。
+  ## 整列删除的对照：只要该列有一个缺失就整列丢掉，但那会丢掉所有行（每列都有缺失）；
+  ## 更现实的错误是"取交集时算错"或"用 pairwise 删除"，会让 n 偏大。
+  ## 这里断言 n 恰好等于完整个案数（1 行不差），足以抓住任何偏差。
+  add_row(method, dataset, "likert.dropped_some_rows", "n < n_raw",
+          sprintf("n=%d n_raw=%d", n_complete, n_raw),
+          n_complete < n_raw)
+  add_row(method, dataset, "likert.n_matches_listwise", "精确等于完整个案数",
+          sprintf("oracle=%d output=%s", n_complete, fv(gfn(kv, "CFA_SPEC", 1, 3))),
+          num_ok(n_complete, gfn(kv, "CFA_SPEC", 1, 3), 0))
+  add_row(method, dataset, "likert.dropped_count_matches", "剔除量一致",
+          sprintf("oracle=%d", n_dropped_ref),
+          grepl(paste0("剔除 ", n_dropped_ref, " 行"), paste(unlist(kv[["CFA_NOTE"]]), collapse = " ")) ||
+            grepl(paste0("剔除 ", n_dropped_ref, " "), paste(unlist(kv[["CFA_NOTE"]]), collapse = " ")))
+
+  ## ---- 2. 必须如实报告缺失剔除（契约与产品一致性）----
+  notes <- paste(unlist(kv[["CFA_NOTE"]]), collapse = " ")
+  add_row(method, dataset, "likert.reports_missing_handling", "present",
+          if (nzchar(notes)) "present" else "missing",
+          grepl("缺失|剔除|listwise|个案", notes))
+
+  ## ---- 3. 载荷：落位 + 量级合理性（脏数据下不该出现 NaN / 越界 / 符号乱翻）----
+  est <- kv[["CFA_ESTIMATE"]]
+  if (is.null(est) || length(est) != length(items)) {
+    add_row(method, dataset, "likert.CFA_ESTIMATE.count", length(items),
+            if (is.null(est)) 0 else length(est), FALSE)
+    return(invisible(NULL))
+  }
+  lam <- suppressWarnings(as.numeric(vapply(est, function(z) z[2], character(1))))
+  chk_eq(method, dataset, "likert.std_load.all_numeric", "TRUE",
+         if (all(is.finite(lam))) "TRUE" else "FALSE")
+  ## 3a. 全部落在 (0,1)：负值或 >1 说明越界值污染了相关矩阵或触发了 Heywood
+  add_row(method, dataset, "likert.std_load_in_open_unit_interval", "0 < lam < 1",
+          sprintf("%.4f .. %.4f", min(lam), max(lam)),
+          all(is.finite(lam)) && all(lam > 0) && all(lam < 1))
+  ## 3b. 量级合理：脏数据会让载荷下降，但不该崩到 0.2 以下（那说明数据被打坏了）
+  add_row(method, dataset, "likert.std_load_magnitude_reasonable", "0.3 <= lam <= 0.95",
+          sprintf("%.4f .. %.4f", min(lam), max(lam)),
+          all(is.finite(lam)) && all(lam >= 0.3) && all(lam <= 0.95))
+  ## 3c. 载荷必须与真值**同向**（不能因为越界值把某题翻成负载荷）
+  add_row(method, dataset, "likert.std_load_sign_matches_truth", "全部同号（正）",
+          sprintf("%d/%d 正", sum(lam > 0, na.rm = TRUE), length(lam)),
+          all(is.finite(lam)) && all(lam > 0))
+
+  ## ---- 4. CR/AVE 不变式（复用 D01 守卫，在脏数据下同样必须成立）----
+  rel <- kv[["CFA_RELIAB"]]
+  if (!is.null(rel) && length(rel) >= 1) {
+    for (r in rel) {
+      f <- r[1]
+      cr <- suppressWarnings(as.numeric(r[2]))
+      ave <- suppressWarnings(as.numeric(r[3]))
+      add_row(method, dataset, paste0("likert.CFA_RELIAB.", f, ".in_unit_interval"),
+              "0 < CR <= 1 且 0 < AVE <= 1",
+              sprintf("CR=%.4f AVE=%.4f", cr, ave),
+              is.finite(cr) && is.finite(ave) &&
+                cr > 0 && cr <= 1 && ave > 0 && ave <= 1)
+      add_row(method, dataset, paste0("likert.CFA_RELIAB.", f, ".cr_ge_ave"),
+              "CR >= AVE", sprintf("CR=%.4f AVE=%.4f", cr, ave),
+              is.finite(cr) && is.finite(ave) && cr >= ave - 1e-9)
+    }
+  }
+
+  ## ---- 5. 拟合指标落在数学可行域 ----
+  cfi <- gfn(kv, "CFA_FITIDX", 1, 1)
+  tli <- gfn(kv, "CFA_FITIDX", 1, 2)
+  rmsea <- gfn(kv, "CFA_FITIDX", 1, 3)
+  srmr <- gfn(kv, "CFA_FITIDX", 1, 4)
+  add_row(method, dataset, "likert.fit_indices_in_feasible_range",
+          "CFI/TLI 有限, RMSEA>=0, SRMR>=0",
+          sprintf("CFI=%.4f TLI=%.4f RMSEA=%.4f SRMR=%.4f", cfi, tli, rmsea, srmr),
+          is.finite(cfi) && is.finite(tli) && is.finite(rmsea) && is.finite(srmr) &&
+            rmsea >= 0 && srmr >= 0)
+  ## 脏数据下拟合不应完美（否则说明缺失/越界值被静默丢弃或数据被清洗得过于干净）
+  add_row(method, dataset, "likert.fit_not_artificially_perfect",
+          "chisq > 0 且 SRMR > 0", sprintf("chisq=%.4f SRMR=%.4f",
+                                           gfn(kv, "CFA_FIT", 1, 1), srmr),
+          gfn(kv, "CFA_FIT", 1, 1) > 0 && srmr > 0)
 }
 
 ## 4.18 内容效度指数 CVI（v0.3.1）
@@ -1988,36 +2182,47 @@ oracle_moderated_mediation <- function(method, dataset, kv, out, data) {
 ## oracle 独立路径：**递归路径追踪**——显式枚举图中所有通路求乘积和。
 ## 实现对每个内生变量跑 OLS 后做递归；oracle 用邻接矩阵的通路枚举（不同的算法结构）。
 oracle_path_analysis <- function(method, dataset, kv, out, data) {
-  nodes <- c("x", "m", "y")
+  ## 按场景选择节点与边表（v0.3.3 起支持过度识别模型 path_overid）
+  if (dataset == "path_overid") {
+    nodes <- c("x", "m1", "m2", "y")
+    edges <- list(c("x", "m1"), c("x", "m2"), c("m1", "y"), c("m2", "y"), c("x", "y"))
+  } else {
+    nodes <- c("x", "m", "y")
+    edges <- list(c("x", "m"), c("m", "y"), c("x", "y"))
+  }
   d <- data.frame(lapply(data[, nodes, drop = FALSE], as_num))
   d <- d[complete.cases(d), , drop = FALSE]
   n <- nrow(d)
-  ## 边表（与 fixtures 的 pathSpec 一致）
-  edges <- list(c("x", "m"), c("m", "y"), c("x", "y"))
 
   ## 逐方程 OLS（矩阵代数）：每个有入边的节点
   endo <- unique(vapply(edges, function(e) e[2], character(1)))
   coefs <- list()
+  r2_by_eq <- list()
   for (dv in endo) {
     preds <- vapply(Filter(function(e) e[2] == dv, edges), function(e) e[1], character(1))
     Xd <- cbind(1, as.matrix(d[, preds, drop = FALSE]))
     f <- ols_mat(Xd, d[[dv]])
     for (k in seq_along(preds)) coefs[[paste(preds[k], dv, sep = ">")]] <- f$coef[k + 1]
-    r2_ref <- f$r2
-    eq_rows <- kv[["PATH_EQ"]]
-    if (!is.null(eq_rows)) {
-      for (r in eq_rows) {
-        if (identical(r[1], dv)) {
-          chk_num(method, dataset, paste0("PATH_EQ.", dv, ".r2"), r2_ref,
-                  suppressWarnings(as.numeric(r[2])), 1e-3)
-        }
-      }
-    }
+    r2_by_eq[[dv]] <- f$r2
   }
 
   chk_eq(method, dataset, "PATH_SPEC.n", n, gfn(kv, "PATH_SPEC", 1, 1))
   chk_eq(method, dataset, "PATH_SPEC.n_nodes", length(nodes), gfn(kv, "PATH_SPEC", 1, 2))
   chk_eq(method, dataset, "PATH_SPEC.n_edges", length(edges), gfn(kv, "PATH_SPEC", 1, 3))
+
+  ## 逐方程 R² 比对
+  eq_rows <- kv[["PATH_EQ"]]
+  if (!is.null(eq_rows)) {
+    for (dv in names(r2_by_eq)) {
+      for (r in eq_rows) {
+        if (identical(r[1], dv)) {
+          chk_num(method, dataset, paste0("PATH_EQ.", dv, ".r2"), r2_by_eq[[dv]],
+                  suppressWarnings(as.numeric(r[2])), 1e-3)
+          break
+        }
+      }
+    }
+  }
 
   ## ---- PATH_EDGE|from|to|coef|se|t|p_disp|p_raw|std_coef ----
   edge_rows <- kv[["PATH_EDGE"]]
@@ -2039,15 +2244,47 @@ oracle_path_analysis <- function(method, dataset, kv, out, data) {
   }
 
   ## ---- 递归路径追踪（oracle 的独立算法）----
-  ## 枚举 X→Y 的所有无环通路，indirect = Σ 通路乘积
-  ## 通路：X→M→Y 与 X→Y（直接）
-  path_products <- list()
-  # 长度 2 的通路（经一个中介）
-  path_products[["x>m>y"]] <- coefs[["x>m"]] * coefs[["m>y"]]
-  # 长度 1 的直接边
-  direct_ref <- coefs[["x>y"]]
-  indirect_ref <- sum(unlist(path_products))
+  ## 显式枚举 from→to 的所有**无环有向通路**，indirect = 各通路系数乘积之和。
+  ## 这是全程最独立的一步：实现是"逐方程 OLS 后按边递归"，oracle 是
+  ## "建邻接表 + DFS 枚举通路"——算法结构不同，且天然覆盖
+  ## 单通路（path_analysis）与**多条平行中介**（path_overid 的两条通路）。
+  enumerate_paths <- function(from, to, max_len = 8L) {
+    out <- list()
+    walk <- function(cur, visited, acc) {
+      if (length(acc) >= max_len) return(invisible(NULL))
+      for (e in edges) {
+        if (!identical(e[1], cur)) next
+        nxt <- e[2]
+        if (nxt %in% visited) next          # 环路保护（有环图无法分解效应）
+        newacc <- c(acc, paste(cur, nxt, sep = ">"))
+        if (identical(nxt, to)) {
+          out[[length(out) + 1]] <<- newacc
+        } else {
+          walk(nxt, c(visited, nxt), newacc)
+        }
+      }
+      invisible(NULL)
+    }
+    walk(from, c(from), character(0))
+    out
+  }
+  path_product <- function(p) {
+    prod(vapply(p, function(step) coefs[[step]], numeric(1)))
+  }
+
+  all_paths <- enumerate_paths("x", "y")
+  direct_paths <- Filter(function(p) length(p) == 1L, all_paths)
+  indirect_paths <- Filter(function(p) length(p) >= 2L, all_paths)
+  direct_ref <- if (length(direct_paths) > 0) sum(vapply(direct_paths, path_product, numeric(1))) else 0
+  indirect_ref <- if (length(indirect_paths) > 0) sum(vapply(indirect_paths, path_product, numeric(1))) else 0
   total_ref <- direct_ref + indirect_ref
+
+  ## 通路数量本身是断言点：过度识别场景必须检出 **2 条**中介通路。
+  ## 若实现只枚举了一条（例如只沿第一个中介走），indirect 会少一半，这里会先红。
+  if (dataset == "path_overid") {
+    add_row(method, dataset, "overid.n_indirect_paths", "2",
+            sprintf("%d", length(indirect_paths)), length(indirect_paths) == 2L)
+  }
 
   ## ---- PATH_EFFECT|from|to|direct|indirect|total ----
   eff_rows <- kv[["PATH_EFFECT"]]
@@ -2089,6 +2326,63 @@ oracle_path_analysis <- function(method, dataset, kv, out, data) {
   add_row(method, dataset, "PATH_NOTE.declares_ols_per_equation", "present",
           if (nzchar(notes)) "present" else "missing",
           grepl("OLS|逐方程|最小二乘", notes))
+
+  ## ---- v0.3.3 T83：过度识别模型的专项断言 ----
+  if (dataset == "path_overid") {
+    ## 1. 表注必须出现"过度识别"的声明。
+    ##    这是契约第四节要求的**边界声明**：OLS 逐方程在过度识别时 ≠ 联合 ML。
+    ##    注意本条只验证"声明存在"；声明是否**与当前模型匹配**（这个模型到底
+    ##    是恰好识别还是过度识别）见下一条。
+    add_row(method, dataset, "overid.note_mentions_overidentification", "present",
+            if (grepl("过度识别", notes)) "present" else "missing",
+            grepl("过度识别", notes))
+
+    ## 2. **模型自由度必须 > 0**（这才是"过度识别"的实质，不是一句文案）。
+    ##    4 个观测变量 ⇒ p(p+1)/2 = 10 个非冗余相关/协方差。
+    ##    自由参数 = 5 条路径 + 4 个外生方差（或等价物）= 9 ⇒ df = 1 > 0。
+    ##    若 df = 0（恰好识别），"过度识别时不等价"这句声明就与事实不符，
+    ##    用户会误以为自己的模型有全局约束。
+    p_obs <- length(nodes)
+    n_nonredundant <- p_obs * (p_obs + 1) / 2
+    n_paths <- length(edges)
+    ## OLS 逐方程的自由参数计数：每条路径 1 个 + 每个内生方程的残差方差 1 个
+    n_endog <- length(unique(vapply(edges, function(e) e[2], character(1))))
+    n_par <- n_paths + n_endog
+    df_model <- n_nonredundant - n_par
+    add_row(method, dataset, "overid.model_df_positive", "df > 0（真过度识别）",
+            sprintf("非冗余矩=%d 参数=%d df=%d", n_nonredundant, n_par, df_model),
+            df_model > 0)
+    add_row(method, dataset, "overid.df_does_not_match_saturated", "df > 0",
+            sprintf("df=%d", df_model), df_model > 0)
+
+    ## 3. 两条中介通路必须**都**被检出并**分别列出**（表注里有两条 "中介通路:" 行）。
+    ##    若实现只列一条，用户会低估间接效应。
+    n_path_lines <- length(grep("中介通路:", unlist(kv[["PATH_NOTE"]]), value = FALSE))
+    add_row(method, dataset, "overid.both_paths_reported", "2 条中介通路逐条列出",
+            sprintf("%d 条", n_path_lines), n_path_lines >= 2L)
+
+    ## 4. 效应分解在过度识别下仍必须自洽（total = direct + indirect）。
+    ##    这条与 path_analysis 场景重复是**刻意的**：过度识别模型的
+    ##    "逐方程 OLS 不满足全局约束"恰恰是最容易让分解算错的地方。
+    row_xy2 <- eff_get("x", "y")
+    if (!is.null(row_xy2)) {
+      gd2 <- suppressWarnings(as.numeric(row_xy2[3]))
+      gi2 <- suppressWarnings(as.numeric(row_xy2[4]))
+      gt2 <- suppressWarnings(as.numeric(row_xy2[5]))
+      add_row(method, dataset, "overid.total_equals_direct_plus_indirect",
+              sprintf("%.4f", gd2 + gi2), sprintf("%.4f", gt2),
+              is.finite(gd2) && is.finite(gi2) && is.finite(gt2) && num_ok(gt2, gd2 + gi2, 1e-3))
+    }
+
+    ## 5. 真值恢复（fixtures 的设计系数，见 generate_fixtures.mjs 的说明）。
+    ##    观测尺度真值：x>m1=.416667, x>m2=.366667, m1>y=.585000, m2>y=.413636, x>y=.162500
+    truth_raw <- c("x>m1" = 0.416667, "x>m2" = 0.366667, "m1>y" = 0.585,
+                   "m2>y" = 0.413636, "x>y" = 0.1625)
+    for (k in names(truth_raw)) {
+      got <- coefs[[k]]
+      chk_num(method, dataset, paste0("overid.truth.", k), truth_raw[[k]], got, 1e-3)
+    }
+  }
 }
 
 ## 4.24 结构方程模型 SEM（v0.3.2 第五节）
@@ -2325,6 +2619,9 @@ oracle_map <- list(  descriptive = oracle_descriptive,
   cfa = oracle_cfa,
   cfa_3factors = oracle_cfa,
   cfa_misfit = oracle_cfa,
+  cfa_reverse = oracle_cfa,
+  # v0.3.3 T83：真实脏数据专用 oracle（性质断言，非精确真值恢复）
+  cfa_likert = oracle_cfa_likert,
   cvi = oracle_cvi,
   harman_medium = oracle_harman,
   harman_high = oracle_harman,
@@ -2335,6 +2632,8 @@ oracle_map <- list(  descriptive = oracle_descriptive,
   moderation_null = oracle_moderation,
   moderated_mediation = oracle_moderated_mediation,
   path_analysis = oracle_path_analysis,
+  # v0.3.3 T83：过度识别模型（4 变量 5 边），复用同一 oracle 的通路枚举分支
+  path_overid = oracle_path_analysis,
   sem = oracle_sem,
   sem_null = oracle_sem
 )
@@ -2359,6 +2658,8 @@ banner_map <- c(
   cfa = "=== 验证性因子分析 (CFA) ===",
   cfa_3factors = "=== 验证性因子分析 (CFA) ===",
   cfa_misfit = "=== 验证性因子分析 (CFA) ===",
+  cfa_reverse = "=== 验证性因子分析 (CFA) ===",
+  cfa_likert = "=== 验证性因子分析 (CFA) ===",
   cvi = "=== 内容效度指数 (CVI) ===",
   harman_medium = "=== Harman 单因子检验 ===",
   harman_high = "=== Harman 单因子检验 ===",

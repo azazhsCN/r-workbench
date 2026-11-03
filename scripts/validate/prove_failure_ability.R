@@ -108,12 +108,29 @@ src <- inject(src, "    list(term = \"x_w\", b = f_cn$coef[4], se = f_cn$se[4], 
 src <- inject(src, "  index_ref <- a4 * b_ref",
               "  index_ref <- a2 * b_ref  # INJECTED: 应为 a4*b", "mm_index")
 # (7) 路径分析：indirect 置 0（模拟"漏掉中介通路"，total 退化成 direct）
-src <- inject(src, "  indirect_ref <- sum(unlist(path_products))",
+# ⚠️ v0.3.3：路径分析的**生成器**实现已改为「矩阵幂级数 + 逐通路枚举」双算法互校，
+#    旧的 oracle 侧注入点（indirect_ref <- sum(unlist(path_products))）已不存在。
+#    本 harness 注入的是 **oracle 侧**（run_validation.R），所以这里要改 oracle 的
+#    间接效应复算，而不是生成器。inject() 是 fixed=TRUE 的逐行匹配。
+src <- inject(src, "  indirect_ref <- if (length(indirect_paths) > 0) sum(vapply(indirect_paths, path_product, numeric(1))) else 0",
               "  indirect_ref <- 0  # INJECTED: 漏掉中介通路", "path_indirect")
 # (8) SEM：CFI 与 TLI 互换（模拟字段错位）
 src <- inject(src, "  chk_num(method, dataset, \"SEM_FIT.cfi\", cfi_ref, gfn(kv, \"SEM_FIT\", 1, 5), TOL_LOOSE)",
               "  chk_num(method, dataset, \"SEM_FIT.cfi\", tli_ref, gfn(kv, \"SEM_FIT\", 1, 5), TOL_LOOSE)  # INJECTED",
               "sem_cfi_tli")
+# (9) v0.3.3 / D01：CFA 组合信度 CR 的 oracle 退回带符号求和
+#     这正是第三方审查发现的严重缺陷：含反向计分题（负载荷）时 CR 低估约 0.38，
+#     且违反 CR >= AVE 不变式。oracle 若也退回带符号求和，两边会"一起错"而假绿——
+#     所以这条注入专门验证「oracle 侧的口径独立于被测实现」，一旦 oracle 自己也
+#     用错口径，`cr_ge_ave` 全局不变式断言必须变红。
+# ⚠️ 注意：inject() 是**逐行**替换（fixed=TRUE），所以一条注入只能替换**一行**。
+#    若需要替换成两行，必须用 paste0(..., "\n", ...) 显式插入换行 ——
+#    写成 `n 是字面反引号+n，会让整个脚本语法错误、静默失败，
+#    表现为"所有注入点都未变红"（连原本有效的注入点也会一起失效）。
+src <- inject(src, "      cr_ref <- s_abs^2 / (s_abs^2 + th_f)",
+              paste0("      s_abs <- sum(lam_f)  # INJECTED: 退回带符号求和\n",
+                     "      cr_ref <- s_abs^2 / (s_abs^2 + th_f)"),
+              "cfa_cr_signed_sum")
 
 tmp <- file.path(SCRIPT_DIR, "_failure_demo.R")
 writeLines(src, tmp)
@@ -143,7 +160,23 @@ cat("\n== 汇总 ==\n")
 cat(run$summ, "\n")
 cat("退出码 =", run$status, "  变红断言数 =", length(run$fails), "\n")
 
-# 八处注入必须各自造成至少一条断言变红 —— 逐一核对，
+# ── 防护：注入副本自身跑不起来时，必须明确报出来 ──────────────────────────
+# 症状：退出码非 0，但一条 FAIL 都没有，且汇总行缺失。
+# 原因：注入把脚本改出了语法错误（最常见是把换行写成字面 `n），
+#       R 直接解析失败、不产出任何断言 —— 于是**所有**注入点都显示"未变红"。
+#       这看起来像"验证全线失守"，实际是"注入脚本本身坏了"。
+#       不加这道防护，就会把一个注入失误误判成"整套验证没有判别力"，
+#       那是极其危险的误判（会让人以为可以放心改验证脚本）。
+if (run$status != 0L && length(run$fails) == 0 && length(run$summ) == 0) {
+  cat("\n!!! 注入副本未能产生任何断言 —— 脚本本身很可能有语法错误\n")
+  cat("    请检查各 inject() 的替换串：inject() 是**逐行**替换，\n")
+  cat("    需要多行时必须用 paste0(..., \"\\n\", ...)，不能写成字面 `n。\n")
+  cat("    注入副本输出（前 20 行）：\n")
+  cat(head(run$log, 20), sep = "\n")
+  quit(status = 2L)
+}
+
+# 九处注入必须各自造成至少一条断言变红 —— 逐一核对，
 # 避免"只有一处生效"却整体 exit 1 的假象。
 probe <- c(
   Harman         = any(grepl("HARMAN_SUMMARY.first_pct", run$fails)),
@@ -153,7 +186,11 @@ probe <- c(
   Moderation     = any(grepl("MOD_COEF.x_w.coef", run$fails)),
   ModMediation   = any(grepl("MM_INDEX.index", run$fails)),
   PathAnalysis   = any(grepl("PATH_EFFECT.x>y.indirect", run$fails)),
-  SEM            = any(grepl("SEM_FIT.cfi", run$fails))
+  SEM            = any(grepl("SEM_FIT.cfi", run$fails)),
+  # v0.3.3 / D01：CR 退回带符号求和 → cfa_reverse 场景的 CR 断言 + 全局
+  # cr_ge_ave 不变式必须同时变红。
+  CfaCR          = any(grepl("CFA_RELIAB.*\\.cr", run$fails)) ||
+                    any(grepl("CFA_RELIAB.*cr_ge_ave", run$fails))
 )
 cat("\n== 每个注入点的判别力 ==\n")
 for (nm in names(probe)) {

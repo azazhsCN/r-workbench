@@ -75,7 +75,7 @@ for (nm in need_vars) {
 }
 
 # 三条回归必须跑在**同一批样本**上，否则 c = c' + a*b 的恒等式不成立。
-# 因此先做整列删除（listwise），并报告剔除了多少行。
+# 因此先做逐行删除（listwise / 个案剔除）（listwise），并报告剔除了多少行。
 raw3 <- as.data.frame(data[, need_vars, drop = FALSE])
 ok <- complete.cases(raw3)
 d3 <- raw3[ok, , drop = FALSE]
@@ -299,7 +299,7 @@ cat(sprintf("MED_NOTE|恒等式自检通过：|c - c_prime - a*b| = %s（容差 
 cat(sprintf("MED_NOTE|间接/直接/总效应的区间均为 Bootstrap 百分位法（percentile，非 BCa），B = %d，固定种子 %d，置信水平 %s\\n",
   B, boot_seed, num(ci_level, 2)))
 if (n_dropped > 0) {
-  cat(sprintf("MED_NOTE|因缺失值采用整列删除，剔除 %d 行，三次回归使用同一批 %d 个有效样本\\n", n_dropped, n))
+  cat(sprintf("MED_NOTE|因缺失值采用逐行删除（listwise / 个案剔除），剔除 %d 行，三次回归使用同一批 %d 个有效样本\\n", n_dropped, n))
 }
 r_xm <- suppressWarnings(stats::cor(xv, mv))
 if (is.finite(r_xm) && abs(r_xm) < 0.20) {

@@ -1,12 +1,12 @@
 # 统计验证结果（真实生成器 + 独立 oracle）
 
 R 版本：R version 4.6.0 (2026-04-24 ucrt)
-生成时间：2026-11-02 10:15:09
+生成时间：2026-11-03 10:31:23
 fixtures 目录：generated
 被测代码：src/renderer/src/services/rService.ts（esbuild 打包后运行时调用，非手抄副本）
 
 方法覆盖：**22 / 22**
-断言总数：**839**（PASS 839 / FAIL 0）
+断言总数：**956**（PASS 956 / FAIL 0）
 
 | 方法 | 数据集 | 断言 | 参考(oracle) | 工作台 | 结果 |
 |---|---|---|---|---|---|
@@ -360,11 +360,15 @@ fixtures 目录：generated
 | cfa | cfa | CFA_FACTOR.cor.max_abs_diff |       0 |       0 | PASS |
 | cfa | cfa | truth.phi12 |    0.35 |    0.35 | PASS |
 | cfa | cfa | CFA_RELIAB.F1.cr | 0.842721 |  0.8427 | PASS |
-| cfa | cfa | CFA_RELIAB.F1.ave | 0.641666 |  0.6417 | PASS |
+| cfa | cfa | CFA_RELIAB.F1.ave | 0.641667 |  0.6417 | PASS |
 | cfa | cfa | CFA_RELIAB.F1.sqrt_ave | 0.801041 |   0.801 | PASS |
+| cfa | cfa | CFA_RELIAB.F1.cr_ge_ave | CR >= AVE | CR= 0.8427 AVE= 0.6417 | PASS |
+| cfa | cfa | CFA_RELIAB.F1.in_unit_interval | 0 < CR <= 1 且 0 < AVE <= 1 | CR= 0.8427 AVE= 0.6417 | PASS |
 | cfa | cfa | CFA_RELIAB.F2.cr | 0.817596 |  0.8176 | PASS |
 | cfa | cfa | CFA_RELIAB.F2.ave | 0.599733 |  0.5997 | PASS |
-| cfa | cfa | CFA_RELIAB.F2.sqrt_ave | 0.774424 |  0.7744 | PASS |
+| cfa | cfa | CFA_RELIAB.F2.sqrt_ave | 0.774425 |  0.7744 | PASS |
+| cfa | cfa | CFA_RELIAB.F2.cr_ge_ave | CR >= AVE | CR= 0.8176 AVE= 0.5997 | PASS |
+| cfa | cfa | CFA_RELIAB.F2.in_unit_interval | 0 < CR <= 1 且 0 < AVE <= 1 | CR= 0.8176 AVE= 0.5997 | PASS |
 | cfa | cfa | CONCL.matches_fit_indices | good | good | PASS |
 | cfa | cfa | discriminant.correct_model_CFI_above_0.95 | >= 0.95 |       1 | PASS |
 | cfa | cfa_3factors | r_syntax_parse | parse() ok | ok | PASS |
@@ -410,14 +414,20 @@ fixtures 目录：generated
 | cfa | cfa_3factors | CFA_ESTIMATE.unstd_differs_from_std | TRUE | TRUE | PASS |
 | cfa | cfa_3factors | CFA_FACTOR.cor.max_abs_diff |       0 |       0 | PASS |
 | cfa | cfa_3factors | CFA_RELIAB.F1.cr | 0.823572 |  0.8236 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F1.ave | 0.609001 |   0.609 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F1.ave |   0.609 |   0.609 | PASS |
 | cfa | cfa_3factors | CFA_RELIAB.F1.sqrt_ave | 0.780385 |  0.7804 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F1.cr_ge_ave | CR >= AVE | CR= 0.8236 AVE=  0.609 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F1.in_unit_interval | 0 < CR <= 1 且 0 < AVE <= 1 | CR= 0.8236 AVE=  0.609 | PASS |
 | cfa | cfa_3factors | CFA_RELIAB.F2.cr | 0.813976 |   0.814 | PASS |
 | cfa | cfa_3factors | CFA_RELIAB.F2.ave |  0.5935 |  0.5935 | PASS |
 | cfa | cfa_3factors | CFA_RELIAB.F2.sqrt_ave | 0.77039 |  0.7704 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F3.cr | 0.833023 |   0.833 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F3.ave | 0.624702 |  0.6247 | PASS |
-| cfa | cfa_3factors | CFA_RELIAB.F3.sqrt_ave | 0.790381 |  0.7904 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F2.cr_ge_ave | CR >= AVE | CR=  0.814 AVE= 0.5935 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F2.in_unit_interval | 0 < CR <= 1 且 0 < AVE <= 1 | CR=  0.814 AVE= 0.5935 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.cr | 0.833022 |   0.833 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.ave |  0.6247 |  0.6247 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.sqrt_ave | 0.79038 |  0.7904 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.cr_ge_ave | CR >= AVE | CR=  0.833 AVE= 0.6247 | PASS |
+| cfa | cfa_3factors | CFA_RELIAB.F3.in_unit_interval | 0 < CR <= 1 且 0 < AVE <= 1 | CR=  0.833 AVE= 0.6247 | PASS |
 | cfa | cfa_3factors | CONCL.matches_fit_indices | good | good | PASS |
 | cfa | cfa_3factors | discriminant.correct_model_CFI_above_0.95 | >= 0.95 |       1 | PASS |
 | cfa | cfa_misfit | r_syntax_parse | parse() ok | ok | PASS |
@@ -459,11 +469,66 @@ fixtures 目录：generated
 | cfa | cfa_misfit | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 3.54908e-05 | PASS |
 | cfa | cfa_misfit | CFA_ESTIMATE.unstd_differs_from_std | TRUE | TRUE | PASS |
 | cfa | cfa_misfit | CFA_FACTOR.absent_when_1factor | absent | absent | PASS |
-| cfa | cfa_misfit | CFA_RELIAB.F1.cr | 0.755692 |  0.7557 | PASS |
-| cfa | cfa_misfit | CFA_RELIAB.F1.ave | 0.373146 |  0.3731 | PASS |
-| cfa | cfa_misfit | CFA_RELIAB.F1.sqrt_ave | 0.610857 |  0.6109 | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.cr | 0.755698 |  0.7557 | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.ave | 0.373148 |  0.3731 | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.sqrt_ave | 0.610858 |  0.6109 | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.cr_ge_ave | CR >= AVE | CR= 0.7557 AVE= 0.3731 | PASS |
+| cfa | cfa_misfit | CFA_RELIAB.F1.in_unit_interval | 0 < CR <= 1 且 0 < AVE <= 1 | CR= 0.7557 AVE= 0.3731 | PASS |
 | cfa | cfa_misfit | CONCL.matches_fit_indices | poor | poor | PASS |
 | cfa | cfa_misfit | discriminant.misfit_CFI_below_0.80 | < 0.80 |  0.6263 | PASS |
+| cfa | cfa_reverse | r_syntax_parse | parse() ok | ok | PASS |
+| cfa | cfa_reverse | sprintf_format_args | no mismatch | ok | PASS |
+| cfa | cfa_reverse | no_r_error | no error | ok | PASS |
+| cfa | cfa_reverse | banner | === 验证性因子分析 (CFA) === | === 验证性因子分析 (CFA) === | PASS |
+| cfa | cfa_reverse | CFA_SPEC.p |       6 |       6 | PASS |
+| cfa | cfa_reverse | CFA_SPEC.n |     800 |     800 | PASS |
+| cfa | cfa_reverse | CFA_ITEM.order | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
+| cfa | cfa_reverse | CFA_SPEC.nfac |       2 |       2 | PASS |
+| cfa | cfa_reverse | CFA_ITEM.partition | 1-2-3|4-5-6 | 1-2-3|4-5-6 | PASS |
+| cfa | cfa_reverse | CFA_FIT.chisq | 3.65827e-08 |       0 | PASS |
+| cfa | cfa_reverse | CFA_FIT.df |       8 |       8 | PASS |
+| cfa | cfa_reverse | F_ML | 4.57856e-11 |       0 | PASS |
+| cfa | cfa_reverse | CFA_FIT.p |       1 |       1 | PASS |
+| cfa | cfa_reverse | invariant.diag_Sigma_eq_1 | 2.05846e-06 |       0 | PASS |
+| cfa | cfa_reverse | invariant.lambda2_plus_theta | 2.22045e-16 |       0 | PASS |
+| cfa | cfa_reverse | invariant.df_formula |       8 |       8 | PASS |
+| cfa | cfa_reverse | invariant.npar |      13 |      13 | PASS |
+| cfa | cfa_reverse | CFA_NULLMODEL.chisq | 1841.56 | 1841.56 | PASS |
+| cfa | cfa_reverse | CFA_NULLMODEL.df |      15 |      15 | PASS |
+| cfa | cfa_reverse | CFA_FITIDX.cfi |       1 |       1 | PASS |
+| cfa | cfa_reverse | CFA_FITIDX.tli | 1.00821 |  1.0082 | PASS |
+| cfa | cfa_reverse | CFA_FITIDX.rmsea |       0 |       0 | PASS |
+| cfa | cfa_reverse | CFA_FITIDX.srmr | 1.13513e-06 |       0 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.items | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.std_load.numeric | all numeric | all numeric | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.q1.std_load | 0.849997 |    0.85 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.q2.std_load | 0.800002 |     0.8 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.q3.std_load | -0.719999 |   -0.72 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.q4.std_load |    0.82 |    0.82 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.q5.std_load |    0.78 |    0.78 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.q6.std_load | 0.719998 |    0.72 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.std_load.max_abs_diff |       0 | 2.74049e-06 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.sign_convention | TRUE | TRUE | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.std_load_in_range | TRUE | TRUE | PASS |
+| cfa | cfa_reverse | truth.std_load.max_abs_error |       0 |       0 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.r2_equals_load_sq |       0 | 1.11022e-16 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.unstd_over_raw_sd_equals_std |       0 | 4.87785e-05 | PASS |
+| cfa | cfa_reverse | CFA_ESTIMATE.unstd_differs_from_std | TRUE | TRUE | PASS |
+| cfa | cfa_reverse | CFA_FACTOR.cor.max_abs_diff |       0 |       0 | PASS |
+| cfa | cfa_reverse | CFA_RELIAB.F1.cr | 0.833863 |  0.8339 | PASS |
+| cfa | cfa_reverse | CFA_RELIAB.F1.ave | 0.626967 |   0.627 | PASS |
+| cfa | cfa_reverse | CFA_RELIAB.F1.sqrt_ave | 0.791812 |  0.7918 | PASS |
+| cfa | cfa_reverse | CFA_RELIAB.F1.cr_ge_ave | CR >= AVE | CR= 0.8339 AVE=  0.627 | PASS |
+| cfa | cfa_reverse | CFA_RELIAB.F1.in_unit_interval | 0 < CR <= 1 且 0 < AVE <= 1 | CR= 0.8339 AVE=  0.627 | PASS |
+| cfa | cfa_reverse | CFA_RELIAB.F2.cr | 0.817596 |  0.8176 | PASS |
+| cfa | cfa_reverse | CFA_RELIAB.F2.ave | 0.599733 |  0.5997 | PASS |
+| cfa | cfa_reverse | CFA_RELIAB.F2.sqrt_ave | 0.774425 |  0.7744 | PASS |
+| cfa | cfa_reverse | CFA_RELIAB.F2.cr_ge_ave | CR >= AVE | CR= 0.8176 AVE= 0.5997 | PASS |
+| cfa | cfa_reverse | CFA_RELIAB.F2.in_unit_interval | 0 < CR <= 1 且 0 < AVE <= 1 | CR= 0.8176 AVE= 0.5997 | PASS |
+| cfa | cfa_reverse | d01.negative_loading_present | at least one lambda < 0 | min(lambda) =   -0.72 | PASS |
+| cfa | cfa_reverse | d01.F1.sign_matters | Σ|λ| − |Σλ| > 0.1 | Σλ=   0.93 Σ|λ|=   2.37 | PASS |
+| cfa | cfa_reverse | CONCL.matches_fit_indices | good | good | PASS |
+| cfa | cfa_reverse | discriminant.correct_model_CFI_above_0.95 | >= 0.95 |       1 | PASS |
 | cvi | cvi | r_syntax_parse | parse() ok | ok | PASS |
 | cvi | cvi | sprintf_format_args | no mismatch | ok | PASS |
 | cvi | cvi | no_r_error | no error | ok | PASS |
@@ -770,11 +835,11 @@ fixtures 目录：generated
 | path_analysis | path_analysis | sprintf_format_args | no mismatch | ok | PASS |
 | path_analysis | path_analysis | no_r_error | no error | ok | PASS |
 | path_analysis | path_analysis | banner | === 路径分析 === | === 路径分析 === | PASS |
-| path_analysis | path_analysis | PATH_EQ.m.r2 | 0.360001 |    0.36 | PASS |
-| path_analysis | path_analysis | PATH_EQ.y.r2 | 0.498945 |  0.4989 | PASS |
 | path_analysis | path_analysis | PATH_SPEC.n |     400 |     400 | PASS |
 | path_analysis | path_analysis | PATH_SPEC.n_nodes |       3 |       3 | PASS |
 | path_analysis | path_analysis | PATH_SPEC.n_edges |       3 |       3 | PASS |
+| path_analysis | path_analysis | PATH_EQ.m.r2 | 0.360001 |    0.36 | PASS |
+| path_analysis | path_analysis | PATH_EQ.y.r2 | 0.498945 |  0.4989 | PASS |
 | path_analysis | path_analysis | PATH_EDGE.x>m.coef | 0.500002 |     0.5 | PASS |
 | path_analysis | path_analysis | PATH_EDGE.m>y.coef | 0.600003 |     0.6 | PASS |
 | path_analysis | path_analysis | PATH_EDGE.x>y.coef | 0.199998 |     0.2 | PASS |
@@ -848,6 +913,58 @@ fixtures 目录：generated
 | sem | sem_null | SEM_STRUCT.absent_or_zero_when_null | absent or coef=0 | 0.0000 | PASS |
 | sem | sem_null | discriminant.null_struct_path_nonsignificant | |coef| < 0.10 且 p > .05（真值 γ=0） | coef=0.0000 p=1.0000 | PASS |
 | sem | sem_null | discriminant.null_cross_block_uncorrelated | max|r| < 0.10 | 0.0000 | PASS |
+| cfa | cfa_likert | r_syntax_parse | parse() ok | ok | PASS |
+| cfa | cfa_likert | sprintf_format_args | no mismatch | ok | PASS |
+| cfa | cfa_likert | no_r_error | no error | ok | PASS |
+| cfa | cfa_likert | banner | === 验证性因子分析 (CFA) === | === 验证性因子分析 (CFA) === | PASS |
+| cfa | cfa_likert | likert.CFA_SPEC.n_equals_complete_cases |     505 |     505 | PASS |
+| cfa | cfa_likert | likert.CFA_SPEC.p |       5 |       5 | PASS |
+| cfa | cfa_likert | likert.dropped_some_rows | n < n_raw | n=505 n_raw=600 | PASS |
+| cfa | cfa_likert | likert.n_matches_listwise | 精确等于完整个案数 | oracle=505 output=    505 | PASS |
+| cfa | cfa_likert | likert.dropped_count_matches | 剔除量一致 | oracle=95 | PASS |
+| cfa | cfa_likert | likert.reports_missing_handling | present | present | PASS |
+| cfa | cfa_likert | likert.std_load.all_numeric | TRUE | TRUE | PASS |
+| cfa | cfa_likert | likert.std_load_in_open_unit_interval | 0 < lam < 1 | 0.5498 .. 0.7614 | PASS |
+| cfa | cfa_likert | likert.std_load_magnitude_reasonable | 0.3 <= lam <= 0.95 | 0.5498 .. 0.7614 | PASS |
+| cfa | cfa_likert | likert.std_load_sign_matches_truth | 全部同号（正） | 5/5 正 | PASS |
+| cfa | cfa_likert | likert.CFA_RELIAB.F1.in_unit_interval | 0 < CR <= 1 且 0 < AVE <= 1 | CR=0.7308 AVE=0.4753 | PASS |
+| cfa | cfa_likert | likert.CFA_RELIAB.F1.cr_ge_ave | CR >= AVE | CR=0.7308 AVE=0.4753 | PASS |
+| cfa | cfa_likert | likert.CFA_RELIAB.F2.in_unit_interval | 0 < CR <= 1 且 0 < AVE <= 1 | CR=0.6060 AVE=0.4410 | PASS |
+| cfa | cfa_likert | likert.CFA_RELIAB.F2.cr_ge_ave | CR >= AVE | CR=0.6060 AVE=0.4410 | PASS |
+| cfa | cfa_likert | likert.fit_indices_in_feasible_range | CFI/TLI 有限, RMSEA>=0, SRMR>=0 | CFI=0.9968 TLI=0.9921 RMSEA=0.0262 SRMR=0.0176 | PASS |
+| cfa | cfa_likert | likert.fit_not_artificially_perfect | chisq > 0 且 SRMR > 0 | chisq=5.3793 SRMR=0.0176 | PASS |
+| path_analysis | path_overid | r_syntax_parse | parse() ok | ok | PASS |
+| path_analysis | path_overid | sprintf_format_args | no mismatch | ok | PASS |
+| path_analysis | path_overid | no_r_error | no error | ok | PASS |
+| path_analysis | path_overid | PATH_SPEC.n |     500 |     500 | PASS |
+| path_analysis | path_overid | PATH_SPEC.n_nodes |       4 |       4 | PASS |
+| path_analysis | path_overid | PATH_SPEC.n_edges |       5 |       5 | PASS |
+| path_analysis | path_overid | PATH_EQ.m1.r2 |    0.25 |    0.25 | PASS |
+| path_analysis | path_overid | PATH_EQ.m2.r2 |    0.16 |    0.16 | PASS |
+| path_analysis | path_overid | PATH_EQ.y.r2 | 0.590909 |  0.5909 | PASS |
+| path_analysis | path_overid | PATH_EDGE.x>m1.coef | 0.416667 |  0.4167 | PASS |
+| path_analysis | path_overid | PATH_EDGE.x>m2.coef | 0.366667 |  0.3667 | PASS |
+| path_analysis | path_overid | PATH_EDGE.m1>y.coef |   0.585 |   0.585 | PASS |
+| path_analysis | path_overid | PATH_EDGE.m2>y.coef | 0.413636 |  0.4136 | PASS |
+| path_analysis | path_overid | PATH_EDGE.x>y.coef |  0.1625 |  0.1625 | PASS |
+| path_analysis | path_overid | overid.n_indirect_paths | 2 | 2 | PASS |
+| path_analysis | path_overid | PATH_EFFECT.x>y.direct |  0.1625 |  0.1625 | PASS |
+| path_analysis | path_overid | PATH_EFFECT.x>y.indirect | 0.395417 |  0.3954 | PASS |
+| path_analysis | path_overid | PATH_EFFECT.x>y.total | 0.557917 |  0.5579 | PASS |
+| path_analysis | path_overid | invariant.total_equals_direct_plus_indirect | 0.5579 | 0.5579 | PASS |
+| path_analysis | path_overid | discriminant.indirect_nonzero | |indirect| > 0.05 | 0.395417 | PASS |
+| path_analysis | path_overid | discriminant.total_gt_direct | total > direct | total=0.5579 direct=0.1625 | PASS |
+| path_analysis | path_overid | PATH_NOTE.declares_ols_per_equation | present | present | PASS |
+| path_analysis | path_overid | overid.note_mentions_overidentification | present | present | PASS |
+| path_analysis | path_overid | overid.model_df_positive | df > 0（真过度识别） | 非冗余矩=10 参数=8 df=2 | PASS |
+| path_analysis | path_overid | overid.df_does_not_match_saturated | df > 0 | df=2 | PASS |
+| path_analysis | path_overid | overid.both_paths_reported | 2 条中介通路逐条列出 | 2 条 | PASS |
+| path_analysis | path_overid | overid.total_equals_direct_plus_indirect | 0.5579 | 0.5579 | PASS |
+| path_analysis | path_overid | overid.truth.x>m1 | 0.416667 | 0.416667 | PASS |
+| path_analysis | path_overid | overid.truth.x>m2 | 0.366667 | 0.366667 | PASS |
+| path_analysis | path_overid | overid.truth.m1>y |   0.585 |   0.585 | PASS |
+| path_analysis | path_overid | overid.truth.m2>y | 0.413636 | 0.413636 | PASS |
+| path_analysis | path_overid | overid.truth.x>y |  0.1625 |  0.1625 | PASS |
 | __coverage__ | - | methods_covered |      22 |      22 | PASS |
 
-**汇总：PASS 839 / 839**
+**汇总：PASS 956 / 956**
