@@ -275,3 +275,62 @@ describe('配置与语言包文件不得含 UTF-8 BOM', () => {
     })
   }
 })
+
+/**
+ * 统一读表入口的**源码层**防线（v0.3.3 / 第三方 issue「data_quality.hooked 恒为真」）
+ *
+ * 为什么要在源码层再守一遍：
+ * `run_validation.R` 里那条结构断言曾经是假的——它用 `grepl("rwb_read(dataFile)", 整个脚本)`
+ * 判断，而 R_COMMON 里恰好有一句**注释**写着 "所有生成器都写成 data <- rwb_read(dataFile)"，
+ * 于是恒命中、恒为真。实测把 mediation 改回裸 read.csv 后，DQ 输出从 3 行降到 0 行，
+ * 而 989 条断言依然全绿、exit 0。
+ *
+ * 该行为已在 run_validation.R 修复（剔除注释 + 计数 read.csv + 运行时 DQ 断言）。
+ * 这里再加一层**不依赖 fixture 重新生成**的源码层检查：
+ * 直接扫生成器源码，禁止出现字面量 `read.csv(`。
+ *
+ * 为什么源码层更稳：
+ *   - 不受 R 注释污染（扫的是 TS 源码，判的是模板字符串里的字面量）
+ *   - 不依赖 `node generate_fixtures.mjs` 是否跑过——CI 里有人忘了重新生成也能拦住
+ *   - 报错位置精确到文件，改错的人一眼能看懂
+ */
+describe('R 源码卫生：生成器必须走统一读表入口 rwb_read', () => {
+  const SERVICES_DIR = join(__dirname, '..')
+  // 注意：rCommon.ts 是 rwb_read 的定义处，那里的 read.csv 是唯一合法位置，必须排除
+  const GENERATOR_FILES = [
+    'rService.ts',
+    join('rGenerators', 'mediation.ts'),
+    join('rGenerators', 'moderation.ts'),
+    join('rGenerators', 'moderatedMediation.ts'),
+    join('rGenerators', 'pathAnalysis.ts'),
+    join('rGenerators', 'sem.ts')
+  ]
+
+  for (const rel of GENERATOR_FILES) {
+    it(`${rel} 不得直接调用 read.csv()（必须用 READ_CSV 常量）`, () => {
+      const src = readFileSync(join(SERVICES_DIR, rel), 'utf8')
+      // 文件里可能提到 read.csv 的地方只有注释，真实调用会带左括号
+      const occurrences = (src.match(/read\.csv\s*\(/g) ?? []).length
+      expect(
+        occurrences,
+        `${rel} 里出现了 ${occurrences} 处 read.csv( 调用。` +
+          `这会让数据质量检查（离群值/值域）对该方法静默失效——` +
+          `请改用 READ_CSV（它展开为 rwb_read(dataFile)）`
+      ).toBe(0)
+    })
+  }
+
+  it('rCommon.ts 恰好定义 1 处 read.csv（rwb_read 内部），且导出的 READ_CSV 指向 rwb_read', () => {
+    const src = readFileSync(join(SERVICES_DIR, 'rCommon.ts'), 'utf8')
+    // 排除注释行后再计数
+    const codeOnly = src
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
+      .join('\n')
+    const occurrences = (codeOnly.match(/read\.csv\s*\(/g) ?? []).length
+    expect(occurrences, 'rwb_read 内部应有且仅有 1 处 read.csv(').toBe(1)
+    expect(codeOnly, 'READ_CSV 必须展开为 rwb_read(dataFile)').toContain(
+      "export const READ_CSV = 'rwb_read(dataFile)'"
+    )
+  })
+})

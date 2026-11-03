@@ -1,12 +1,12 @@
 # 统计验证结果（真实生成器 + 独立 oracle）
 
 R 版本：R version 4.6.0 (2026-04-24 ucrt)
-生成时间：2026-11-03 21:00:09
+生成时间：2026-11-03 22:08:05
 fixtures 目录：generated
 被测代码：src/renderer/src/services/rService.ts（esbuild 打包后运行时调用，非手抄副本）
 
 方法覆盖：**22 / 22**
-断言总数：**989**（PASS 989 / FAIL 0）
+断言总数：**1022**（PASS 1022 / FAIL 0）
 
 | 方法 | 数据集 | 断言 | 参考(oracle) | 工作台 | 结果 |
 |---|---|---|---|---|---|
@@ -14,7 +14,8 @@ fixtures 目录：generated
 | descriptive | descriptive | sprintf_format_args | no mismatch | ok | PASS |
 | descriptive | descriptive | no_r_error | no error | ok | PASS |
 | descriptive | descriptive | banner | === 描述性统计 === | === 描述性统计 === | PASS |
-| descriptive | descriptive | data_quality.hooked | rwb_read used | ok | PASS |
+| descriptive | descriptive | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| descriptive | descriptive | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | descriptive | descriptive | vars_present | mpg,diff,中文列,allna | mpg,diff,中文列,allna | PASS |
 | descriptive | descriptive | mpg.N |       8 |       8 | PASS |
 | descriptive | descriptive | mpg.M | 22.3625 | 22.3625 | PASS |
@@ -39,7 +40,8 @@ fixtures 目录：generated
 | ttest_independent | ttest_independent | sprintf_format_args | no mismatch | ok | PASS |
 | ttest_independent | ttest_independent | no_r_error | no error | ok | PASS |
 | ttest_independent | ttest_independent | banner | === 独立样本 t 检验 === | === 独立样本 t 检验 === | PASS |
-| ttest_independent | ttest_independent | data_quality.hooked | rwb_read used | ok | PASS |
+| ttest_independent | ttest_independent | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| ttest_independent | ttest_independent | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | ttest_independent | ttest_independent | GRP.n1 |       7 |       7 | PASS |
 | ttest_independent | ttest_independent | GRP.m1 | 13.2714 | 13.2714 | PASS |
 | ttest_independent | ttest_independent | GRP.sd1 | 1.23385 |  1.2338 | PASS |
@@ -61,7 +63,8 @@ fixtures 目录：generated
 | ttest_paired | ttest_paired | sprintf_format_args | no mismatch | ok | PASS |
 | ttest_paired | ttest_paired | no_r_error | no error | ok | PASS |
 | ttest_paired | ttest_paired | banner | === 配对样本 t 检验 === | === 配对样本 t 检验 === | PASS |
-| ttest_paired | ttest_paired | data_quality.hooked | rwb_read used | ok | PASS |
+| ttest_paired | ttest_paired | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| ttest_paired | ttest_paired | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | ttest_paired | ttest_paired | PAIRS.n |      10 |      10 | PASS |
 | ttest_paired | ttest_paired | PAIRS.mean_d |     1.7 |     1.7 | PASS |
 | ttest_paired | ttest_paired | PAIRS.sd_d | 0.674949 |  0.6749 | PASS |
@@ -78,7 +81,8 @@ fixtures 目录：generated
 | ttest_one | ttest_one | sprintf_format_args | no mismatch | ok | PASS |
 | ttest_one | ttest_one | no_r_error | no error | ok | PASS |
 | ttest_one | ttest_one | banner | === 单样本 t 检验 === | === 单样本 t 检验 === | PASS |
-| ttest_one | ttest_one | data_quality.hooked | rwb_read used | ok | PASS |
+| ttest_one | ttest_one | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| ttest_one | ttest_one | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | ttest_one | ttest_one | DESC_ONE.n |      12 |      12 | PASS |
 | ttest_one | ttest_one | DESC_ONE.mean |      50 |      50 | PASS |
 | ttest_one | ttest_one | DESC_ONE.sd | 3.16228 |  3.1623 | PASS |
@@ -94,7 +98,8 @@ fixtures 目录：generated
 | anova | anova | sprintf_format_args | no mismatch | ok | PASS |
 | anova | anova | no_r_error | no error | ok | PASS |
 | anova | anova | banner | === 单因素方差分析 === | === 单因素方差分析 === | PASS |
-| anova | anova | data_quality.hooked | rwb_read used | ok | PASS |
+| anova | anova | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| anova | anova | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | anova | anova | LEVELS.k |       3 |       3 | PASS |
 | anova | anova | ANOVA_ROW.df_between |       2 |       2 | PASS |
 | anova | anova | ANOVA_ROW.ss_between | 128.183 | 128.183 | PASS |
@@ -124,7 +129,8 @@ fixtures 目录：generated
 | chisquare | chisquare | sprintf_format_args | no mismatch | ok | PASS |
 | chisquare | chisquare | no_r_error | no error | ok | PASS |
 | chisquare | chisquare | banner | === 卡方检验 === | === 卡方检验 === | PASS |
-| chisquare | chisquare | data_quality.hooked | rwb_read used | ok | PASS |
+| chisquare | chisquare | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| chisquare | chisquare | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | chisquare | chisquare | TABLE_DIM.r |       2 |       2 | PASS |
 | chisquare | chisquare | TABLE_DIM.c |       3 |       3 | PASS |
 | chisquare | chisquare | EXPECTED.min | 18.4615 |  18.462 | PASS |
@@ -138,7 +144,8 @@ fixtures 目录：generated
 | correlation | correlation_pearson | sprintf_format_args | no mismatch | ok | PASS |
 | correlation | correlation_pearson | no_r_error | no error | ok | PASS |
 | correlation | correlation_pearson | banner | === 相关分析 (pearson) === | === 相关分析 (pearson) === | PASS |
-| correlation | correlation_pearson | data_quality.hooked | rwb_read used | ok | PASS |
+| correlation | correlation_pearson | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| correlation | correlation_pearson | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | correlation | correlation_pearson | DESC_COR.n |      11 |      11 | PASS |
 | correlation | correlation_pearson | DESC_COR.mx | 12.6364 | 12.6364 | PASS |
 | correlation | correlation_pearson | DESC_COR.sdx |  3.5291 |  3.5291 | PASS |
@@ -154,7 +161,8 @@ fixtures 目录：generated
 | correlation | correlation_spearman | sprintf_format_args | no mismatch | ok | PASS |
 | correlation | correlation_spearman | no_r_error | no error | ok | PASS |
 | correlation | correlation_spearman | banner | === 相关分析 (spearman) === | === 相关分析 (spearman) === | PASS |
-| correlation | correlation_spearman | data_quality.hooked | rwb_read used | ok | PASS |
+| correlation | correlation_spearman | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| correlation | correlation_spearman | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | correlation | correlation_spearman | RESULT_COR.n |      11 |      11 | PASS |
 | correlation | correlation_spearman | RESULT_COR.rho | 0.997727 |  0.9977 | PASS |
 | correlation | correlation_spearman | RESULT_COR.p |       0 | 7.4591e-12 | PASS |
@@ -163,7 +171,8 @@ fixtures 目录：generated
 | regression | regression | sprintf_format_args | no mismatch | ok | PASS |
 | regression | regression | no_r_error | no error | ok | PASS |
 | regression | regression | banner | === 线性回归分析 === | === 线性回归分析 === | PASS |
-| regression | regression | data_quality.hooked | rwb_read used | ok | PASS |
+| regression | regression | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| regression | regression | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | regression | regression | MODEL.r2 | 0.999907 |  0.9999 | PASS |
 | regression | regression | MODEL.adj_r2 | 0.999891 |  0.9999 | PASS |
 | regression | regression | MODEL.F | 64369.3 | 64369.3 | PASS |
@@ -195,7 +204,8 @@ fixtures 目录：generated
 | reliability | reliability | sprintf_format_args | no mismatch | ok | PASS |
 | reliability | reliability | no_r_error | no error | ok | PASS |
 | reliability | reliability | banner | === 信度分析 (Cronbach's α) === | === 信度分析 (Cronbach's α) === | PASS |
-| reliability | reliability | data_quality.hooked | rwb_read used | ok | PASS |
+| reliability | reliability | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| reliability | reliability | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | reliability | reliability | ITEMS.k |       5 |       5 | PASS |
 | reliability | reliability | ITEMS.n |      11 |      11 | PASS |
 | reliability | reliability | ALPHA.raw_vc | 0.926276 |  0.9263 | PASS |
@@ -223,12 +233,13 @@ fixtures 目录：generated
 | reliability | reliability | ITEM.q5.a_drop | 0.886179 |  0.8862 | PASS |
 | reliability | reliability | ALPHA_CI.ordering | lo<=alpha<=hi |  0.8239<= 0.9263<= 0.9774 | PASS |
 | reliability | reliability | NOTE_DROPPED.consistency | present | present | PASS |
-| reliability | reliability | ALPHA.psych_raw | psych::alpha | SKIP: psych 未安装（已用两条独立闭式解替代） | PASS |
+| reliability | reliability | ALPHA.psych_raw | 0.926276 |  0.9263 | PASS |
 | efa | efa | r_syntax_parse | parse() ok | ok | PASS |
 | efa | efa | sprintf_format_args | no mismatch | ok | PASS |
 | efa | efa | no_r_error | no error | ok | PASS |
 | efa | efa | banner | === 探索性因子分析 (EFA) === | === 探索性因子分析 (EFA) === | PASS |
-| efa | efa | data_quality.hooked | rwb_read used | ok | PASS |
+| efa | efa | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| efa | efa | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | efa | efa | kmo | 0.754404 |  0.7544 | PASS |
 | efa | efa | bartlett_chisq | 442.978 | 442.978 | PASS |
 | efa | efa | bartlett_df |      15 |      15 | PASS |
@@ -243,7 +254,8 @@ fixtures 目录：generated
 | efa | efa_3factors | sprintf_format_args | no mismatch | ok | PASS |
 | efa | efa_3factors | no_r_error | no error | ok | PASS |
 | efa | efa_3factors | banner | === 探索性因子分析 (EFA) === | === 探索性因子分析 (EFA) === | PASS |
-| efa | efa_3factors | data_quality.hooked | rwb_read used | ok | PASS |
+| efa | efa_3factors | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| efa | efa_3factors | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | efa | efa_3factors | kmo | 0.760322 |  0.7603 | PASS |
 | efa | efa_3factors | bartlett_chisq | 912.351 | 912.351 | PASS |
 | efa | efa_3factors | bartlett_df |      36 |      36 | PASS |
@@ -258,7 +270,8 @@ fixtures 目录：generated
 | normality | normality | sprintf_format_args | no mismatch | ok | PASS |
 | normality | normality | no_r_error | no error | ok | PASS |
 | normality | normality | banner | === 正态性检验 (Shapiro-Wilk) === | === 正态性检验 (Shapiro-Wilk) === | PASS |
-| normality | normality | data_quality.hooked | rwb_read used | ok | PASS |
+| normality | normality | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| normality | normality | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | normality | normality | NORM.vars | norm,skewed | norm,skewed | PASS |
 | normality | normality | NORM.norm.n |      20 |      20 | PASS |
 | normality | normality | NORM.norm.W | 0.995908 |  0.9876 | PASS |
@@ -276,7 +289,8 @@ fixtures 目录：generated
 | nonparametric | nonparametric | sprintf_format_args | no mismatch | ok | PASS |
 | nonparametric | nonparametric | no_r_error | no error | ok | PASS |
 | nonparametric | nonparametric | banner | === 非参数检验 (Mann-Whitney U) === | === 非参数检验 (Mann-Whitney U) === | PASS |
-| nonparametric | nonparametric | data_quality.hooked | rwb_read used | ok | PASS |
+| nonparametric | nonparametric | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| nonparametric | nonparametric | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | nonparametric | nonparametric | GRP.n1 |       7 |       7 | PASS |
 | nonparametric | nonparametric | GRP.median1 |    13.1 |    13.1 | PASS |
 | nonparametric | nonparametric | GRP.n2 |       7 |       7 | PASS |
@@ -289,7 +303,8 @@ fixtures 目录：generated
 | frequency | frequency | sprintf_format_args | no mismatch | ok | PASS |
 | frequency | frequency | no_r_error | no error | ok | PASS |
 | frequency | frequency | banner | === 频数统计 === | === 频数统计 === | PASS |
-| frequency | frequency | data_quality.hooked | rwb_read used | ok | PASS |
+| frequency | frequency | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| frequency | frequency | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | frequency | frequency | FREQ_HEAD.n_valid |      11 |      11 | PASS |
 | frequency | frequency | FREQ_HEAD.n_missing |       1 |       1 | PASS |
 | frequency | frequency | FREQ.levels | 本科,博士,硕士 | 本科,博士,硕士 | PASS |
@@ -306,7 +321,8 @@ fixtures 目录：generated
 | summary_by | summary_by | sprintf_format_args | no mismatch | ok | PASS |
 | summary_by | summary_by | no_r_error | no error | ok | PASS |
 | summary_by | summary_by | banner | === 分类汇总 === | === 分类汇总 === | PASS |
-| summary_by | summary_by | data_quality.hooked | rwb_read used | ok | PASS |
+| summary_by | summary_by | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| summary_by | summary_by | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | summary_by | summary_by | VARS.group | dept | dept | PASS |
 | summary_by | summary_by | VARS.value | salary | salary | PASS |
 | summary_by | summary_by | TOTAL.n |      10 |      10 | PASS |
@@ -339,7 +355,8 @@ fixtures 目录：generated
 | cfa | cfa | sprintf_format_args | no mismatch | ok | PASS |
 | cfa | cfa | no_r_error | no error | ok | PASS |
 | cfa | cfa | banner | === 验证性因子分析 (CFA) === | === 验证性因子分析 (CFA) === | PASS |
-| cfa | cfa | data_quality.hooked | rwb_read used | ok | PASS |
+| cfa | cfa | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| cfa | cfa | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | cfa | cfa | CFA_SPEC.p |       6 |       6 | PASS |
 | cfa | cfa | CFA_SPEC.n |     800 |     800 | PASS |
 | cfa | cfa | CFA_ITEM.order | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
@@ -392,7 +409,8 @@ fixtures 目录：generated
 | cfa | cfa_3factors | sprintf_format_args | no mismatch | ok | PASS |
 | cfa | cfa_3factors | no_r_error | no error | ok | PASS |
 | cfa | cfa_3factors | banner | === 验证性因子分析 (CFA) === | === 验证性因子分析 (CFA) === | PASS |
-| cfa | cfa_3factors | data_quality.hooked | rwb_read used | ok | PASS |
+| cfa | cfa_3factors | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| cfa | cfa_3factors | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | cfa | cfa_3factors | CFA_SPEC.p |       9 |       9 | PASS |
 | cfa | cfa_3factors | CFA_SPEC.n |     600 |     600 | PASS |
 | cfa | cfa_3factors | CFA_ITEM.order | a1,a2,a3,b1,b2,b3,c1,c2,c3 | a1,a2,a3,b1,b2,b3,c1,c2,c3 | PASS |
@@ -452,7 +470,8 @@ fixtures 目录：generated
 | cfa | cfa_misfit | sprintf_format_args | no mismatch | ok | PASS |
 | cfa | cfa_misfit | no_r_error | no error | ok | PASS |
 | cfa | cfa_misfit | banner | === 验证性因子分析 (CFA) === | === 验证性因子分析 (CFA) === | PASS |
-| cfa | cfa_misfit | data_quality.hooked | rwb_read used | ok | PASS |
+| cfa | cfa_misfit | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| cfa | cfa_misfit | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | cfa | cfa_misfit | CFA_SPEC.p |       6 |       6 | PASS |
 | cfa | cfa_misfit | CFA_SPEC.n |     800 |     800 | PASS |
 | cfa | cfa_misfit | CFA_ITEM.order | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
@@ -499,7 +518,8 @@ fixtures 目录：generated
 | cfa | cfa_reverse | sprintf_format_args | no mismatch | ok | PASS |
 | cfa | cfa_reverse | no_r_error | no error | ok | PASS |
 | cfa | cfa_reverse | banner | === 验证性因子分析 (CFA) === | === 验证性因子分析 (CFA) === | PASS |
-| cfa | cfa_reverse | data_quality.hooked | rwb_read used | ok | PASS |
+| cfa | cfa_reverse | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| cfa | cfa_reverse | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | cfa | cfa_reverse | CFA_SPEC.p |       6 |       6 | PASS |
 | cfa | cfa_reverse | CFA_SPEC.n |     800 |     800 | PASS |
 | cfa | cfa_reverse | CFA_ITEM.order | q1,q2,q3,q4,q5,q6 | q1,q2,q3,q4,q5,q6 | PASS |
@@ -553,7 +573,8 @@ fixtures 目录：generated
 | cvi | cvi | sprintf_format_args | no mismatch | ok | PASS |
 | cvi | cvi | no_r_error | no error | ok | PASS |
 | cvi | cvi | banner | === 内容效度指数 (CVI) === | === 内容效度指数 (CVI) === | PASS |
-| cvi | cvi | data_quality.hooked | rwb_read used | ok | PASS |
+| cvi | cvi | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| cvi | cvi | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | cvi | cvi | CVI_SPEC.n_items |       6 |       6 | PASS |
 | cvi | cvi | CVI_SPEC.n_experts |       8 |       8 | PASS |
 | cvi | cvi | CVI_ITEM.order | c1,c2,c3,c4,c5,c6 | c1,c2,c3,c4,c5,c6 | PASS |
@@ -598,7 +619,8 @@ fixtures 目录：generated
 | harman | harman_medium | sprintf_format_args | no mismatch | ok | PASS |
 | harman | harman_medium | no_r_error | no error | ok | PASS |
 | harman | harman_medium | banner | === Harman 单因子检验 === | === Harman 单因子检验 === | PASS |
-| harman | harman_medium | data_quality.hooked | rwb_read used | ok | PASS |
+| harman | harman_medium | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| harman | harman_medium | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | harman | harman_medium | HARMAN_SPEC.p |       6 |       6 | PASS |
 | harman | harman_medium | HARMAN_SPEC.n |     400 |     400 | PASS |
 | harman | harman_medium | oracle.consistency_eigen_vs_svd | 1.44329e-15 |       0 | PASS |
@@ -619,7 +641,8 @@ fixtures 目录：generated
 | harman | harman_high | sprintf_format_args | no mismatch | ok | PASS |
 | harman | harman_high | no_r_error | no error | ok | PASS |
 | harman | harman_high | banner | === Harman 单因子检验 === | === Harman 单因子检验 === | PASS |
-| harman | harman_high | data_quality.hooked | rwb_read used | ok | PASS |
+| harman | harman_high | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| harman | harman_high | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | harman | harman_high | HARMAN_SPEC.p |       6 |       6 | PASS |
 | harman | harman_high | HARMAN_SPEC.n |     400 |     400 | PASS |
 | harman | harman_high | oracle.consistency_eigen_vs_svd | 2.66454e-15 |       0 | PASS |
@@ -637,7 +660,8 @@ fixtures 目录：generated
 | mediation | mediation | sprintf_format_args | no mismatch | ok | PASS |
 | mediation | mediation | no_r_error | no error | ok | PASS |
 | mediation | mediation | banner | === 中介效应分析 === | === 中介效应分析 === | PASS |
-| mediation | mediation | data_quality.hooked | rwb_read used | ok | PASS |
+| mediation | mediation | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| mediation | mediation | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | mediation | mediation | MED_SPEC.n |     300 |     300 | PASS |
 | mediation | mediation | MED_SPEC.vars | x,m,y | x,m,y | PASS |
 | mediation | mediation | MED_PATH.a.coef | 0.499999 |     0.5 | PASS |
@@ -682,7 +706,8 @@ fixtures 目录：generated
 | mediation | mediation_null | sprintf_format_args | no mismatch | ok | PASS |
 | mediation | mediation_null | no_r_error | no error | ok | PASS |
 | mediation | mediation_null | banner | === 中介效应分析 === | === 中介效应分析 === | PASS |
-| mediation | mediation_null | data_quality.hooked | rwb_read used | ok | PASS |
+| mediation | mediation_null | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| mediation | mediation_null | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | mediation | mediation_null | MED_SPEC.n |     300 |     300 | PASS |
 | mediation | mediation_null | MED_SPEC.vars | x,m,y | x,m,y | PASS |
 | mediation | mediation_null | MED_PATH.a.coef | 0.499999 |     0.5 | PASS |
@@ -727,7 +752,8 @@ fixtures 目录：generated
 | moderation | moderation | sprintf_format_args | no mismatch | ok | PASS |
 | moderation | moderation | no_r_error | no error | ok | PASS |
 | moderation | moderation | banner | === 调节效应分析 === | === 调节效应分析 === | PASS |
-| moderation | moderation | data_quality.hooked | rwb_read used | ok | PASS |
+| moderation | moderation | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| moderation | moderation | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | moderation | moderation | MOD_SPEC.n |     400 |     400 | PASS |
 | moderation | moderation | MOD_SPEC.vars | x,w,y | x,w,y | PASS |
 | moderation | moderation | MOD_SPEC.centered_declared | 是 | 是 | PASS |
@@ -776,7 +802,8 @@ fixtures 目录：generated
 | moderation | moderation_null | sprintf_format_args | no mismatch | ok | PASS |
 | moderation | moderation_null | no_r_error | no error | ok | PASS |
 | moderation | moderation_null | banner | === 调节效应分析 === | === 调节效应分析 === | PASS |
-| moderation | moderation_null | data_quality.hooked | rwb_read used | ok | PASS |
+| moderation | moderation_null | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| moderation | moderation_null | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | moderation | moderation_null | MOD_SPEC.n |     400 |     400 | PASS |
 | moderation | moderation_null | MOD_SPEC.vars | x,w,y | x,w,y | PASS |
 | moderation | moderation_null | MOD_SPEC.centered_declared | 是 | 是 | PASS |
@@ -825,7 +852,8 @@ fixtures 目录：generated
 | moderated_mediation | moderated_mediation | sprintf_format_args | no mismatch | ok | PASS |
 | moderated_mediation | moderated_mediation | no_r_error | no error | ok | PASS |
 | moderated_mediation | moderated_mediation | banner | === 有调节的中介分析 === | === 有调节的中介分析 === | PASS |
-| moderated_mediation | moderated_mediation | data_quality.hooked | rwb_read used | ok | PASS |
+| moderated_mediation | moderated_mediation | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| moderated_mediation | moderated_mediation | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | moderated_mediation | moderated_mediation | MM_SPEC.n |     350 |     350 | PASS |
 | moderated_mediation | moderated_mediation | MM_COEF.m.x_c.coef | 0.399657 |  0.3997 | PASS |
 | moderated_mediation | moderated_mediation | MM_COEF.m.x_c.se | 0.0488741 |  0.0489 | PASS |
@@ -863,7 +891,8 @@ fixtures 目录：generated
 | path_analysis | path_analysis | sprintf_format_args | no mismatch | ok | PASS |
 | path_analysis | path_analysis | no_r_error | no error | ok | PASS |
 | path_analysis | path_analysis | banner | === 路径分析 === | === 路径分析 === | PASS |
-| path_analysis | path_analysis | data_quality.hooked | rwb_read used | ok | PASS |
+| path_analysis | path_analysis | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| path_analysis | path_analysis | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | path_analysis | path_analysis | PATH_SPEC.n |     400 |     400 | PASS |
 | path_analysis | path_analysis | PATH_SPEC.n_nodes |       3 |       3 | PASS |
 | path_analysis | path_analysis | PATH_SPEC.n_edges |       3 |       3 | PASS |
@@ -883,7 +912,8 @@ fixtures 目录：generated
 | sem | sem | sprintf_format_args | no mismatch | ok | PASS |
 | sem | sem | no_r_error | no error | ok | PASS |
 | sem | sem | banner | === 结构方程模型 (SEM) === | === 结构方程模型 (SEM) === | PASS |
-| sem | sem | data_quality.hooked | rwb_read used | ok | PASS |
+| sem | sem | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| sem | sem | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | sem | sem | SEM_SPEC.n |     600 |     600 | PASS |
 | sem | sem | SEM_SPEC.n_latent |       2 |       2 | PASS |
 | sem | sem | SEM_SPEC.n_obs |       6 |       6 | PASS |
@@ -917,7 +947,8 @@ fixtures 目录：generated
 | sem | sem_null | sprintf_format_args | no mismatch | ok | PASS |
 | sem | sem_null | no_r_error | no error | ok | PASS |
 | sem | sem_null | banner | === 结构方程模型 (SEM) === | === 结构方程模型 (SEM) === | PASS |
-| sem | sem_null | data_quality.hooked | rwb_read used | ok | PASS |
+| sem | sem_null | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| sem | sem_null | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | sem | sem_null | SEM_SPEC.n |     600 |     600 | PASS |
 | sem | sem_null | SEM_SPEC.n_latent |       2 |       2 | PASS |
 | sem | sem_null | SEM_SPEC.n_obs |       6 |       6 | PASS |
@@ -948,7 +979,8 @@ fixtures 目录：generated
 | cfa | cfa_likert | sprintf_format_args | no mismatch | ok | PASS |
 | cfa | cfa_likert | no_r_error | no error | ok | PASS |
 | cfa | cfa_likert | banner | === 验证性因子分析 (CFA) === | === 验证性因子分析 (CFA) === | PASS |
-| cfa | cfa_likert | data_quality.hooked | rwb_read used | ok | PASS |
+| cfa | cfa_likert | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| cfa | cfa_likert | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | cfa | cfa_likert | likert.CFA_SPEC.n_equals_complete_cases |     505 |     505 | PASS |
 | cfa | cfa_likert | likert.CFA_SPEC.p |       5 |       5 | PASS |
 | cfa | cfa_likert | likert.dropped_some_rows | n < n_raw | n=505 n_raw=600 | PASS |
@@ -968,7 +1000,8 @@ fixtures 目录：generated
 | path_analysis | path_overid | r_syntax_parse | parse() ok | ok | PASS |
 | path_analysis | path_overid | sprintf_format_args | no mismatch | ok | PASS |
 | path_analysis | path_overid | no_r_error | no error | ok | PASS |
-| path_analysis | path_overid | data_quality.hooked | rwb_read used | ok | PASS |
+| path_analysis | path_overid | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| path_analysis | path_overid | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
 | path_analysis | path_overid | PATH_SPEC.n |     500 |     500 | PASS |
 | path_analysis | path_overid | PATH_SPEC.n_nodes |       4 |       4 | PASS |
 | path_analysis | path_overid | PATH_SPEC.n_edges |       5 |       5 | PASS |
@@ -1000,4 +1033,4 @@ fixtures 目录：generated
 | path_analysis | path_overid | overid.truth.x>y |  0.1625 |  0.1625 | PASS |
 | __coverage__ | - | methods_covered |      22 |      22 | PASS |
 
-**汇总：PASS 989 / 989**
+**汇总：PASS 1022 / 1022**

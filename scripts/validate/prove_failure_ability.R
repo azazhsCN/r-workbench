@@ -44,10 +44,10 @@ if (!file.exists(file.path(GEN_DIR, "manifest.txt"))) {
 }
 
 rscript <- file.path(R.home("bin"), "Rscript")
-run_validator <- function(file) {
+run_validator <- function(file, gen_dir = GEN_DIR) {
   log <- suppressWarnings(system2(
     rscript,
-    c(shQuote(file), "--no-regenerate", "--generated", shQuote(GEN_DIR)),
+    c(shQuote(file), "--no-regenerate", "--generated", shQuote(gen_dir)),
     stdout = TRUE, stderr = TRUE
   ))
   status <- attr(log, "status")
@@ -56,6 +56,9 @@ run_validator <- function(file) {
        fails = log[grepl("FAIL$", log)],
        summ = grep("断言总数", log, value = TRUE))
 }
+
+# 对"篡改过的 fixture 目录"跑一次验证（用于第 10 处注入：绕过统一入口）
+run_validator_dir <- function(gen_dir) run_validator(VALIDATOR, gen_dir)
 
 # ── 第 0 步：基线必须全 PASS ────────────────────────────────────────────────
 # 这是本 harness 最重要的一步。基线有 FAIL 时后续注入毫无证明力。
@@ -132,6 +135,21 @@ src <- inject(src, "      cr_ref <- s_abs^2 / (s_abs^2 + th_f)",
                      "      cr_ref <- s_abs^2 / (s_abs^2 + th_f)"),
               "cfa_cr_signed_sum")
 
+# (10) v0.3.3 补强 / 第三方 issue「data_quality.hooked 恒为真」：
+#      模拟"生成器绕过统一读表入口"。
+#
+#      这条注入的特殊性：它**不注入 oracle**，而是篡改生成的 fixture 脚本
+#      （把 `data <- rwb_read(dataFile)` 换成裸 read.csv），然后验证
+#      run_validation.R 的结构断言能否抓到。
+#
+#      为什么必须由 harness 守：上一版这条断言是**假的**——判据用
+#      grepl("rwb_read(dataFile)", 整个脚本) 去搜，而 R_COMMON 里有一句注释
+#      恰好包含该字符串，于是恒命中、恒为真。实测绕过读表入口后 989 断言全绿、
+#      exit 0，门禁完全没有拦截能力。
+#
+#      现在 run_validation.R 用 4 层防线（剔注释判代码行 / 计数 read.csv /
+#      运行时 DQ 断言 / TS 源码层测试）。这里验证第 1、2 层真的能失败。
+
 tmp <- file.path(SCRIPT_DIR, "_failure_demo.R")
 writeLines(src, tmp)
 # 注意：on.exit() 只在函数内绑定到函数退出；脚本顶层不会触发，
@@ -160,6 +178,53 @@ cat("\n== 汇总 ==\n")
 cat(run$summ, "\n")
 cat("退出码 =", run$status, "  变红断言数 =", length(run$fails), "\n")
 
+# ── (10) 独立实验：绕过统一读表入口，验证结构断言能失败 ──────────────────
+#
+# 这条与上面 9 处机制不同：前 9 处篡改 **oracle**（run_validation.R 的副本），
+# 这一条篡改 **生成的 fixture 脚本**（模拟某个生成器不再走 rwb_read）。
+#
+# 为什么要单独做：上一版这条结构断言是假的（被 R_COMMON 里的一句注释击穿），
+# 而它保护的正是"数据质量检查只接了 1/22 个方法"那次事故的复发路径。
+# 一条不可失败的断言比没有断言更糟——它让人以为有保护。
+cat("\n== (10) 绕过统一读表入口，验证结构断言可失败 ==\n")
+bake_dir <- file.path(SCRIPT_DIR, "_hooked_demo")
+unlink(bake_dir, recursive = TRUE, force = TRUE)
+dir.create(bake_dir, showWarnings = FALSE)
+# 复制一份**完整** fixture 目录（含 .R / .csv / manifest.txt），
+# 再把其中一个脚本的 rwb_read 调用换成裸 read.csv。
+# ⚠️ 必须复制全部文件类型：只复制 .R 会让验证器找不到 manifest 与数据文件，
+#    表现为"退出码 1 但一条 FAIL 都没有"（脚本早退），看起来像门禁失效。
+fixture_files <- list.files(GEN_DIR, full.names = TRUE)
+invisible(file.copy(fixture_files, bake_dir, overwrite = TRUE))
+target <- file.path(bake_dir, "mediation.R")
+target_base <- file.path(bake_dir, "mediation.r")
+if (!file.exists(target) && file.exists(target_base)) target <- target_base
+
+hooked_probe <- FALSE
+if (file.exists(target)) {
+  tl <- readLines(target, warn = FALSE)
+  hit <- grep("^\\s*data\\s*<-\\s*rwb_read\\(dataFile\\)\\s*$", tl)
+  if (length(hit) == 1) {
+    tl[hit] <- paste0(
+      "data <- read.csv(dataFile, stringsAsFactors = FALSE, check.names = FALSE, ",
+      "fileEncoding = \"UTF-8-BOM\")  # INJECTED: 绕过统一入口"
+    )
+    writeLines(tl, target)
+    dem <- run_validator_dir(bake_dir)
+    hooked_probe <- any(grepl("data_quality\\.hooked", dem$fails)) ||
+      any(grepl("data_quality\\.no_bare_read", dem$fails))
+    cat("   绕过 mediation 的读表入口后，变红断言数 =", length(dem$fails), "\n")
+    cat("   其中 data_quality.* 相关：",
+        sum(grepl("data_quality", dem$fails)), "条\n", sep = "")
+    cat("   退出码 =", dem$status, "\n")
+  } else {
+    cat("   !! 未在 mediation.R 中找到唯一的 rwb_read 调用行，跳过该实验\n")
+  }
+} else {
+  cat("   !! 未找到 mediation 的 fixture 脚本，跳过该实验\n")
+}
+unlink(bake_dir, recursive = TRUE, force = TRUE)
+
 # ── 防护：注入副本自身跑不起来时，必须明确报出来 ──────────────────────────
 # 症状：退出码非 0，但一条 FAIL 都没有，且汇总行缺失。
 # 原因：注入把脚本改出了语法错误（最常见是把换行写成字面 `n），
@@ -176,7 +241,7 @@ if (run$status != 0L && length(run$fails) == 0 && length(run$summ) == 0) {
   quit(status = 2L)
 }
 
-# 九处注入必须各自造成至少一条断言变红 —— 逐一核对，
+# 十处注入必须各自造成至少一条断言变红 —— 逐一核对，
 # 避免"只有一处生效"却整体 exit 1 的假象。
 probe <- c(
   Harman         = any(grepl("HARMAN_SUMMARY.first_pct", run$fails)),
@@ -190,11 +255,13 @@ probe <- c(
   # v0.3.3 / D01：CR 退回带符号求和 → cfa_reverse 场景的 CR 断言 + 全局
   # cr_ge_ave 不变式必须同时变红。
   CfaCR          = any(grepl("CFA_RELIAB.*\\.cr", run$fails)) ||
-                    any(grepl("CFA_RELIAB.*cr_ge_ave", run$fails))
+                    any(grepl("CFA_RELIAB.*cr_ge_ave", run$fails)),
+  # v0.3.3 补强：绕过统一读表入口 → 结构断言必须变红（第 10 处，独立实验）
+  DataQualityHook = hooked_probe
 )
 cat("\n== 每个注入点的判别力 ==\n")
 for (nm in names(probe)) {
-  cat(sprintf("  %-14s %s\n", nm,
+  cat(sprintf("  %-16s %s\n", nm,
               if (probe[[nm]]) "变红（有判别力）" else "未变红（盲区！）"))
 }
 

@@ -2721,24 +2721,43 @@ for (i in seq_len(nrow(manifest))) {
   # 其余 21 个方法静默——ANOVA 注入单个 1e6 后 F=0.9999、p=0.39，零警告，
   # 用户不会知道结论已被一个录入错误摧毁。
   #
-  # 修法是把体检挂进 rwb_read()（所有生成器读数据的统一入口），
-  # 这里用**结构断言**守住这条：只要生成代码里出现裸 read.csv 而没有 rwb_read，
-  # 说明有人绕过了统一入口，体检会全线失效且没有任何报错。
+  # 修法是把体检挂进 rwb_read()（所有生成器读数据的统一入口）。
   #
-  # 注意：不断言"必须有 DQ 输出"——干净 fixture 上本来就该是零输出
-  # （那是 F4 的验收要求）。这里只断言**入口被正确使用**。
+  # ⚠️⚠️ 这里曾经出过一次真实事故（第三方 issue「data_quality.hooked 断言恒为真」）：
+  # 最初的判据是 `grepl("rwb_read(dataFile)", 整个脚本文本)`，
+  # 而 R_COMMON 里恰好有一句**注释**写着 "所有生成器都写成 data <- rwb_read(dataFile)"，
+  # 于是无论生成代码实际怎么读数据，这个 grepl 都会命中注释 → 断言恒为 TRUE。
   #
-  # ⚠️ 要检查的是**生成的脚本源码**（r_path），不是运行输出 out——
-  # out 里只有 cat 打印的内容，看不到读取方式。实测踩过一次。
+  # 实测后果：把 mediation 的读表改回裸 read.csv 后，DQ 输出从 3 行降到 0 行、
+  # 体检完全失效，而 989 条断言依然全绿、exit 0。**门禁形同虚设。**
   #
-  # 也不能用"有无裸 read.csv"来判定：rwb_read() 内部本来就写着 read.csv，
-  # 那是唯一的合法位置。正确判据是**调用点必须走 rwb_read**。
-  script_src <- if (file.exists(r_path)) paste(readLines(r_path, warn = FALSE), collapse = "\n") else ""
-  uses_unified_read <- grepl("rwb_read(dataFile)", script_src, fixed = TRUE)
+  # 教训：**用文本检索做结构断言时，必须先剔除注释**。注释是给人看的描述，
+  # 它描述的往往是"应该怎样"，而不是"实际怎样"——用它当判据等于拿说明书当证据。
+  #
+  # 现在的防线有 4 层，任一层失效其余仍能拦（单层都可能再被击穿）：
+  #   1. 剔除注释后，判定必须存在 `data <- rwb_read(dataFile)` 这一**可执行语句**
+  #   2. 反向判据：`read.csv(` 只允许出现 1 次（rwb_read 定义内部那处）
+  #   3. 运行时判据：脏数据场景必须真的产出 DQ_* 输出（见 dirty_dq_map 相关断言）
+  #   4. TS 源码层断言（r-source-hygiene.test.ts），不依赖 fixture 是否重新生成
+  script_lines <- if (file.exists(r_path)) readLines(r_path, warn = FALSE) else character(0)
+  # 剔除整行注释与行尾注释（R 用 # 注释；本项目的 R 代码不在字符串里写 #，可安全处理）
+  code_lines <- script_lines[!grepl("^\\s*#", script_lines)]
+  code_lines <- sub("#.*$", "", code_lines)
+  code_text <- paste(code_lines, collapse = "\n")
+
+  # 第 1 层：必须是**可执行语句** `data <- rwb_read(dataFile)`
+  uses_unified_read <- grepl("^\\s*data\\s*<-\\s*rwb_read\\(dataFile\\)\\s*$", code_lines)
   add_row(method, dataset, "data_quality.hooked",
-          "rwb_read used",
-          if (uses_unified_read) "ok" else "not using rwb_read (data quality check bypassed)",
-          uses_unified_read)
+          "code line: data <- rwb_read(dataFile)",
+          if (any(uses_unified_read)) "ok" else "MISSING (data quality check bypassed)",
+          any(uses_unified_read))
+
+  # 第 2 层：反向判据——read.csv( 只允许出现 1 次（rwb_read 定义内部）
+  n_read_csv <- sum(grepl("read\\.csv\\(", code_lines))
+  add_row(method, dataset, "data_quality.no_bare_read",
+          "exactly 1 read.csv (inside rwb_read)",
+          n_read_csv,
+          n_read_csv == 1L)
 
   # (d) 统计 oracle
   fn <- oracle_map[[dataset]]
