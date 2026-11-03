@@ -687,3 +687,20 @@
   font-size: 13px;
   color: var(--text-tertiary);
 }
+
+/* ── 数据质量警告：点击定位时临时高亮目标行（v0.3.3 跟进 / F3）──
+   为什么加过渡而不是直接变色：一瞬间的闪烁容易被错过，
+   2 秒渐隐能让用户看清"跳到哪一行了"，又不至于长期干扰阅读。 */
+.row-highlight {
+  animation: row-highlight-pulse 2s ease-out;
+}
+
+@keyframes row-highlight-pulse {
+  0%,
+  40% {
+    background-color: rgba(220, 38, 38, 0.18);
+  }
+  100% {
+    background-color: transparent;
+  }
+}

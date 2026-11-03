@@ -21,7 +21,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { checkDataQuality, quantileType7, type QualityIssue } from '../dataQuality'
-import { READ_CSV, R_COMMON } from '../rCommon'
+import { READ_CSV, R_COMMON_WITH_SENTINELS } from '../rCommon'
 import { DEFAULT_MISSING_SENTINELS, SPSS_MISSING_SENTINELS } from '../dataService'
 
 /** 造行：`{ a: [...] }` → `[{a:v0},{a:v1},...]`，列长度必须一致 */
@@ -56,7 +56,9 @@ describe('checkDataQuality：极端值（D02）', () => {
     expect(outlier!.count).toBe(1)
     // 行号必须是 1 基且不含表头：1e6 在下标 12 → 行号 13
     expect(outlier!.rows).toEqual([13])
-    expect(outlier!.detail).toContain('|z| > 3')
+    // v0.3.3 跟进 / F4 起 1e6 属**严重**级（|z|>4 或超 3×IQR 远围栏），文案报的是严重级阈值
+    expect(outlier!.level).toBe('warn')
+    expect(outlier!.detail).toContain('|z| > 4')
   })
 
   it('极端值行号是 1 基、不含表头（错一位会指导用户改错单元格）', () => {
@@ -140,9 +142,25 @@ describe('checkDataQuality：极端值（D02）', () => {
     // 这条用例的真实价值：钉住"小样本不报警"这个**用户可观察**的承诺。
     expect(checkDataQuality(['v'], makeRows({ v: [1, 2, 100] }))).toEqual([])
     expect(checkDataQuality(['v'], makeRows({ v: [1, 100] }))).toEqual([])
-    // 同样的形状，n 到 4 就该报（证明不是"永远不报"）
-    const fired = checkDataQuality(['v'], makeRows({ v: [2, 3, 50, 2] }))
-    expect(issueOf(fired, 'v', 'outlier'), 'n=4 的 [2,3,50,2] 应检出离群值').toBeDefined()
+
+    // v0.3.3 跟进 / F4 起，n < 20 时**只报严重级**，`note` 级被抑制。
+    // 所以 [2,3,50,2] 现在**不报** —— 这不是回退，而是有意的取舍：
+    //   - 50 只超出 1.5×IQR 近围栏（上界 33.875），**没有**超出 3×IQR 远围栏（上界 53）
+    //   - 且它的 |z| 只有 1.50（被自身拉高均值），远达不到 4
+    //   即：在 4 个点里它算不上"严重异常"，而小样本报 note 会训练用户忽略告警
+    //   （实测 n=12 干净数据曾报 4 条，全是这类噪声）。
+    // 这条断言把这个取舍**钉死**：若有人把 MIN_SAMPLE_FOR_NOTE 改小，这里会变红。
+    const smallN = checkDataQuality(['v'], makeRows({ v: [2, 3, 50, 2] }))
+    expect(issueOf(smallN, 'v', 'outlier'), 'n=4 的近围栏值在小样本下应被抑制').toBeUndefined()
+
+    // 但"不是永远不报"需要用 **n ≥ 5** 证明，不能用 n=4：
+    // 数学事实（R 实算确认）—— 单点极端值在 n=4 时 |z| 恒等于 1.50
+    // （|z| 理论上界正是 (n−1)/√n，n=4 时恰为 3/2），且 IQR 会被这个极端值自己
+    // 拉宽到刚好包含它（[2,3,5000,2] 的 3×IQR 上界算出 5003 > 5000）。
+    // 所以 n=4 无论值多夸张都抓不到——这是小样本的数学边界，不是实现缺陷。
+    // n=5 起 3×IQR 围栏才恢复判别力（实测上界回到 10，9999 立刻越界）。
+    const n5 = checkDataQuality(['v'], makeRows({ v: [10, 10, 10, 10, 9999] }))
+    expect(issueOf(n5, 'v', 'outlier'), 'n=5 的 9999 应被检出（证明不是永远不报）').toBeDefined()
   })
 })
 
@@ -210,7 +228,7 @@ describe('checkDataQuality：高缺失与常量列', () => {
   })
 })
 
-describe('R 层纵深防御：READ_CSV 的 na.strings 与 JS 端同源（D03）', () => {
+describe('R 层纵深防御：na.strings 与 JS 端同源（D03，v0.3.3 跟进后位于 R_COMMON_WITH_SENTINELS）', () => {
   // ⚠️ 这一组用例是补出来的，因为**第一版没有**：
   // 我把 READ_CSV 里的 na.strings 整段删掉后，392 个测试全部照常通过。
   // 也就是说 D03 的修复当时完全没有测试保护——"改了没测"正是本项目反复吃亏的地方。
@@ -219,19 +237,19 @@ describe('R 层纵深防御：READ_CSV 的 na.strings 与 JS 端同源（D03）'
   //   2. 断言它由 DEFAULT_MISSING_SENTINELS 生成（改一处即同步，不用改测试）
   //   3. 断言 99/999 **不在**其中（红线的机器化看守）
 
-  it('READ_CSV 必须带 na.strings（删掉它测试要红）', () => {
-    expect(READ_CSV).toContain('na.strings')
-    expect(READ_CSV).toMatch(/na\.strings\s*=\s*c\(/)
+  it('R_COMMON_WITH_SENTINELS 必须带 na.strings（删掉它测试要红）', () => {
+    expect(R_COMMON_WITH_SENTINELS).toContain('na.strings')
+    expect(R_COMMON_WITH_SENTINELS).toMatch(/na\.strings\s*=\s*c\(/)
   })
 
   it('na.strings 的每一项都来自 DEFAULT_MISSING_SENTINELS（单一真相）', () => {
     for (const sentinel of DEFAULT_MISSING_SENTINELS) {
-      expect(READ_CSV, `哨兵 "${sentinel}" 未注入 R 端`).toContain(`"${sentinel}"`)
+      expect(R_COMMON_WITH_SENTINELS, `哨兵 "${sentinel}" 未注入 R 端`).toContain(`"${sentinel}"`)
     }
   })
 
   it('na.strings 的项数恰好等于 DEFAULT_MISSING_SENTINELS 的长度（没有多也没有少）', () => {
-    const block = READ_CSV.match(/na\.strings\s*=\s*c\(([^)]*)\)/)
+    const block = R_COMMON_WITH_SENTINELS.match(/na\.strings\s*=\s*c\(([^)]*)\)/)
     expect(block, '未找到 na.strings 的 c(...) 块').toBeTruthy()
     const items = block![1].split(',').map((s) => s.trim()).filter(Boolean)
     expect(items).toHaveLength(DEFAULT_MISSING_SENTINELS.length)
@@ -242,12 +260,12 @@ describe('R 层纵深防御：READ_CSV 的 na.strings 与 JS 端同源（D03）'
     // 为补 D03 而加进去，会引入比 D03 更严重的新缺陷（TECH_DEBT.md D03 的明确警告）。
     for (const bad of SPSS_MISSING_SENTINELS) {
       expect(
-        READ_CSV,
+        R_COMMON_WITH_SENTINELS,
         `SPSS 惯例哨兵 "${bad}" 泄漏进了默认 na.strings —— 这会静默删除有效观测`
       ).not.toContain(`"${bad}"`)
     }
     // 逐项精确校验，避免 "99" 被 "999" 之类的子串断言误判
-    const block = READ_CSV.match(/na\.strings\s*=\s*c\(([^)]*)\)/)!
+    const block = R_COMMON_WITH_SENTINELS.match(/na\.strings\s*=\s*c\(([^)]*)\)/)!
     const items = block[1].split(',').map((s) => s.trim().replace(/^"|"$/g, ''))
     expect(items).not.toContain('99')
     expect(items).not.toContain('999')
@@ -255,28 +273,57 @@ describe('R 层纵深防御：READ_CSV 的 na.strings 与 JS 端同源（D03）'
     expect(items).not.toContain('-9999')
   })
 
-  it('R_COMMON 定义了 r_quality_check 与 r_quality_check_all', () => {
-    expect(R_COMMON).toContain('r_quality_check <- function')
-    expect(R_COMMON).toContain('r_quality_check_all <- function')
-    expect(R_COMMON).toContain('DQ_WARN|')
+  it('R_COMMON_WITH_SENTINELS 定义了 r_quality_check 与 r_quality_check_all', () => {
+    expect(R_COMMON_WITH_SENTINELS).toContain('r_quality_check <- function')
+    expect(R_COMMON_WITH_SENTINELS).toContain('r_quality_check_all <- function')
+    expect(R_COMMON_WITH_SENTINELS).toContain('DQ_WARN|')
+    expect(R_COMMON_WITH_SENTINELS).toContain('DQ_NOTE|')
+  })
+
+  // ── v0.3.3 跟进 / F1：单一入口的结构性保护 ──
+  // 第三方实测发现 r_quality_check_all 只有 1 个调用点（信度），
+  // 其余 21 个方法静默。修法是把体检挂进 rwb_read()，让所有方法自动覆盖。
+  // 下面这几条守住"新增方法不可能漏接"这个结构性质。
+  it('F1：R_COMMON_WITH_SENTINELS 定义了统一读取入口 rwb_read，且它内部会跑质量检查', () => {
+    expect(R_COMMON_WITH_SENTINELS).toContain('rwb_read <- function')
+    const i = R_COMMON_WITH_SENTINELS.indexOf('rwb_read <- function')
+    // 取该函数之后的 600 字符，确认内部调用了体检与 read.csv
+    const body = R_COMMON_WITH_SENTINELS.slice(i, i + 600)
+    expect(body).toContain('r_quality_check_all')
+    expect(body).toContain('read.csv')
+  })
+
+  it('F1：READ_CSV 改为调用 rwb_read（而不是裸 read.csv）', () => {
+    // 这是关键：只要 READ_CSV 走 rwb_read，22 个生成器就自动全覆盖；
+    // 一旦有人把它改回裸 read.csv，体检立刻全线失效且没有任何报错。
+    expect(READ_CSV).toBe('rwb_read(dataFile)')
+  })
+
+  it('F1：na.strings 占位符必须已被替换（漏替换会导致 R 报 could not find function）', () => {
+    expect(R_COMMON_WITH_SENTINELS).not.toContain('__NA_STRINGS__')
+  })
+
+  it('F2：定义了量表上限推断函数 rq_infer_likert_max', () => {
+    expect(R_COMMON_WITH_SENTINELS).toContain('rq_infer_likert_max <- function')
+    expect(R_COMMON_WITH_SENTINELS).toContain('out_of_range')
   })
 
   it('R 侧 z 阈值必须是 3（与 TS 侧 Z_LIMIT 对齐，且放宽到 30 会红）', () => {
     // R 侧的判定写成 `z > 3`；若有人把它改成 30，与 TS 侧就会出现
     // "界面报 1 个离群值、R 输出报 0 个"的双事实，这是最坏的结果。
-    expect(R_COMMON).toMatch(/z\s*>\s*3\b/)
-    expect(R_COMMON).not.toMatch(/z\s*>\s*30\b/)
+    expect(R_COMMON_WITH_SENTINELS).toMatch(/z\s*>\s*3\b/)
+    expect(R_COMMON_WITH_SENTINELS).not.toMatch(/z\s*>\s*30\b/)
   })
 
   it('R 侧分位数用 type = 7（与 quantileType7 同口径）', () => {
-    expect(R_COMMON).toMatch(/type\s*=\s*7/)
+    expect(R_COMMON_WITH_SENTINELS).toMatch(/type\s*=\s*7/)
   })
 
   it('R 侧质量检查不得输出到 stderr（走 stdout 结构化通道）', () => {
     // DQ_WARN 必须由 cat() 输出；用 warning() 会走 parseRWarnings 的 stderr 通道，
     // 把"数据问题"和"方法警告"混成一类。
-    expect(R_COMMON).toContain('cat(sprintf("DQ_WARN|')
-    const dqSection = R_COMMON.slice(R_COMMON.indexOf('r_quality_check <- function'))
+    expect(R_COMMON_WITH_SENTINELS).toContain('cat(sprintf("DQ_WARN|')
+    const dqSection = R_COMMON_WITH_SENTINELS.slice(R_COMMON_WITH_SENTINELS.indexOf('r_quality_check <- function'))
     expect(dqSection).not.toContain('warning(')
   })
 })

@@ -36,6 +36,17 @@ export interface QualityIssue {
   rows?: number[]
   /** 人类可读说明（含判定依据与原始数值） */
   detail: string
+  /**
+   * 严重程度（v0.3.3 跟进 / F4，与 R 侧 DQ_NOTE / DQ_WARN 两级对应）：
+   * - `warn`：很可能改变结论，需要用户处理（值域越界、常量列、严重极端值）
+   * - `note`：轻微，值得看一眼（近围栏的极端值）
+   *
+   * 为什么要分级：对所有极值都报警且文案一律写"可能改变结论"，
+   * 会让用户习惯性忽略——真出事时也就不看了。**误报的代价是让真警报失效。**
+   *
+   * 可选字段：旧的调用方（未升级的测试）不需要它，缺失时按 `warn` 处理。
+   */
+  level?: 'warn' | 'note'
 }
 
 /** 检查选项 */
@@ -58,8 +69,23 @@ export interface DataQualityOptions {
  */
 const Z_LIMIT = 3
 
+/** 严重级 z 阈值（v0.3.3 跟进 / F4，与 R 侧一致） */
+const Z_LIMIT_SEVERE = 4
+
 /** IQR 围栏倍数（Tukey 的 1.5 倍围栏） */
 const IQR_MULTIPLIER = 1.5
+
+/** 严重级 IQR 倍数（3 倍远围栏，与 R 侧一致） */
+const IQR_MULTIPLIER_SEVERE = 3
+
+/**
+ * 报 `note` 级所需的最小有效样本量（v0.3.3 跟进 / F4）。
+ *
+ * 小样本下 1.5×IQR 围栏极窄、尾部观测几乎必然命中：实测 n=12 的**干净**数据
+ * 就有 4 条命中。这会让告警失去意义（用户习惯性忽略 -> 真警报也失效）。
+ * n < 20 时只报严重级。
+ */
+const MIN_SAMPLE_FOR_NOTE = 20
 
 /** 默认高缺失阈值 */
 const DEFAULT_MISSING_RATE = 0.3
@@ -150,7 +176,7 @@ function sampleColumn(column: string, rows: Record<string, unknown>[]): ColumnSa
  * 用**样本标准差**（n−1）。样本量 < 4 时不判定：3 个点算出的 sd 没有判别力，
  * 而"3 个值里 1 个被标成离群"会让小样本分析完全无法进行。
  */
-function zScoreRowNumbers(sample: ColumnSample): number[] {
+function zScoreRowNumbers(sample: ColumnSample, limit: number = Z_LIMIT): number[] {
   const { values, rowNumbers } = sample
   const n = values.length
   if (n < 4) return []
@@ -162,7 +188,7 @@ function zScoreRowNumbers(sample: ColumnSample): number[] {
 
   const out: number[] = []
   for (let i = 0; i < n; i++) {
-    if (Math.abs((values[i] - mean) / sd) > Z_LIMIT) out.push(rowNumbers[i])
+    if (Math.abs((values[i] - mean) / sd) > limit) out.push(rowNumbers[i])
   }
   return out
 }
@@ -180,7 +206,10 @@ function zScoreRowNumbers(sample: ColumnSample): number[] {
  * 2. **两侧围栏都用**（下侧 `Q1 − 1.5·IQR`、上侧 `Q3 + 1.5·IQR`）。
  *    只查上界会让"漏录了一个 0 / 负值"永远不被发现。
  */
-function iqrFenceRowNumbers(sample: ColumnSample): number[] {
+function iqrFenceRowNumbers(
+  sample: ColumnSample,
+  multiplier: number = IQR_MULTIPLIER
+): number[] {
   const { values, rowNumbers } = sample
   const n = values.length
   if (n < 4) return []
@@ -191,8 +220,8 @@ function iqrFenceRowNumbers(sample: ColumnSample): number[] {
   const iqr = q3 - q1
   if (!Number.isFinite(iqr) || iqr === 0) return []
 
-  const lower = q1 - IQR_MULTIPLIER * iqr
-  const upper = q3 + IQR_MULTIPLIER * iqr
+  const lower = q1 - multiplier * iqr
+  const upper = q3 + multiplier * iqr
   const out: number[] = []
   for (let i = 0; i < n; i++) {
     if (values[i] < lower || values[i] > upper) out.push(rowNumbers[i])
@@ -213,6 +242,63 @@ function fmt(v: number): string {
 }
 
 /**
+ * 推断一组题项的量表上限（v0.3.3 跟进 / F2，与 R 侧 `rq_infer_likert_max` 逐条对应）。
+ *
+ * 此前值域检查依赖调用方传 `likertMax`，但**没有任何调用方传**，
+ * 于是 `out_of_range` 分支形同不存在（第三方实测：CFA 数据里 q3 含 7 和 0，无任何提示）。
+ *
+ * 保守推断，只在有强共识时下结论，猜不出就返回 `{}`（宁可不报，不可误报）：
+ *   1. 候选 = 全部取值为整数、最小值 ≥ 0、唯一值数在 2..10 之间（像定序量表）
+ *   2. 若候选数 ≥ 3 且同一最大值被 ≥ 60% 的候选共享，且该值 ≤ 10 → 认定它就是上限
+ *   3. 否则不推断
+ */
+export function inferLikertMax(
+  headers: string[],
+  rows: Record<string, unknown>[]
+): Record<string, number> {
+  const maxs: number[] = []
+  for (const column of headers) {
+    const sample = sampleColumn(column, rows)
+    if (!sample.isNumericColumn) continue
+    const v = sample.values
+    if (v.length < 3) continue
+    if (v.some((x) => Math.abs(x - Math.round(x)) > 1e-8)) continue
+    if (Math.min(...v) < 0) continue
+    const uniq = new Set(v).size
+    if (uniq < 2 || uniq > 10) continue
+    maxs.push(Math.max(...v))
+  }
+  if (maxs.length < 3) return {}
+
+  const tally = new Map<number, number>()
+  for (const m of maxs) tally.set(m, (tally.get(m) ?? 0) + 1)
+  let best = 0
+  let bestCount = 0
+  for (const [m, c] of tally) {
+    if (c > bestCount || (c === bestCount && m > best)) {
+      best = m
+      bestCount = c
+    }
+  }
+  if (bestCount / maxs.length < 0.6 || best > 10) return {}
+
+  // 只对"确实像定序量表"的列应用该上限，避免把连续变量误判成越界
+  const out: Record<string, number> = {}
+  for (const column of headers) {
+    const sample = sampleColumn(column, rows)
+    if (!sample.isNumericColumn) continue
+    const v = sample.values
+    if (v.length < 3) continue
+    if (v.some((x) => Math.abs(x - Math.round(x)) > 1e-8)) continue
+    if (Math.min(...v) < 0) continue
+    const uniq = new Set(v).size
+    if (uniq < 2 || uniq > 10) continue
+    out[column] = best
+  }
+  return out
+}
+
+/**
  * 检查数据质量。
  *
  * @param headers 列名（顺序即输出顺序）
@@ -226,7 +312,9 @@ export function checkDataQuality(
   opts: DataQualityOptions = {}
 ): QualityIssue[] {
   const missingThreshold = opts.missingRateThreshold ?? DEFAULT_MISSING_RATE
-  const likertMax = opts.likertMax ?? {}
+  // 调用方显式给了 likertMax 就用它；没给则尝试从数据自身推断量表上限（F2）。
+  // 不推断的话 out_of_range 分支形同不存在——那正是第三方发现的问题。
+  const likertMax = opts.likertMax ?? inferLikertMax(headers, rows)
   const total = rows.length
   const issues: QualityIssue[] = []
 
@@ -234,27 +322,93 @@ export function checkDataQuality(
     const sample = sampleColumn(column, rows)
     const perKind = new Map<QualityIssue['kind'], QualityIssue>()
 
-    // ── 极端值：z 与 IQR 围栏取并集（任一命中即报） ──
+    // ── 极端值：z 与 IQR 围栏取并集，并分两级（v0.3.3 跟进 / F4） ──
     // 之所以取并集而不是二选一：z 对"整体分布被一个极端值拉歪"敏感，
     // IQR 对同一情形稳健但要求 IQR > 0；两者互补，单用任一都有盲区。
+    //
+    // 分级与样本量自适应（与 R 侧 r_quality_check 逐条对应）：
+    //   严重级 |z| > 4 或超 3.0×IQR 远围栏 -> level='warn'
+    //   轻微级 |z| > 3 或超 1.5×IQR 近围栏 -> level='note'（n < 20 时不报）
+    // n < 20 只报严重级：小样本下近围栏几乎必然命中（实测 n=12 干净数据 4 条误报），
+    // 全是噪声，报出来只会训练用户忽略告警。
     if (sample.isNumericColumn && sample.values.length >= 4) {
-      const zRows = zScoreRowNumbers(sample)
-      const iqrRows = iqrFenceRowNumbers(sample)
-      const hitRows = mergeRows(zRows, iqrRows)
-      if (hitRows.length > 0) {
-        const sorted = [...sample.values].sort((a, b) => a - b)
-        const q1 = quantileType7(sorted, 0.25)
-        const q3 = quantileType7(sorted, 0.75)
-        const iqr = q3 - q1
+      const n = sample.values.length
+      const sorted = [...sample.values].sort((a, b) => a - b)
+      const q1 = quantileType7(sorted, 0.25)
+      const q3 = quantileType7(sorted, 0.75)
+      const iqr = q3 - q1
+      const hasFence = Number.isFinite(iqr) && iqr > 0
+
+      const severeRows = mergeRows(
+        zScoreRowNumbers(sample, Z_LIMIT_SEVERE),
+        hasFence ? iqrFenceRowNumbers(sample, IQR_MULTIPLIER_SEVERE) : []
+      )
+      let noteRows = mergeRows(
+        zScoreRowNumbers(sample, Z_LIMIT),
+        hasFence ? iqrFenceRowNumbers(sample, IQR_MULTIPLIER) : []
+      ).filter((r) => !severeRows.includes(r))
+
+      // ── IQR = 0 的补位规则（v0.3.3 跟进 / F4）──
+      //
+      // 当 IQR 退化为 0（≥75% 观测同值，李克特数据极常见），围栏塌缩成单点，
+      // 只剩 z 规则。但 z 在小样本下几乎失效：n=5 时单个极端值的 |z| 最多约 2，
+      // 永远够不到 3/4 的阈值——实测 [10,10,10,10,9999] 在旧逻辑下**一条都不报**。
+      // 这确实是漏报，必须补。
+      //
+      // 补位方案：IQR=0 说明绝大多数观测挤在同一个值上，此时任何偏离该众数的取值
+      // 都是"少数派"。按偏离幅度分级：
+      //   - 偏离 > 众数的 50%（相对）或绝对偏离超过 3 个"最小刻度"→ warn
+      //   - 其余偏离 → note
+      // 用"相对众数"而不是 z，因为 z 的分母被这个极端值自己拉大了。
+      if (!hasFence && sample.values.length >= 4) {
+        const mode = q1 // IQR=0 时 Q1=Q3=中位数=众数附近
+        const devs = sample.values.map((v) => Math.abs(v - mode))
+        const sortedDevs = [...devs].sort((a, b) => a - b)
+        // 非零最小偏离即数据的最小刻度（避免硬编码 1）
+        const minScale = sortedDevs.find((d) => d > 0) ?? 0
+        for (let i = 0; i < devs.length; i++) {
+          const d = devs[i]
+          if (d === 0) continue
+          const rel = mode !== 0 ? d / Math.abs(mode) : Number.POSITIVE_INFINITY
+          const rowNo = sample.rowNumbers[i]
+          if (severeRows.includes(rowNo) || noteRows.includes(rowNo)) continue
+          if (rel > 0.5 || (minScale > 0 && d / minScale > 3)) {
+            severeRows.push(rowNo)
+          } else {
+            noteRows.push(rowNo)
+          }
+        }
+        severeRows.sort((a, b) => a - b)
+        noteRows = noteRows.sort((a, b) => a - b)
+      }
+
+      if (severeRows.length > 0) {
         perKind.set('outlier', {
           column,
           kind: 'outlier',
-          count: hitRows.length,
-          rows: hitRows,
+          level: 'warn',
+          count: severeRows.length,
+          rows: severeRows,
           detail:
-            `检出 ${hitRows.length} 个极端值（|z| > ${Z_LIMIT} 或超出 IQR 围栏 ` +
-            `[${fmt(q1 - IQR_MULTIPLIER * iqr)}, ${fmt(q3 + IQR_MULTIPLIER * iqr)}]），` +
-            `可能显著改变均值/标准差与显著性判断，请核查录入。`
+            `检出 ${severeRows.length} 个严重极端值（|z| > ${Z_LIMIT_SEVERE}` +
+            (hasFence
+              ? ` 或超出 3 倍 IQR 围栏 [${fmt(q1 - IQR_MULTIPLIER_SEVERE * iqr)}, ${fmt(q3 + IQR_MULTIPLIER_SEVERE * iqr)}]`
+              : '') +
+            `），很可能改变均值/标准差与显著性判断，请核查录入。`
+        })
+      } else if (noteRows.length > 0 && n >= MIN_SAMPLE_FOR_NOTE) {
+        perKind.set('outlier', {
+          column,
+          kind: 'outlier',
+          level: 'note',
+          count: noteRows.length,
+          rows: noteRows,
+          detail:
+            `检出 ${noteRows.length} 个轻微极端值（|z| > ${Z_LIMIT}` +
+            (hasFence
+              ? ` 或超出 IQR 围栏 [${fmt(q1 - IQR_MULTIPLIER * iqr)}, ${fmt(q3 + IQR_MULTIPLIER * iqr)}]`
+              : '') +
+            `），值得核对，但可能只是自然长尾。`
         })
       }
     }
@@ -275,6 +429,7 @@ export function checkDataQuality(
       if (badRows.length > 0) {
         perKind.set('out_of_range', {
           column,
+          level: 'warn',
           kind: 'out_of_range',
           count: badRows.length,
           rows: badRows,
@@ -291,6 +446,7 @@ export function checkDataQuality(
       if (rate > missingThreshold) {
         perKind.set('high_missing', {
           column,
+          level: 'warn',
           kind: 'high_missing',
           count: sample.missingRows.length,
           rows: sample.missingRows,
@@ -308,6 +464,7 @@ export function checkDataQuality(
       if (unique.size === 1) {
         perKind.set('constant', {
           column,
+          level: 'warn',
           kind: 'constant',
           count: sample.nonMissingCount,
           detail:

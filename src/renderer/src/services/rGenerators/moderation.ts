@@ -30,7 +30,7 @@
  * 5. Johnson-Neyman 区间是附加信息，**失败不中断**主分析（契约标注为可选）。
  */
 
-import { R_COMMON, READ_CSV } from '../rCommon'
+import { R_COMMON_WITH_SENTINELS, READ_CSV } from '../rCommon'
 import { rEscape } from '../utils'
 
 /**
@@ -44,8 +44,8 @@ import { rEscape } from '../utils'
 export function moderationCode(x: string, w: string, y: string, dataFile = 'data.csv'): string {
   return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 调节效应分析 ===\\n")
 x_name <- "${rEscape(x)}"
 w_name <- "${rEscape(w)}"

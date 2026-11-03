@@ -51,7 +51,7 @@ This is the project's core design principle: **the AI understands and explains; 
 
 - Every statistic (t values, p values, regression coefficients, confidence intervals…) is computed by local R
 - The AI only reads the computed results and writes an academically formatted interpretation
-- **956 statistical-correctness assertions** are built in, cross-checked against independent oracles (hand-derived closed forms, exact permutation distributions, second R packages) — and you can run them yourself at any time
+- **989 statistical-correctness assertions** are built in, cross-checked against independent oracles (hand-derived closed forms, exact permutation distributions, second R packages) — and you can run them yourself at any time
 
 ### 🔍 No black box: code, process and numbers are all transparent
 
@@ -226,7 +226,7 @@ R Workbench ships with a set of reproducible statistical-correctness validation 
 The script first loads the **real `rService.ts`** via esbuild, writes the R code that the
 22 method generators actually produce into fixtures, executes it with R, and re-computes the
 key statistics using **independent oracles** (hand-derived closed forms, exact permutation
-distributions, matrix algebra, second R packages). **956 assertions** across all 22/22 methods.
+distributions, matrix algebra, second R packages). **989 assertions** across all 22/22 methods.
 
 ```bash
 # Run validation (requires R >= 4.2; base R is enough, psych::alpha is used as an extra

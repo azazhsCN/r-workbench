@@ -33,7 +33,7 @@
  */
 
 import { rEscape } from '../utils'
-import { R_COMMON, READ_CSV } from '../rCommon'
+import { R_COMMON_WITH_SENTINELS, READ_CSV } from '../rCommon'
 
 /**
  * 生成路径分析 R 代码。
@@ -46,8 +46,8 @@ export function pathAnalysisCode(nodes: string[], pathSpec: string, dataFile = '
   const nodeVec = nodes.map((v) => `"${rEscape(v)}"`).join(', ')
   return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 路径分析 ===\\n")
 nodes <- c(${nodeVec})
 path_spec <- "${rEscape(pathSpec)}"

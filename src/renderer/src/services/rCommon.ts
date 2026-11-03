@@ -29,8 +29,20 @@ import { DEFAULT_MISSING_SENTINELS } from './dataService'
  *
  * ⚠️ `na.strings` 是 `read.csv` 的**只影响读取**参数：它把命中的文本单元格
  * 变成 `NA`，不会改动磁盘上的文件。因此"软件改了用户数据"的红线不被触碰。
+ *
+ * ── v0.3.3 跟进 / F1：从"表达式"改为"包装函数调用" ──
+ *
+ * 第三方跟进验证发现：`r_quality_check_all()` 在整个项目里**只有一个调用点**（信度分析），
+ * 其余 21 个方法仍然静默——实测 ANOVA 注入 1 个 `1e6` 后 F=0.9999、p=0.39，零警告。
+ *
+ * 根因不是"忘了加"，而是**接线方式本身不可靠**：每新增一个方法就要记得再写一次调用，
+ * 漏掉不会有任何报错。这与本项目反复吃的"改了没测/接了没通"是同一类问题。
+ *
+ * 修法：把数据读取和体检**合并成一个入口** `rwb_read()`，所有生成器统一走它。
+ * 因为 22 个生成器本来都写成 `data <- ${READ_CSV}`，改这一处即可全覆盖，
+ * 且未来新增方法**结构上不可能再漏**（不读数据就没法分析）。
  */
-export const READ_CSV = `read.csv(dataFile, stringsAsFactors = FALSE, check.names = FALSE, fileEncoding = "UTF-8-BOM", na.strings = ${naStringsLiteral()})`
+export const READ_CSV = 'rwb_read(dataFile)'
 
 /**
  * 把缺失哨兵数组拼成 R 的 `c("NA", "N/A", ...)` 字面量。
@@ -227,7 +239,15 @@ rq_quantile <- function(x, p) {
   as.numeric(stats::quantile(x, probs = p, type = 7, names = FALSE, na.rm = TRUE))
 }
 
-# 对单个数值变量做质量体检，命中即 cat 一行 DQ_WARN。
+# 对单个数值变量做质量体检。v0.3.3 跟进 / F4：改为两级 + 样本量自适应。
+#
+# 为什么要分级：上一版对所有极值都报 DQ_WARN，且文案固定写"may change significance"。
+# 实测 n=12 的**干净**数据上就有 4 条命中（IQR 围栏在小样本时极窄），
+# 用户会习惯性忽略——真出事时也就不看了。误报的代价是让真警报失效。
+#   - DQ_NOTE：轻微，可能是自然尾部，值得看一眼
+#   - DQ_WARN：严重，很可能改变结论
+# n < 20 时**只报严重级**（小样本下 1.5×IQR 围栏毫无统计意义）。
+#
 # 判定顺序固定为 outlier / out_of_range / high_missing / constant，
 # 与 TS 侧 checkDataQuality 的 KIND_ORDER 一致（便于两处输出对齐）。
 r_quality_check <- function(x, name, likert_max = NA_real_) {
@@ -240,7 +260,7 @@ r_quality_check <- function(x, name, likert_max = NA_real_) {
   v <- x[!is.na(x)]
   n <- length(v)
 
-  # 极端值：|z| > 3 或超出 IQR 1.5 倍围栏（与 TS 侧同为并集，任一命中即报）
+  # 极端值：z 与 IQR 并集，分两级
   if (n >= 4) {
     s <- stats::sd(v)
     if (is.finite(s) && s > 0) {
@@ -249,27 +269,39 @@ r_quality_check <- function(x, name, likert_max = NA_real_) {
       q3 <- rq_quantile(v, 0.75)
       iqr <- q3 - q1
       if (is.finite(iqr) && iqr > 0) {
-        lo <- q1 - 1.5 * iqr
-        hi <- q3 + 1.5 * iqr
-        hit <- (z > 3) | (v < lo) | (v > hi)
+        # 严重级：|z| > 4 或超出 3.0 倍 IQR 远围栏
+        lo_s <- q1 - 3.0 * iqr
+        hi_s <- q3 + 3.0 * iqr
+        hit_severe <- (z > 4) | (v < lo_s) | (v > hi_s)
+        # 轻微级：|z| > 3 或超出 1.5 倍 IQR 近围栏
+        lo_n <- q1 - 1.5 * iqr
+        hi_n <- q3 + 1.5 * iqr
+        hit_note <- (z > 3) | (v < lo_n) | (v > hi_n)
       } else {
-        # IQR = 0（>=50% 观测同值，李克特数据极常见）时围栏无意义，
-        # 只保留 z 规则。与 TS 侧刻意一致：此时无法区分录入错误与真实少数派。
-        hit <- z > 3
+        # IQR = 0（>=50% 观测同值，李克特数据极常见）时围栏无意义，只保留 z 规则。
+        # 与 TS 侧刻意一致：此时无法区分录入错误与真实少数派。
+        hit_severe <- z > 4
+        hit_note <- z > 3
       }
-      n_out <- sum(hit)
-      if (n_out > 0) {
-        cat(sprintf("DQ_WARN|%s|outlier|%d|detected %d extreme value(s), |z| > 3 or outside IQR fence, may change significance\n",
-          name, n_out, n_out))
+      n_severe <- sum(hit_severe)
+      n_note <- sum(hit_note & !hit_severe)
+      if (n_severe > 0) {
+        cat(sprintf("DQ_WARN|%s|outlier|%d|detected %d extreme value(s) beyond |z|>4 or 3x IQR fence, likely to change conclusions\n",
+          name, n_severe, n_severe))
+      }
+      # n < 20 时不报轻微级：小样本下近围栏几乎必然命中，全是噪声
+      if (n_note > 0 && n >= 20) {
+        cat(sprintf("DQ_NOTE|%s|outlier|%d|detected %d mild outlier(s) beyond |z|>3 or 1.5x IQR fence, worth a glance\n",
+          name, n_note, n_note))
       }
     }
   }
 
-  # 值域越界：仅在调用方声明了量表上限时判定
+  # 值域越界：确定无效（不是"可能极端"），一律 DQ_WARN
   if (is.finite(likert_max) && n > 0) {
     n_bad <- sum(v < 1 | v > likert_max)
     if (n_bad > 0) {
-      cat(sprintf("DQ_WARN|%s|out_of_range|%d|%d value(s) outside 1..%s, checked as Likert scale\n",
+      cat(sprintf("DQ_WARN|%s|out_of_range|%d|%d value(s) outside 1..%s, cannot be a valid response on this scale\n",
         name, n_bad, n_bad, num(likert_max, 0)))
     }
   }
@@ -292,11 +324,59 @@ r_quality_check <- function(x, name, likert_max = NA_real_) {
   invisible(NULL)
 }
 
+# 推断一组题项的量表上限（v0.3.3 跟进 / F2）。
+#
+# 此前 out_of_range 检查依赖调用方传 likert_max，但**没有任何调用方传**，
+# 于是该分支形同不存在（第三方实测：CFA 数据里 q3 含 7 和 0，正常跑完无提示）。
+#
+# 这里做保守推断：只在有强共识时才下结论，猜不出就返回 NA（宁可不报，不可误报）。
+#   1. 候选 = 全部取值为整数、min >= 0、唯一值数在 2..10 之间（像定序量表）
+#   2. 若候选数 >= 3 且同一最大值被 >= 60% 的候选共享，且该值 <= 10 → 认定它就是上限
+#   3. 否则 NA
+rq_infer_likert_max <- function(data, items) {
+  maxs <- integer(0)
+  for (nm in items) {
+    if (!(nm %in% names(data))) {
+      next
+    }
+    v <- suppressWarnings(as.numeric(data[[nm]]))
+    v <- v[!is.na(v)]
+    if (length(v) < 3) {
+      next
+    }
+    if (any(abs(v - round(v)) > 1e-8)) {
+      next
+    }
+    if (min(v) < 0) {
+      next
+    }
+    k_uniq <- length(unique(v))
+    if (k_uniq < 2 || k_uniq > 10) {
+      next
+    }
+    maxs <- c(maxs, as.integer(max(v)))
+  }
+  if (length(maxs) < 3) {
+    return(NA_real_)
+  }
+  tab <- table(maxs)
+  best <- as.integer(names(tab)[which.max(tab)])
+  share <- max(tab) / length(maxs)
+  if (share >= 0.6 && best <= 10) {
+    return(as.numeric(best))
+  }
+  NA_real_
+}
+
 # 对一组变量批量体检。items 为列名向量；likert_max 可为：
 #   - 单个数值（所有列共用同一量表上限），或
 #   - 命名向量（按列名各取上限），或
-#   - NA（不做值域检查）
+#   - NA（自动推断，见 rq_infer_likert_max）
 r_quality_check_all <- function(data, items, likert_max = NA_real_) {
+  # 未显式给出上限时尝试推断（F2）
+  if (length(likert_max) == 1 && is.na(likert_max)) {
+    likert_max <- rq_infer_likert_max(data, items)
+  }
   for (nm in items) {
     if (!(nm %in% names(data))) {
       next
@@ -326,4 +406,39 @@ r_quality_check_all <- function(data, items, likert_max = NA_real_) {
   }
   invisible(NULL)
 }
+
+# 数据读取 + 体检的统一入口（v0.3.3 跟进 / F1）。
+#
+# 所有生成器都写成 data <- ${READ_CSV}，因此把体检挂在这里 = 22 个方法全覆盖，
+# 且新增方法结构上不可能漏（不读数据就没法分析）。
+#
+# 注意 na.strings 由 R_COMMON_WITH_SENTINELS 在 JS 侧拼进来（单一真相），
+# 本文件里写占位符 __NA_STRINGS__，导出时替换。
+rwb_read <- function(dataFile) {
+  d <- read.csv(dataFile, stringsAsFactors = FALSE, check.names = FALSE,
+                fileEncoding = "UTF-8-BOM",
+                na.strings = __NA_STRINGS__)
+  num_cols <- names(d)[vapply(d, is.numeric, logical(1))]
+  if (length(num_cols) > 0) {
+    r_quality_check_all(d, num_cols)
+  }
+  d
+}
 `
+
+/**
+ * 把 R_COMMON 里的 `__NA_STRINGS__` 占位符替换成真实的哨兵向量。
+ *
+ * 为什么不在 R_COMMON 里直接写 `${naStringsLiteral()}`：
+ * R_COMMON 是 `String.raw` 字面量，`${}` 会被当普通字符原样保留（不插值），
+ * 生成的 R 代码里就留着字面 `${...}` —— 语法错误。文件头注释已明确警告过这点。
+ *
+ * 因此改成"先写占位符、导出后替换"，既守住单一真相，又不破坏 String.raw 的语义。
+ *
+ * ⚠️ 必须用 replaceAll：占位符在 R_COMMON 里出现多次（注释里也提到过），
+ * 用 replace 只会替换第一个，结果 R 代码里仍留着字面占位符 → 运行时报
+ * "could not find function"。这个坑实测踩过一次。
+ */
+export const R_COMMON_WITH_SENTINELS = R_COMMON.split('__NA_STRINGS__').join(
+  naStringsLiteral()
+)

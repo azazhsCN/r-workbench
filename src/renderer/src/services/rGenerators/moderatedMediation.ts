@@ -33,7 +33,7 @@
  */
 
 import { rEscape } from '../utils'
-import { R_COMMON, READ_CSV } from '../rCommon'
+import { R_COMMON_WITH_SENTINELS, READ_CSV } from '../rCommon'
 
 /**
  * 生成有调节的中介的 R 代码。
@@ -53,8 +53,8 @@ export function moderatedMediationCode(
 ): string {
   return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 有调节的中介分析 ===\\n")
 x_var <- "${rEscape(x)}"
 m_var <- "${rEscape(m)}"

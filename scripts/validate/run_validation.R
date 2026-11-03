@@ -2715,6 +2715,31 @@ for (i in seq_len(nrow(manifest))) {
   # (c) 横幅
   if (dataset %in% names(banner_map)) check_banner(method, dataset, out, banner_map[[dataset]])
 
+  # (c2) v0.3.3 跟进 / F1：数据质量检查（D02）必须真的接线到每个方法
+  #
+  # 背景：上一版建好了 r_quality_check_all()，但**只有一个调用点**（信度分析），
+  # 其余 21 个方法静默——ANOVA 注入单个 1e6 后 F=0.9999、p=0.39，零警告，
+  # 用户不会知道结论已被一个录入错误摧毁。
+  #
+  # 修法是把体检挂进 rwb_read()（所有生成器读数据的统一入口），
+  # 这里用**结构断言**守住这条：只要生成代码里出现裸 read.csv 而没有 rwb_read，
+  # 说明有人绕过了统一入口，体检会全线失效且没有任何报错。
+  #
+  # 注意：不断言"必须有 DQ 输出"——干净 fixture 上本来就该是零输出
+  # （那是 F4 的验收要求）。这里只断言**入口被正确使用**。
+  #
+  # ⚠️ 要检查的是**生成的脚本源码**（r_path），不是运行输出 out——
+  # out 里只有 cat 打印的内容，看不到读取方式。实测踩过一次。
+  #
+  # 也不能用"有无裸 read.csv"来判定：rwb_read() 内部本来就写着 read.csv，
+  # 那是唯一的合法位置。正确判据是**调用点必须走 rwb_read**。
+  script_src <- if (file.exists(r_path)) paste(readLines(r_path, warn = FALSE), collapse = "\n") else ""
+  uses_unified_read <- grepl("rwb_read(dataFile)", script_src, fixed = TRUE)
+  add_row(method, dataset, "data_quality.hooked",
+          "rwb_read used",
+          if (uses_unified_read) "ok" else "not using rwb_read (data quality check bypassed)",
+          uses_unified_read)
+
   # (d) 统计 oracle
   fn <- oracle_map[[dataset]]
   if (is.null(fn)) {

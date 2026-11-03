@@ -15,7 +15,7 @@
 
 import type { RExecuteResult, RStatus } from '@shared/types'
 import { rEscape } from './utils'
-import { R_COMMON, READ_CSV } from './rCommon'
+import { R_COMMON_WITH_SENTINELS, READ_CSV } from './rCommon'
 // v0.3.2 因果链五方法：实现放在 rGenerators/ 下，本类只做薄封装转发。
 // 这样 rService.ts 不必继续膨胀（本轮已 1532 行），也避免多人并行编辑同一文件。
 import { mediationCode } from './rGenerators/mediation'
@@ -87,8 +87,8 @@ export class RService {
     const varList = vars.map((v) => `"${rEscape(v)}"`).join(', ')
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 vars <- c(${varList})
 cat("=== 描述性统计 ===\\n")
 for (v in vars) {
@@ -121,8 +121,8 @@ for (v in vars) {
     const safeGroup = rEscape(groupVar)
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 独立样本 t 检验 ===\\n")
 g_raw <- data[["${safeGroup}"]]
 y_raw <- suppressWarnings(as.numeric(as.character(data[["${safeDv}"]])))
@@ -164,8 +164,8 @@ cat(sprintf("CONCL|%s\\n", if (res$p.value < 0.05) "两组差异具有统计学�
   static tTestPairedCode(var1: string, var2: string, dataFile = 'data.csv'): string {
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 配对样本 t 检验 ===\\n")
 x <- suppressWarnings(as.numeric(as.character(data[["${rEscape(var1)}"]])))
 y <- suppressWarnings(as.numeric(as.character(data[["${rEscape(var2)}"]])))
@@ -191,8 +191,8 @@ cat(sprintf("CONCL|%s\\n", if (res$p.value < 0.05) "两次测量差异具有统�
   static tTestOneSampleCode(varName: string, mu: number, dataFile = 'data.csv'): string {
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 单样本 t 检验 ===\\n")
 x <- suppressWarnings(as.numeric(as.character(data[["${rEscape(varName)}"]])))
 x <- x[is.finite(x)]
@@ -219,8 +219,8 @@ cat(sprintf("CONCL|%s\\n", if (res$p.value < 0.05) "样本均值与检验值差�
     const safeGroup = rEscape(groupVar)
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 单因素方差分析 ===\\n")
 # 用独立 data.frame 避免污染用户列名（不再写 data$.dv / data$.grp）
 dv_vec <- suppressWarnings(as.numeric(as.character(data[["${safeDv}"]])))
@@ -273,8 +273,8 @@ cat(sprintf("CONCL|%s\\n", if (!is.na(p_val) && p_val < 0.05) "各组均值差�
   static chiSquareCode(var1: string, var2: string, dataFile = 'data.csv'): string {
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 卡方检验 ===\\n")
 a <- data[["${rEscape(var1)}"]]
 b <- data[["${rEscape(var2)}"]]
@@ -314,8 +314,8 @@ cat(sprintf("CONCL|%s\\n", if (res$p.value < 0.05) "两变量存在统计学关�
     const m = method === 'spearman' ? 'spearman' : 'pearson'
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 相关分析 (${m}) ===\\n")
 x <- suppressWarnings(as.numeric(as.character(data[["${rEscape(var1)}"]])))
 y <- suppressWarnings(as.numeric(as.character(data[["${rEscape(var2)}"]])))
@@ -346,8 +346,8 @@ cat(sprintf("CONCL|%s\\n", if (res$p.value < 0.01) "存在极显著相关" else 
     const terms = ivs.map((v) => `"${rEscape(v)}"`).join(', ')
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 线性回归分析 ===\\n")
 fml <- reformulate(c(${terms}), response = ${resp})
 model <- lm(fml, data = data)
@@ -414,8 +414,8 @@ cat(sprintf("CONCL|%s\\n", if (p_val < 0.05) "回归模型整体显著" else "�
     const itemList = items.map((v) => `"${rEscape(v)}"`).join(', ')
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 信度分析 (Cronbach's α) ===\\n")
 item_names <- c(${itemList})
 missing_items <- item_names[!(item_names %in% names(data))]
@@ -429,10 +429,12 @@ if (nrow(item_data) < 2) stop("有效样本量不足（至少需要 2 行）")
 dropped <- n_before - nrow(item_data)
 
 # ── 数据质量检查（v0.3.3 / D02）──
-# 极端值会让 alpha 严重失真（实测：单点 1e6 使 alpha 从 0.84 变 -0.00），
-# 而原实现没有任何检测，用户无从察觉。这里对每个题项做检查并输出 DQ_WARN 行。
-# 值域检查不设上限（量表点数未知），只报极端值与缺失。
-r_quality_check_all(item_data, item_names)
+# 极端值会让 alpha 严重失真（实测：单点 1e6 使 alpha 从 0.84 变 -0.00）。
+#
+# v0.3.3 跟进 / F1：这里**不再**重复调用 r_quality_check_all。
+# 数据质量体检已统一挂到 rwb_read()（所有生成器读数据时自动跑一次），
+# 若此处再跑一遍，同一个问题会对用户报两次——实测 q5 的越界值输出了两行。
+# 单一入口既避免重复，也保证新增方法不会漏接。
 if (dropped > 0) {
   cat(sprintf("NOTE_DROPPED|因缺失值采用逐行删除（listwise / 个案剔除），有效样本从 %d 减少到 %d（剔除 %d 行）\\n", n_before, nrow(item_data), dropped))
 }
@@ -527,8 +529,8 @@ cat(sprintf("CONCL|%s\\n", if (alpha >= 0.9) "信度非常好" else if (alpha >=
     const varList = vars.map((v) => `"${rEscape(v)}"`).join(', ')
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 正态性检验 (Shapiro-Wilk) ===\\n")
 vars <- c(${varList})
 for (v in vars) {
@@ -557,8 +559,8 @@ for (v in vars) {
   static nonparametricCode(dv: string, groupVar: string, dataFile = 'data.csv'): string {
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 非参数检验 (Mann-Whitney U) ===\\n")
 g_raw <- data[["${rEscape(groupVar)}"]]
 y_raw <- suppressWarnings(as.numeric(as.character(data[["${rEscape(dv)}"]])))
@@ -587,8 +589,8 @@ cat(sprintf("CONCL|%s\\n", if (res$p.value < 0.05) "两组差异具有统计学�
     const varList = vars.map((v) => `"${rEscape(v)}"`).join(', ')
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 vars <- c(${varList})
 cat("=== 频数统计 ===\\n")
 for (v in vars) {
@@ -613,8 +615,8 @@ for (v in vars) {
   static summaryByCode(groupVar: string, valueVar: string, dataFile = 'data.csv'): string {
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 分类汇总 ===\\n")
 g <- data[["${rEscape(groupVar)}"]]
 v <- suppressWarnings(as.numeric(as.character(data[["${rEscape(valueVar)}"]])))
@@ -674,8 +676,8 @@ cat(sprintf("TOTAL|%d|%s|%s\\n", length(v), num(mean(v)), num(sd(v))))
     const forcedN = nFactors && nFactors > 0 ? String(Math.round(nFactors)) : 'NA'
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 验证性因子分析 (CFA) ===\\n")
 items <- c(${itemVec})
 forced_n <- ${forcedN}
@@ -1114,8 +1116,8 @@ cat(sprintf("CONCL|CFI = %s，TLI = %s，RMSEA = %s，SRMR = %s，%s\\n",
     const itemVec = items.map((v) => `"${rEscape(v)}"`).join(', ')
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 内容效度指数 (CVI) ===\\n")
 items <- c(${itemVec})
 
@@ -1246,8 +1248,8 @@ cat(sprintf("CONCL|%s（I-CVI 达标 %d/%d 题；S-CVI/Ave = %s，建议 >= 0.90
     const itemVec = items.map((v) => `"${rEscape(v)}"`).join(', ')
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== Harman 单因子检验 ===\\n")
 items <- c(${itemVec})
 
@@ -1342,8 +1344,8 @@ if (ok_flag) {
     const forcedN = nFactors && nFactors > 0 ? String(Math.round(nFactors)) : 'NA'
     return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 探索性因子分析 (EFA) ===\\n")
 items <- c(${itemVec})
 forced_n <- ${forcedN}

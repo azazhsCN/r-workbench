@@ -261,6 +261,9 @@ export default function DataPage() {
   }
 
   const warnings = parseResult?.warnings ?? []
+  // 数据质量检查结果（v0.3.3 跟进 / F3）：干净数据上是空数组，此时整块 UI 不渲染
+  const qualityIssues = parseResult?.qualityIssues ?? []
+  const hasSevereQuality = qualityIssues.some((x) => (x.level ?? 'warn') === 'warn')
   const unknownColumns = parseResult?.columnInfo.filter((c) => c.type === 'unknown') ?? []
   const source = rawSourceRef.current
   const showImportOptions = parseResult !== null && source !== null && source.kind !== 'sav'
@@ -491,6 +494,76 @@ export default function DataPage() {
           </div>
         )}
 
+        {/* 数据质量警告（v0.3.3 跟进 / F3）*/}
+        {qualityIssues.length > 0 && (
+          <div
+            style={{
+              background: hasSevereQuality ? 'var(--danger-bg, #fef2f2)' : 'var(--warning-bg)',
+              border: `1px solid ${hasSevereQuality ? 'var(--danger, #dc2626)' : 'var(--warning)'}`,
+              borderRadius: 'var(--radius-md)',
+              padding: 12,
+              marginBottom: 16,
+              fontSize: 13
+            }}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>
+              {hasSevereQuality ? '⛔' : '⚠️'} {t('data.quality.title', { count: qualityIssues.length })}
+            </div>
+            <div style={{ color: 'var(--text-secondary)', marginBottom: 8 }}>
+              {t('data.quality.hint')}
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+              {qualityIssues.map((issue, i) => (
+                <li key={`${issue.column}-${issue.kind}-${i}`} style={{ marginBottom: 4 }}>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      minWidth: 44,
+                      fontWeight: 600,
+                      color:
+                        (issue.level ?? 'warn') === 'warn' ? 'var(--danger, #dc2626)' : 'var(--warning)'
+                    }}
+                  >
+                    {t(`data.quality.kind.${issue.kind}`)}
+                  </span>
+                  <strong>{issue.column}</strong>
+                  {issue.count > 1 && <span>（{issue.count} 处）</span>}
+                  <span style={{ color: 'var(--text-secondary)' }}> — {issue.detail}</span>
+                  {issue.rows && issue.rows.length > 0 && (
+                    <button
+                      onClick={() => {
+                        // 点击定位到第一条命中的行（1 基，需转 0 基索引）
+                        const row = (issue.rows?.[0] ?? 1) - 1
+                        const el = document.querySelector(`[data-preview-row="${row}"]`)
+                        if (el) {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          el.classList.add('row-highlight')
+                          window.setTimeout(() => el.classList.remove('row-highlight'), 2000)
+                        }
+                      }}
+                      style={{
+                        marginLeft: 6,
+                        fontSize: 12,
+                        color: 'var(--primary)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        padding: 0
+                      }}
+                    >
+                      {t('data.quality.jumpToRow')}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <div style={{ color: 'var(--text-secondary)', marginTop: 8, fontSize: 12 }}>
+              {t('data.quality.notModified')}
+            </div>
+          </div>
+        )}
+
         {/* 隐藏文件输入 */}
         <input
           ref={fileInputRef}
@@ -645,7 +718,7 @@ export default function DataPage() {
                 </thead>
                 <tbody>
                   {parseResult.rows.slice(0, 200).map((row, i) => (
-                    <tr key={i}>
+                    <tr key={i} data-preview-row={i}>
                       <td style={{ color: 'var(--text-tertiary)', textAlign: 'center' }}>
                         {i + 1}
                       </td>

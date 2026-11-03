@@ -1,6 +1,8 @@
 import Papa from 'papaparse'
 import type { ColumnInfo, DatasetInfo } from '@shared/types'
 import { decodeBytes, stripBom, type DecodeResult, type SupportedEncoding } from './decode'
+// inferLikertMax 由 checkDataQuality 内部自动调用，这里不需要单独导入
+import { checkDataQuality, type QualityIssue } from './dataQuality'
 
 /** 解析结果 */
 export interface ParseResult {
@@ -20,6 +22,16 @@ export interface ParseResult {
   sentinels?: string[]
   /** 每个变量有多少个真实取值被当作缺失值（按命中次数排序） */
   sentinelHits?: SentinelHit[]
+  /**
+   * 导入时的数据质量检查结果（v0.3.3 跟进 / F3）。
+   *
+   * 为什么放在 ParseResult 上：`checkDataQuality()` 早就实现了、也有单测，
+   * 但**没有任何调用点**——纯函数正确、用户完全看不到，等于没做。
+   * 把它挂到导入结果上，三条导入路径（CSV/Excel/.sav）就都能带到界面。
+   *
+   * 干净数据上是空数组（不是 undefined），便于消费方少写判空。
+   */
+  qualityIssues?: QualityIssue[]
 }
 
 /** 缺失值哨兵命中记录 */
@@ -324,6 +336,20 @@ function buildResult(
   sentinels: readonly string[] = DEFAULT_MISSING_SENTINELS
 ): ParseResult {
   const columnInfo = analyzeColumns(headers, rows, sentinels)
+  // ── 数据质量检查（v0.3.3 跟进 / F3）──
+  // 放在这个统一的 ParseResult 构造点，所以 CSV / Excel / .sav 三条导入路径
+  // **一次接线全部覆盖**。这与 rwb_read() 的做法是同一个思路：
+  // 把"要在每个入口都记得做一次"改成"结构上没有别的入口"。
+  //
+  // 注意：这里只**报告**，不修改数据。自动剔除离群值是统计决定，应由用户做。
+  let qualityIssues: QualityIssue[] = []
+  try {
+    qualityIssues = checkDataQuality(headers, rows)
+  } catch {
+    // 质量检查绝不该阻断导入：它只是辅助信息。
+    // 万一某列数据形状异常（如嵌套对象）导致抛错，宁可少一条提示也不能让导入失败。
+    qualityIssues = []
+  }
   return {
     headers,
     rows,
@@ -335,6 +361,7 @@ function buildResult(
     },
     warnings: capWarnings(warnings),
     sentinels: [...sentinels],
+    qualityIssues,
     ...extra
   }
 }

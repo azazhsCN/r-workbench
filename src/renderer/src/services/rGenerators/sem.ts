@@ -42,7 +42,7 @@
  */
 
 import { rEscape } from '../utils'
-import { R_COMMON, READ_CSV } from '../rCommon'
+import { R_COMMON_WITH_SENTINELS, READ_CSV } from '../rCommon'
 
 /** 把每个潜变量的指标列表序列化成 R 的 list 构造语句 */
 function itemsListCode(itemsByFactor: Record<string, string[]>): string {
@@ -68,8 +68,8 @@ export function semCode(
 ): string {
   return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 结构方程模型 (SEM) ===\\n")
 ${itemsListCode(itemsByFactor)}
 structure_spec <- "${rEscape(structure)}"

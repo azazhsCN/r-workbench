@@ -27,7 +27,7 @@
  *    （Inf 会被下游 toNum() 读成 null 或字符串，让表格里凭空多出一个无穷大的比率）。
  */
 
-import { R_COMMON, READ_CSV } from '../rCommon'
+import { R_COMMON_WITH_SENTINELS, READ_CSV } from '../rCommon'
 import { rEscape } from '../utils'
 
 /**
@@ -41,8 +41,8 @@ import { rEscape } from '../utils'
 export function mediationCode(x: string, m: string, y: string, dataFile = 'data.csv'): string {
   return `
 dataFile <- "${rEscape(dataFile)}"
+${R_COMMON_WITH_SENTINELS}
 data <- ${READ_CSV}
-${R_COMMON}
 cat("=== 中介效应分析 ===\\n")
 x_name <- "${rEscape(x)}"
 m_name <- "${rEscape(m)}"
