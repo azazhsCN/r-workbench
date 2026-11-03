@@ -95,11 +95,39 @@ describe('checkDataQuality：极端值（D02）', () => {
 
   it('IQR 围栏能独立触发（稳健口径，不被极端值本身拉偏）', () => {
     // 均匀分布的 1..20，IQR 明确非零；上界 40 远超 Q3+1.5IQR
-    const v = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 40]
+    //
+    // ⚠️ v0.3.3 补强后行为变化：这列有 21 个唯一值 → 被判为**非量表**
+    // （isLikertLikeColumn 要求唯一值 ≤ 10），因此只报**严重级**。
+    // 好在 40 也超出了 3×IQR 远围栏，所以仍会以 warn 级报出。
+    // 这条用例现在同时钉住两件事：IQR 规则有效 + 非量表列不会被降级成 note。
+    const v = [...Array.from({ length: 20 }, (_, i) => i + 1), 200]
     const rows = makeRows({ v })
     const outlier = issueOf(checkDataQuality(['v'], rows), 'v', 'outlier')
     expect(outlier).toBeDefined()
     expect(outlier!.rows).toContain(21)
+    expect(outlier!.level, '非量表列（21 个唯一值）只报严重级').toBe('warn')
+  })
+
+  it('量表列（唯一值 ≤ 10）的轻微偏离报 note，不误标为 warn', () => {
+    // 3/2/4 为主，两个 5 —— 只落在 1.5×IQR 外，未超 3×IQR
+    const v = [...Array(50).fill(3), ...Array(9).fill(2), ...Array(9).fill(4), 5, 5]
+    const rows = makeRows({ q: v })
+    const outlier = issueOf(checkDataQuality(['q'], rows), 'q', 'outlier')
+    expect(outlier, '量表列的轻微偏离应被报出').toBeDefined()
+    expect(outlier!.level, '轻微偏离应标为 note 而非 warn').toBe('note')
+  })
+
+  it('连续变量（含小数）即使有轻微偏离也不报 note（避免正态数据的固有尾部制造噪声）', () => {
+    // 这是本次补强的核心：连续列的唯一值远超 10 → 非量表 → 不报 note。
+    // 若没有 isLikertLikeColumn 这一层，下面的轻微偏离会被报成 note（制造噪声）。
+    const v = Array.from({ length: 60 }, (_, i) => 10 + (i % 10) * 0.1)
+    // 基线不报
+    expect(checkDataQuality(['x'], makeRows({ x: v }))).toHaveLength(0)
+    // 加一个轻微偏离值
+    v.push(11.5)
+    const issues = checkDataQuality(['x'], makeRows({ x: v }))
+    const note = issues.find((i) => i.kind === 'outlier' && i.level === 'note')
+    expect(note, '连续变量的轻微偏离不应报 note（本次补强的核心行为）').toBeUndefined()
   })
 
   it('负向极端值也会被检出（只查上界会漏掉"误录成负数"）', () => {
@@ -392,10 +420,20 @@ describe('quantileType7 与 R 的 stats::quantile(type = 7) 对齐', () => {
   it('IQR 围栏按 type-7 口径：1..20 + 40 的下界 −9、上界 31', () => {
     // R 实算（stats::quantile type=7）：Q1=6、Q3=16、IQR=10
     //   lower = 6 − 1.5×10 = −9；upper = 16 + 1.5×10 = 31
-    // 40 > 31 → 越界。这几个数字**由 Rscript 4.6.0 实跑确认**，
-    // 不是手算——手算时我曾误按 20 个值取分位（实为 21 个），得到 29.5 的错值。
-    const v = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 40]
-    const outlier = issueOf(checkDataQuality(['v'], makeRows({ v })), 'v', 'outlier')
-    expect(outlier!.detail).toContain('[-9, 31]')
+    // 这几个数字**由 Rscript 4.6.0 实跑确认**，不是手算——
+    // 手算时我曾误按 20 个值取分位（实为 21 个），得到 29.5 的错值。
+    //
+    // ⚠️ v0.3.3 补强后，这列（21 个唯一值）被判为非量表，只报严重级，
+    // 不再输出带 '[-9, 31]' 的 note 文案。因此这条用例改为**直接验证分位数函数**，
+    // 保留它原本的价值（钉住 type-7 口径与 R 一致），而不依赖极端值判定路径。
+    const sorted = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 40]
+    const q1 = quantileType7(sorted, 0.25)
+    const q3 = quantileType7(sorted, 0.75)
+    expect(q1).toBe(6)
+    expect(q3).toBe(16)
+    const iqr = q3 - q1
+    expect(iqr).toBe(10)
+    expect(q1 - 1.5 * iqr).toBe(-9)
+    expect(q3 + 1.5 * iqr).toBe(31)
   })
 })

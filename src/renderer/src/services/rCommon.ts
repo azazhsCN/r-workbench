@@ -248,9 +248,21 @@ rq_quantile <- function(x, p) {
 #   - DQ_WARN：严重，很可能改变结论
 # n < 20 时**只报严重级**（小样本下 1.5×IQR 围栏毫无统计意义）。
 #
+# ── v0.3.3 补强：连续变量只报严重级 ──
+#
+# 第三方 issue 指出：CFA fixture（n=800 的连续合成数据）在**完全干净**的状态下
+# 仍会输出 6 行 DQ_NOTE。原因是 1.5×IQR 围栏在正态数据上本来就会命中约 0.6%
+# 的观测——这是分布的固有性质，不是数据有问题。
+#
+# 对量表题项报 note 是有意义的（5 点量表出现 9 就值得看一眼），
+# 但对连续变量（年龄、收入、量表总分）报 note 几乎全是噪声。
+#
+# 因此：**只有被判为定序量表的列才报 DQ_NOTE；连续列只报 DQ_WARN**。
+# 这需要 r_quality_check_all 把"该列是否像量表"传进来（is_scale）。
+#
 # 判定顺序固定为 outlier / out_of_range / high_missing / constant，
 # 与 TS 侧 checkDataQuality 的 KIND_ORDER 一致（便于两处输出对齐）。
-r_quality_check <- function(x, name, likert_max = NA_real_) {
+r_quality_check <- function(x, name, likert_max = NA_real_, is_scale = FALSE) {
   x <- suppressWarnings(as.numeric(x))
   n_total <- length(x)
   if (n_total == 0) {
@@ -289,8 +301,10 @@ r_quality_check <- function(x, name, likert_max = NA_real_) {
         cat(sprintf("DQ_WARN|%s|outlier|%d|detected %d extreme value(s) beyond |z|>4 or 3x IQR fence, likely to change conclusions\n",
           name, n_severe, n_severe))
       }
-      # n < 20 时不报轻微级：小样本下近围栏几乎必然命中，全是噪声
-      if (n_note > 0 && n >= 20) {
+      # n < 20 时不报轻微级：小样本下近围栏几乎必然命中，全是噪声。
+      # 非量表列（连续变量）也不报：正态数据上 1.5×IQR 天然命中约 0.6%，
+      # 那是分布的固有性质，不是数据有问题（第三方 issue 实测 CFA n=800 干净数据 6 行）。
+      if (n_note > 0 && n >= 20 && is_scale) {
         cat(sprintf("DQ_NOTE|%s|outlier|%d|detected %d mild outlier(s) beyond |z|>3 or 1.5x IQR fence, worth a glance\n",
           name, n_note, n_note))
       }
@@ -322,6 +336,31 @@ r_quality_check <- function(x, name, likert_max = NA_real_) {
   }
 
   invisible(NULL)
+}
+
+# 判断单个数值列是否"像定序量表"（v0.3.3 补强 / 第三方 issue）。
+#
+# 用途：决定要不要对该列报 DQ_NOTE（轻微极端值）。
+# 连续变量（年龄、收入、量表总分）在正态数据上天然会有约 0.6% 的观测落在
+# 1.5×IQR 围栏外——那是分布性质，不是数据问题。对它们报 note 只会制造噪声。
+#
+# 判据（与 rq_infer_likert_max 的"候选"定义一致）：
+#   全部取值为整数、min >= 0、唯一值数在 2..10 之间
+# 一个 int 型的 1..5 题项满足；连续测量值（含小数）或取值域很宽的变量不满足。
+rq_is_scale_column <- function(x) {
+  v <- suppressWarnings(as.numeric(x))
+  v <- v[!is.na(v)]
+  if (length(v) < 3) {
+    return(FALSE)
+  }
+  if (any(abs(v - round(v)) > 1e-8)) {
+    return(FALSE)
+  }
+  if (min(v) < 0) {
+    return(FALSE)
+  }
+  k_uniq <- length(unique(v))
+  k_uniq >= 2 && k_uniq <= 10
 }
 
 # 推断一组题项的量表上限（v0.3.3 跟进 / F2）。
@@ -402,7 +441,9 @@ r_quality_check_all <- function(data, items, likert_max = NA_real_) {
         }
       }
     }
-    r_quality_check(data[[nm]], nm, cap)
+    # 该列是否像定序量表——决定要不要报 DQ_NOTE（见 rq_is_scale_column 注释）
+    is_scale <- rq_is_scale_column(data[[nm]])
+    r_quality_check(data[[nm]], nm, cap, is_scale)
   }
   invisible(NULL)
 }

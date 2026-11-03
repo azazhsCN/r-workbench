@@ -1,12 +1,12 @@
 # 统计验证结果（真实生成器 + 独立 oracle）
 
 R 版本：R version 4.6.0 (2026-04-24 ucrt)
-生成时间：2026-11-03 22:08:05
-fixtures 目录：generated
+生成时间：2026-11-03 22:22:52
+fixtures 目录：_hooked_demo
 被测代码：src/renderer/src/services/rService.ts（esbuild 打包后运行时调用，非手抄副本）
 
 方法覆盖：**22 / 22**
-断言总数：**1022**（PASS 1022 / FAIL 0）
+断言总数：**1022**（PASS 1020 / FAIL 2）
 
 | 方法 | 数据集 | 断言 | 参考(oracle) | 工作台 | 结果 |
 |---|---|---|---|---|---|
@@ -660,8 +660,8 @@ fixtures 目录：generated
 | mediation | mediation | sprintf_format_args | no mismatch | ok | PASS |
 | mediation | mediation | no_r_error | no error | ok | PASS |
 | mediation | mediation | banner | === 中介效应分析 === | === 中介效应分析 === | PASS |
-| mediation | mediation | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
-| mediation | mediation | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
+| mediation | mediation | data_quality.hooked | code line: data <- rwb_read(dataFile) | MISSING (data quality check bypassed) | FAIL |
+| mediation | mediation | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       2 | FAIL |
 | mediation | mediation | MED_SPEC.n |     300 |     300 | PASS |
 | mediation | mediation | MED_SPEC.vars | x,m,y | x,m,y | PASS |
 | mediation | mediation | MED_PATH.a.coef | 0.499999 |     0.5 | PASS |
@@ -1033,4 +1033,4 @@ fixtures 目录：generated
 | path_analysis | path_overid | overid.truth.x>y |  0.1625 |  0.1625 | PASS |
 | __coverage__ | - | methods_covered |      22 |      22 | PASS |
 
-**汇总：PASS 1022 / 1022**
+**汇总：PASS 1020 / 1022**

@@ -234,6 +234,29 @@ function mergeRows(a: number[], b: number[]): number[] {
   return [...new Set([...a, ...b])].sort((x, y) => x - y)
 }
 
+/**
+ * 判断单个数值列是否"像定序量表"（v0.3.3 补强 / 第三方 issue）。
+ *
+ * 用途：决定要不要对该列报 `note` 级极端值。
+ * 连续变量（年龄、收入、量表总分）在正态数据上天然会有约 0.6% 的观测落在
+ * 1.5×IQR 围栏外——那是分布性质，不是数据问题。对它们报 note 只会制造噪声
+ * （实测 CFA 的 n=800 干净合成数据曾输出 6 行 DQ_NOTE）。
+ *
+ * 判据与 R 侧 `rq_is_scale_column` 逐条对应：
+ * 全部取值为整数、最小值 ≥ 0、唯一值数在 2..10 之间。
+ *
+ * ⚠️ 两处必须保持一致：`rCommon.ts` 的 R 版与这里的 TS 版是同一套判定的镜像。
+ * 改一处就要同步改另一处，且 `dataQuality.test.ts` 里有用例钉住这个行为。
+ */
+function isLikertLikeColumn(sample: ColumnSample): boolean {
+  const v = sample.values
+  if (v.length < 3) return false
+  if (v.some((x) => Math.abs(x - Math.round(x)) > 1e-8)) return false
+  if (Math.min(...v) < 0) return false
+  const uniq = new Set(v).size
+  return uniq >= 2 && uniq <= 10
+}
+
 /** 数值格式化：保留 4 位有效数字，避免 detail 里出现 1e6 之类的字符串噪音 */
 function fmt(v: number): string {
   if (!Number.isFinite(v)) return String(v)
@@ -396,7 +419,15 @@ export function checkDataQuality(
               : '') +
             `），很可能改变均值/标准差与显著性判断，请核查录入。`
         })
-      } else if (noteRows.length > 0 && n >= MIN_SAMPLE_FOR_NOTE) {
+      } else if (
+        noteRows.length > 0 &&
+        n >= MIN_SAMPLE_FOR_NOTE &&
+        // v0.3.3 补强 / 第三方 issue：非量表列（连续变量）不报 note。
+        // 正态数据上约 0.6% 的观测天然落在 1.5×IQR 外，那是分布性质不是数据问题；
+        // 对它们报 note 只会制造噪声（实测 CFA 的 n=800 干净数据曾报 6 行）。
+        // 与 R 侧 rq_is_scale_column / is_scale 参数逐条对应。
+        isLikertLikeColumn(sample)
+      ) {
         perKind.set('outlier', {
           column,
           kind: 'outlier',
