@@ -1,7 +1,7 @@
 # 统计验证结果（真实生成器 + 独立 oracle）
 
 R 版本：R version 4.6.0 (2026-04-24 ucrt)
-生成时间：2026-11-03 10:31:23
+生成时间：2026-11-03 10:36:32
 fixtures 目录：generated
 被测代码：src/renderer/src/services/rService.ts（esbuild 打包后运行时调用，非手抄副本）
 
