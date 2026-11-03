@@ -229,12 +229,26 @@ r-workbench/
 │   └── shared/                  # Shared type definitions
 │       └── types.ts
 ├── resources/                   # App resources
-├── electron.vite.config.ts      # electron-vite config
-├── electron-builder.json5       # Packaging config
+├── config/                      # All toolchain config (moved out of root in v0.3.3)
+│   ├── electron.vite.config.ts  # electron-vite config
+│   ├── tsconfig*.json           # TypeScript project configs
+│   ├── vitest.config.ts         # Unit test config
+│   ├── eslint.config.mjs        # ESLint config
+│   └── .prettierrc              # Prettier config
+├── docs/                        # Project documentation
+│   ├── REPO_LAYOUT.md           # Repo layout conventions (where new files belong)
+│   └── releases/                # Archived per-version release notes (GitHub Releases is authoritative)
+├── electron-builder.json5       # Packaging config (must stay in root: referenced by package.json build.extends)
 ├── scripts/validate/            # Statistical correctness validation
 ├── .github/workflows/           # GitHub Actions (CI)
 └── package.json
 ```
+
+> **The repo root holds only the 8 files that must be there** (`package.json` / `package-lock.json` /
+> `.gitignore` / `README.md` / `README.en.md` / `LICENSE` / `CHANGELOG.md` / `electron-builder.json5`).
+> Toolchain config lives in `config/`, documentation in `docs/`. Before adding a file, read
+> [`docs/REPO_LAYOUT.md`](docs/REPO_LAYOUT.md) — it explains *why* the split is drawn this way
+> and lists **the 4 pitfalls of moving config files** (getting one wrong turns everything red).
 
 ## Statistical Correctness Validation
 

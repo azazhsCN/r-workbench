@@ -224,12 +224,26 @@ r-workbench/
 │   └── shared/                  # 共享类型定义
 │       └── types.ts
 ├── resources/                   # 应用资源
-├── electron.vite.config.ts      # electron-vite 配置
-├── electron-builder.json5       # 打包配置
+├── config/                      # 所有工具链配置（v0.3.3 起从根目录迁入）
+│   ├── electron.vite.config.ts  # electron-vite 配置
+│   ├── tsconfig*.json           # TypeScript 项目配置
+│   ├── vitest.config.ts         # 单元测试配置
+│   ├── eslint.config.mjs        # ESLint 配置
+│   └── .prettierrc              # Prettier 配置
+├── docs/                        # 项目文档
+│   ├── REPO_LAYOUT.md           # 仓库结构约定（新增文件该放哪）
+│   └── releases/                # 各版发布说明归档（权威仍以 GitHub Releases 为准）
+├── electron-builder.json5       # 打包配置（需留在根目录，package.json 的 build.extends 指向它）
 ├── scripts/validate/            # 统计正确性验证脚本
 ├── .github/workflows/           # GitHub Actions（CI）
 └── package.json
 ```
+
+> **根目录只放 8 个必须在此的文件**（`package.json` / `package-lock.json` / `.gitignore` /
+> `README.md` / `README.en.md` / `LICENSE` / `CHANGELOG.md` / `electron-builder.json5`）。
+> 工具链配置统一在 `config/`，文档在 `docs/`。新增文件前请先看
+> [`docs/REPO_LAYOUT.md`](docs/REPO_LAYOUT.md)——里面写了"为什么这样分"和
+> **移动配置文件的 4 个必踩的坑**（改错会全线红）。
 
 ## 统计正确性验证
 

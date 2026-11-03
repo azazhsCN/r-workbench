@@ -5,27 +5,30 @@
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "outDir": "./out",
+    "jsx": "react-jsx",
+    "outDir": "../out",
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "target": "ESNext",
-    "lib": ["ESNext"],
-    "types": ["node"],
-    "baseUrl": ".",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["vite/client", "node"],
+    "baseUrl": "..",
+    "rootDir": "..",
     "paths": {
       "@shared/*": ["src/shared/*"],
+      "@renderer/*": ["src/renderer/src/*"],
       "@preload/*": ["src/preload/*"],
-      "sav-reader": ["./node_modules/sav-reader/dist/index.d.ts"]
+      "sav-reader": ["node_modules/sav-reader/dist/index.d.ts"]
     }
   },
   "include": [
-    "src/main/**/*.ts",
-    "src/preload/**/*.ts",
-    "src/shared/**/*.ts",
-    "electron.vite.config.ts",
-    "vitest.config.ts"
+    "../src/renderer/**/*.ts",
+    "../src/renderer/**/*.tsx",
+    "../src/renderer/**/*.json",
+    "../src/shared/**/*.ts",
+    "../src/preload/**/*.ts"
   ]
 }
