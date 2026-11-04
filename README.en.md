@@ -30,6 +30,30 @@ It breaks a complete statistical analysis into four steps and takes care of each
 
 Supports a **bilingual interface (Chinese / English)**, detected from the system locale or switched manually.
 
+### Screenshots
+
+| Home / Quick start | AI chat analysis |
+|:---:|:---:|
+| ![Home](docs/screenshots/welcome.png) | ![AI chat](docs/screenshots/chat.png) |
+| Load a sample dataset in one click, or start from one of four entry points | Describe what you need in plain language; the AI writes and runs the R code |
+
+| Wizard-based analysis | Data management |
+|:---:|:---:|
+| ![Wizard](docs/screenshots/wizard.png) | ![Data management](docs/screenshots/data.png) |
+| Step-by-step guidance for 24 methods; just pick your variables | CSV / Excel / SPSS(.sav) import, with a data-quality check on import |
+
+> ⚠️ **Note on screenshot versions**
+>
+> These screenshots were captured on **v0.2.x**. The layout is essentially unchanged,
+> but the feature set has grown considerably, so the method lists shown are out of date:
+>
+> - The AI chat welcome message lists **7 methods**; there are now **24**
+> - The wizard page only shows the "Basic" and "Difference" groups; the current version also
+>   includes **survey validity** (EFA / CFA / CVI / Harman) and **causal chain**
+>   (mediation / moderation / moderated mediation / path analysis / SEM)
+>
+> **The live interface is authoritative.** Screenshots will be refreshed before the next release.
+
 ### Target Users
 
 - 🎓 Undergraduates and graduate students in statistics and related fields
