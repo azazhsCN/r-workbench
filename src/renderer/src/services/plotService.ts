@@ -529,5 +529,11 @@ export const METHOD_PLOT_MAP: Record<string, { type: string; label: string }[]> 
   moderation: [{ type: 'scatter', label: '散点图' }, { type: 'line', label: '折线图' }],
   moderated_mediation: [{ type: 'line', label: '折线图' }, { type: 'scatter', label: '散点图' }],
   path_analysis: [{ type: 'line', label: '折线图' }, { type: 'item_mean', label: '条目均值图' }],
-  sem: [{ type: 'item_mean', label: '条目均值图' }, { type: 'line', label: '折线图' }]
+  sem: [{ type: 'item_mean', label: '条目均值图' }, { type: 'line', label: '折线图' }],
+  // v0.3.4：层次回归与线性回归同为「连续因变量 ~ 连续自变量」，复用散点图/直方图；
+  // Logistic 的因变量是分类，散点图看自变量与类别的关系分布，箱线图看组间差异。
+  // 两者都**没有**专用图型（如 ROC 曲线、ΔR² 柱状图），这是本版的已知取舍：
+  // 优先保证方法可用与数值正确，专用可视化留待后续版本。
+  hierarchical_regression: [{ type: 'scatter', label: '散点图' }, { type: 'histogram', label: '直方图' }],
+  logistic_regression: [{ type: 'scatter', label: '散点图' }, { type: 'boxplot', label: '箱线图' }]
 }

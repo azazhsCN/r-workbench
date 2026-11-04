@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/version-v0.3.3-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-v0.3.4-blue.svg)]()
 [![Languages](https://img.shields.io/badge/languages-中文%20%7C%20English-brightgreen.svg)]()
 
 [中文](README.md) | **English**
@@ -25,7 +25,7 @@ It breaks a complete statistical analysis into four steps and takes care of each
 ### Three ways to work
 
 - **💬 Conversational** — describe your question in plain language; the AI writes and explains the R code, then you run it with one click
-- **📊 Wizard-based** — step-by-step guidance for 22 common methods; just pick your variables, no code required
+- **📊 Wizard-based** — step-by-step guidance for 24 common methods; just pick your variables, no code required
 - **🔍 Traceable** — every result expands down to the raw R output; the code is always visible and editable
 
 Supports a **bilingual interface (Chinese / English)**, detected from the system locale or switched manually.
@@ -51,7 +51,7 @@ This is the project's core design principle: **the AI understands and explains; 
 
 - Every statistic (t values, p values, regression coefficients, confidence intervals…) is computed by local R
 - The AI only reads the computed results and writes an academically formatted interpretation
-- **1022 statistical-correctness assertions** are built in, cross-checked against independent oracles (hand-derived closed forms, exact permutation distributions, second R packages) — and you can run them yourself at any time
+- **1081 statistical-correctness assertions** are built in, cross-checked against independent oracles (hand-derived closed forms, exact permutation distributions, second R packages) — and you can run them yourself at any time
 
 ### 🛡️ Dirty data won't silently ruin your conclusions
 
@@ -91,14 +91,19 @@ No subscription, no per-use billing, no feature gating. Read all the source, mod
 - Works with OpenAI / DeepSeek / Qwen and other compatible endpoints, including local models (Ollama / LM Studio)
 
 ### 📊 Wizard Analysis
-- 22 common statistical methods:
+- 24 common statistical methods:
   - Descriptive statistics / Frequency statistics / Group summary
   - Independent samples t-test / Paired samples t-test / One-sample t-test
   - One-way ANOVA
   - Chi-square test / Normality test / Non-parametric test
   - Pearson / Spearman correlation
   - Linear regression
-  - Cronbach's α reliability analysis
+  - **Hierarchical regression** — predictors enter in theory-driven blocks, reporting each block's **ΔR² / ΔF**
+    (answers "does this set of variables add explanatory power beyond the controls?")
+  - **Logistic regression** — binary and **ordinal** outcomes (proportional-odds model, pure base R, no MASS dependency);
+    odds ratios with CIs, pseudo-R², classification accuracy against a baseline
+  - Cronbach's α reliability analysis (including **split-half**: Spearman-Brown and Guttman,
+    reported alongside the full distribution across every possible split)
   - **Exploratory Factor Analysis (EFA)** — KMO, Bartlett's test, factor loadings
   - **Confirmatory Factor Analysis (CFA)** — pure base R ML estimation; CFI / TLI / RMSEA / SRMR,
     standardised loadings (with SE / z / p / R²), CR / AVE, plus misfit-model discriminant evidence
@@ -123,7 +128,7 @@ No subscription, no per-use billing, no feature gating. Read all the source, mod
   mediation/moderation Bootstrap uses hand-written resampling, not the `mediation` package)
 
 ### 📈 Visualizations
-- 6 academic-standard charts:
+- 9 academic-standard charts:
   - Scatter plot (+ regression line + R²)
   - Histogram (+ normal curve)
   - Boxplot (group comparison)
@@ -256,7 +261,7 @@ R Workbench ships with a set of reproducible statistical-correctness validation 
 The script first loads the **real `rService.ts`** via esbuild, writes the R code that the
 22 method generators actually produce into fixtures, executes it with R, and re-computes the
 key statistics using **independent oracles** (hand-derived closed forms, exact permutation
-distributions, matrix algebra, second R packages). **1022 assertions** across all 22/22 methods.
+distributions, matrix algebra, second R packages). **1081 assertions** across all 24/24 methods.
 
 ```bash
 # Run validation (requires R >= 4.2; base R is enough, psych::alpha is used as an extra

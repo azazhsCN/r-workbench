@@ -135,6 +135,29 @@ src <- inject(src, "      cr_ref <- s_abs^2 / (s_abs^2 + th_f)",
                      "      cr_ref <- s_abs^2 / (s_abs^2 + th_f)"),
               "cfa_cr_signed_sum")
 
+# (11) v0.3.4 层次回归：把 ΔF 的分子自由度写错成「区块序号」
+#
+#     这正是我第一版原型真实犯过的错：`ddf <- i - prev_p` 里 i 是区块序号，
+#     而正确值应是 `length(cur_vars) - prev_p`（累计变量个数）。
+#     含多变量的区块会因此把 ΔF 算大，与 anova() 不一致（实测差一倍）。
+#     注入后 HIER_MODEL.block*.delta_f 与 oracle（anova 复算）必须对不上。
+# 注入点必须落在 **oracle 侧**（本 harness 只改写 run_validation.R 的副本），
+# 所以这里改的是 oracle 里拿 ΔF 的那一行：把 anova 的比较基改成同一模型，
+# 使 oracle 算出的 ΔF 失真（相当于 oracle 自己算错），
+# 从而 HIER_MODEL.block*.delta_f 的比对必须变红。
+src <- inject(src, "      a <- anova(m_prev, m)",
+              "      a <- anova(m, m)  # INJECTED: 基模型写错，ΔF 失真",
+              "hier_delta_f_df")
+
+# (12) v0.3.4 Logistic：把 OR 算成 exp(b/2)
+#
+#     OR = exp(b) 是一条纯代数不变式，任何实现都必须满足。
+#     注入后 LOGIT_INVARIANT.or_equals_exp_b 必须变红。
+# 同理：改 oracle 的不变式判据，让它自己算错 OR 的期望值
+src <- inject(src, "      gap <- abs(exp(b) - orv)",
+              "      gap <- abs(exp(b / 2) - orv)  # INJECTED: oracle 侧口径错误",
+              "logit_or_invariant")
+
 # (10) v0.3.3 补强 / 第三方 issue「data_quality.hooked 恒为真」：
 #      模拟"生成器绕过统一读表入口"。
 #
@@ -241,7 +264,7 @@ if (run$status != 0L && length(run$fails) == 0 && length(run$summ) == 0) {
   quit(status = 2L)
 }
 
-# 十处注入必须各自造成至少一条断言变红 —— 逐一核对，
+# 十二处注入必须各自造成至少一条断言变红 —— 逐一核对，
 # 避免"只有一处生效"却整体 exit 1 的假象。
 probe <- c(
   Harman         = any(grepl("HARMAN_SUMMARY.first_pct", run$fails)),
@@ -257,7 +280,11 @@ probe <- c(
   CfaCR          = any(grepl("CFA_RELIAB.*\\.cr", run$fails)) ||
                     any(grepl("CFA_RELIAB.*cr_ge_ave", run$fails)),
   # v0.3.3 补强：绕过统一读表入口 → 结构断言必须变红（第 10 处，独立实验）
-  DataQualityHook = hooked_probe
+  DataQualityHook = hooked_probe,
+  # v0.3.4：层次回归 ΔF 自由度写错 → ΔF 与 anova 复算不一致
+  HierDeltaF     = any(grepl("HIER_MODEL\\.block[0-9]+\\.delta_f", run$fails)),
+  # v0.3.4：Logistic 的 OR 口径错 → OR = exp(b) 不变式变红
+  LogitOR        = any(grepl("LOGIT_INVARIANT\\.or_equals_exp_b", run$fails))
 )
 cat("\n== 每个注入点的判别力 ==\n")
 for (nm in names(probe)) {

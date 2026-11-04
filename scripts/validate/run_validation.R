@@ -90,7 +90,9 @@ CANONICAL_METHODS <- c(
   # v0.3.1
   "cfa", "cvi", "harman",
   # v0.3.2
-  "mediation", "moderation", "moderated_mediation", "path_analysis", "sem"
+  "mediation", "moderation", "moderated_mediation", "path_analysis", "sem",
+  # v0.3.4
+  "hierarchical_regression", "logistic_regression"
 )
 
 ## ---- 2. 报告与断言工具 ----------------------------------------------------
@@ -2385,6 +2387,233 @@ oracle_path_analysis <- function(method, dataset, kv, out, data) {
   }
 }
 
+## 4.23b 层次回归（v0.3.4 / T75）
+##
+## oracle 独立性来自**换计算路径**：
+##   - 实现：逐块 reformulate + lm，ΔF = (ΔR²/Δdf) / ((1−R²)/df_res)
+##   - oracle：用 `anova(m1, m2)` 这个**完全不同的入口**拿 F 统计量，
+##     并用 summary() 的 r.squared 相减求 ΔR²
+## 两者必须一致——这正是实现里曾经算错的地方（把累计参数个数写成区块序号，
+## 导致含多变量的区块 ΔF 差一倍）。
+oracle_hierarchical_regression <- function(method, dataset, kv, out, data) {
+  blocks <- list(c("x1", "x2"), c("x3"), c("x4"))
+  d <- data.frame(lapply(data[, c("y", "x1", "x2", "x3", "x4"), drop = FALSE], as_num))
+  d <- d[complete.cases(d), , drop = FALSE]
+  n <- nrow(d)
+
+  if (!is.null(kv[['HIER_SPEC']])) {
+    chk_eq(method, dataset, 'HIER_SPEC.n_blocks', 3, gfn(kv, 'HIER_SPEC', 1, 1))
+    chk_eq(method, dataset, 'HIER_SPEC.n_vars', 4, gfn(kv, 'HIER_SPEC', 1, 2))
+  }
+
+  rows <- kv[["HIER_MODEL"]]
+  if (is.null(rows)) {
+    add_row(method, dataset, "HIER_MODEL.present", "yes", "no", FALSE)
+    return(invisible(NULL))
+  }
+
+  # oracle：逐块用 anova() 求 ΔF
+  prev_fml <- NULL
+  cum_vars <- character(0)
+  prev_r2 <- 0
+  for (i in seq_along(blocks)) {
+    cum_vars <- c(cum_vars, blocks[[i]])
+    fml <- as.formula(paste("y ~", paste(cum_vars, collapse = " + ")))
+    m <- lm(fml, data = d)
+    r2 <- summary(m)$r.squared
+
+    # 在实现输出里找对应块
+    got <- NULL
+    for (r in rows) {
+      if (suppressWarnings(as.integer(r[1])) == i) {
+        got <- r
+        break
+      }
+    }
+    if (is.null(got)) {
+      add_row(method, dataset, paste0("HIER_MODEL.block", i, ".present"), "yes", "no", FALSE)
+      next
+    }
+
+    chk_num(method, dataset, paste0("HIER_MODEL.block", i, ".r2"),
+            r2, suppressWarnings(as.numeric(got[3])), 1e-4)
+    chk_num(method, dataset, paste0("HIER_MODEL.block", i, ".delta_r2"),
+            r2 - prev_r2, suppressWarnings(as.numeric(got[5])), 1e-4)
+
+    # ΔF 用 anova() 独立复算（与实现的公式法不同入口）
+    if (!is.null(prev_fml)) {
+      m_prev <- lm(prev_fml, data = d)
+      a <- anova(m_prev, m)
+      chk_num(method, dataset, paste0("HIER_MODEL.block", i, ".delta_f"),
+              a$F[2], suppressWarnings(as.numeric(got[6])), 1e-3)
+      chk_eq(method, dataset, paste0("HIER_MODEL.block", i, ".df1"),
+             length(blocks[[i]]), suppressWarnings(as.integer(got[7])))
+    }
+
+    prev_fml <- fml
+    prev_r2 <- r2
+  }
+
+  # 不变式：最后一块的 R² 必须等于用全部变量拟合的 R²
+  m_all <- lm(y ~ x1 + x2 + x3 + x4, data = d)
+  chk_num(method, dataset, "HIER_MODEL.final_r2_equals_full",
+          summary(m_all)$r.squared,
+          suppressWarnings(as.numeric(rows[[length(rows)]][3])), 1e-4)
+
+  # 判别力：x4 的真实贡献仅 0.02，该块的 ΔF 应当**不显著**
+  # 这条比"能算出来"更有价值——它证明 ΔF 没有系统性放大
+  last_row <- rows[[length(rows)]]
+  p_last <- suppressWarnings(as.numeric(last_row[10]))
+  add_row(method, dataset, "HIER.discriminant.last_block_nonsignificant",
+          "p > .05（真值贡献 0.02）",
+          sprintf("p = %.4f", p_last),
+          is.finite(p_last) && p_last > 0.05)
+}
+
+## 4.23c Logistic 回归（v0.3.4 / T76）
+##
+## oracle 独立性来源：
+##   - 二元：实现用 `glm(binomial)`，oracle 用**独立手写 IRLS** 重新迭代求解
+##     （不同数值路径：实现走 glm 的 C++ 迭代，oracle 走纯 R 的显式 IRLS 循环）
+##   - 有序：实现用 optim(BFGS) + 中心差分 Hessian，oracle 用
+##     `MASS::polr`（**仅在装了 MASS 时**；MASS 是 R 推荐包，缺失时 SKIP 而不判失败）
+##   - 另有参数化无关不变式：预测概率和为 1、OR = exp(b)、LR = null−resid deviance
+oracle_logistic_regression <- function(method, dataset, kv, out, data) {
+  d <- data.frame(lapply(data[, c("y", "x1", "x2"), drop = FALSE], as_num))
+  d <- d[complete.cases(d), , drop = FALSE]
+  n <- nrow(d)
+  is_ordinal <- dataset == "logit_ordinal"
+
+  spec <- kv[["LOGIT_SPEC"]]
+  if (is.null(spec)) {
+    add_row(method, dataset, "LOGIT_SPEC.present", "yes", "no", FALSE)
+    return(invisible(NULL))
+  }
+  chk_eq(method, dataset, "LOGIT_SPEC.model_type",
+         if (is_ordinal) "ordinal" else "binary", gf(kv, "LOGIT_SPEC", 1, 1))
+  chk_eq(method, dataset, "LOGIT_SPEC.n_levels",
+         if (is_ordinal) 3L else 2L, gfn(kv, "LOGIT_SPEC", 1, 3))
+  chk_eq(method, dataset, "LOGIT_SPEC.n", n, gfn(kv, "LOGIT_SPEC", 1, 4))
+
+  coef_rows <- kv[["LOGIT_COEF"]]
+  if (is.null(coef_rows)) {
+    add_row(method, dataset, "LOGIT_COEF.present", "yes", "no", FALSE)
+    return(invisible(NULL))
+  }
+  get_coef <- function(v) {
+    for (r in coef_rows) if (identical(r[1], v)) return(suppressWarnings(as.numeric(r[2])))
+    NA_real_
+  }
+
+  # ── 不变式 1：OR = exp(b)（纯代数，任何实现都必须满足）──
+  or_ok <- TRUE
+  or_detail <- character(0)
+  for (r in coef_rows) {
+    b <- suppressWarnings(as.numeric(r[2]))
+    orv <- suppressWarnings(as.numeric(r[7]))
+    if (is.finite(b) && is.finite(orv)) {
+      gap <- abs(exp(b) - orv)
+      if (gap > 1e-3) {
+        or_ok <- FALSE
+        or_detail <- c(or_detail, sprintf("%s: exp(%.4f)=%.4f vs %.4f", r[1], b, exp(b), orv))
+      }
+    }
+  }
+  add_row(method, dataset, "LOGIT_INVARIANT.or_equals_exp_b", "OR = exp(b)", 
+          if (or_ok) "ok" else paste(or_detail, collapse = "; "), or_ok)
+
+  # ── 不变式 2：LR chi2 = null_deviance − resid_deviance ──
+  fit <- kv[["LOGIT_FIT"]]
+  lr <- kv[["LOGIT_LR"]]
+  if (!is.null(fit) && !is.null(lr)) {
+    nd <- gfn(kv, "LOGIT_FIT", 1, 2)
+    rd <- gfn(kv, "LOGIT_FIT", 1, 3)
+    chi <- gfn(kv, "LOGIT_LR", 1, 1)
+    chk_num(method, dataset, "LOGIT_INVARIANT.lr_equals_deviance_diff", nd - rd, chi, 1e-3)
+    # McFadden = 1 - resid/null
+    mcf <- gfn(kv, "LOGIT_FIT", 1, 5)
+    chk_num(method, dataset, "LOGIT_INVARIANT.mcfadden", 1 - rd / nd, mcf, 1e-4)
+  }
+
+  # ── 分类准确率必须同时报基线 ──
+  # kv 的结构是 list(fields)，所以准确率行是 kv[["LOGIT_ACC"]][[1]]
+  acc_list <- kv[["LOGIT_ACC"]]
+  if (!is.null(acc_list) && length(acc_list) >= 1) {
+    f <- acc_list[[1]]
+    add_row(method, dataset, "LOGIT_ACC.baseline_reported",
+            "baseline present", if (length(f) >= 2) f[2] else "MISSING",
+            length(f) >= 2)
+    # 基线 = 多数类占比，必须能从数据独立复算出来
+    base_expected <- max(table(d$y)) / n
+    chk_num(method, dataset, "LOGIT_ACC.baseline_correct",
+            base_expected, suppressWarnings(as.numeric(f[2])), 1e-4)
+  } else {
+    add_row(method, dataset, "LOGIT_ACC.baseline_reported", "baseline present", "MISSING", FALSE)
+  }
+
+  if (!is_ordinal) {
+    # ── 二元：oracle 用独立 IRLS 复算系数 ──
+    X <- cbind(1, d$x1, d$x2)
+    yv <- d$y
+    beta <- c(0, 0, 0)
+    for (iter in seq_len(100)) {
+      eta <- as.numeric(X %*% beta)
+      p <- 1 / (1 + exp(-eta))
+      W <- pmax(p * (1 - p), 1e-10)
+      z <- eta + (yv - p) / W
+      XtW <- t(X) %*% (X * W)
+      beta_new <- tryCatch(solve(XtW, t(X) %*% (W * z)), error = function(e) beta)
+      if (max(abs(beta_new - beta)) < 1e-12) {
+        beta <- beta_new
+        break
+      }
+      beta <- beta_new
+    }
+    chk_num(method, dataset, "LOGIT.oracle_irls.intercept", beta[1], get_coef("(Intercept)"), 2e-3)
+    chk_num(method, dataset, "LOGIT.oracle_irls.b_x1", beta[2], get_coef("x1"), 2e-3)
+    chk_num(method, dataset, "LOGIT.oracle_irls.b_x2", beta[3], get_coef("x2"), 2e-3)
+
+    # 真值恢复（数据生成时的真实系数 -0.5 / 1.2 / -0.8）
+    chk_num(method, dataset, "LOGIT.truth.intercept", -0.5, get_coef("(Intercept)"), 0.20)
+    chk_num(method, dataset, "LOGIT.truth.b_x1", 1.2, get_coef("x1"), 0.20)
+    chk_num(method, dataset, "LOGIT.truth.b_x2", -0.8, get_coef("x2"), 0.20)
+  } else {
+    # ── 有序：MASS::polr 交叉验证（存在则跑，缺失则 SKIP）──
+    if (requireNamespace("MASS", quietly = TRUE)) {
+      d$yf <- factor(d$y, ordered = TRUE)
+      po <- tryCatch(MASS::polr(yf ~ x1 + x2, data = d, Hess = TRUE), error = function(e) NULL)
+      if (!is.null(po)) {
+        chk_num(method, dataset, "LOGIT.oracle_polr.b_x1", as.numeric(coef(po)["x1"]),
+                get_coef("x1"), 5e-3)
+        chk_num(method, dataset, "LOGIT.oracle_polr.b_x2", as.numeric(coef(po)["x2"]),
+                get_coef("x2"), 5e-3)
+      }
+    } else {
+      add_row(method, dataset, "LOGIT.oracle_polr.b_x1",
+              "MASS::polr", "SKIP: MASS 缺失", TRUE)
+    }
+    # 有序模型不得报告截距（截距与阈值不可同时识别）
+    has_intercept <- any(vapply(coef_rows, function(r) identical(r[1], "(Intercept)"), logical(1)))
+    add_row(method, dataset, "LOGIT.ordinal.no_intercept_identifiability",
+            "无 Intercept（截距被吸收进阈值）",
+            if (has_intercept) "出现了 Intercept（会导致 Hessian 奇异）" else "ok",
+            !has_intercept)
+    # 必须报告比例优势假设的检查
+    po_check <- kv[["LOGIT_PO_CHECK"]]
+    add_row(method, dataset, "LOGIT.ordinal.proportional_odds_checked",
+            "有 PO 检查表", if (is.null(po_check)) "缺失" else "ok",
+            !is.null(po_check))
+    # 阈值必须递增
+    th <- kv[["LOGIT_THRESH"]]
+    if (!is.null(th) && length(th) >= 2) {
+      vals <- vapply(seq_along(th), function(i) suppressWarnings(as.numeric(th[[i]][2])), numeric(1))
+      add_row(method, dataset, "LOGIT.ordinal.thresholds_increasing",
+              "阈值严格递增", paste(sprintf("%.4f", vals), collapse = " < "),
+              all(diff(vals) > 0))
+    }
+  }
+}
+
 ## 4.24 结构方程模型 SEM（v0.3.2 第五节）
 ##
 ## oracle 策略与 v0.3.1 的 CFA 完全一致（契约也要求复用同一套拟合指标公式）：
@@ -2635,7 +2864,11 @@ oracle_map <- list(  descriptive = oracle_descriptive,
   # v0.3.3 T83：过度识别模型（4 变量 5 边），复用同一 oracle 的通路枚举分支
   path_overid = oracle_path_analysis,
   sem = oracle_sem,
-  sem_null = oracle_sem
+  sem_null = oracle_sem,
+  # v0.3.4 新增两方法
+  hier = oracle_hierarchical_regression,
+  logit_binary = oracle_logistic_regression,
+  logit_ordinal = oracle_logistic_regression
 )
 banner_map <- c(
   descriptive = "=== 描述性统计 ===",
@@ -2671,7 +2904,11 @@ banner_map <- c(
   moderated_mediation = "=== 有调节的中介分析 ===",
   path_analysis = "=== 路径分析 ===",
   sem = "=== 结构方程模型 (SEM) ===",
-  sem_null = "=== 结构方程模型 (SEM) ==="
+  sem_null = "=== 结构方程模型 (SEM) ===",
+  # v0.3.4
+  hier = "=== 层次回归分析 ===",
+  logit_binary = "=== Logistic 回归分析 ===",
+  logit_ordinal = "=== Logistic 回归分析 ==="
 )
 
 for (i in seq_len(nrow(manifest))) {

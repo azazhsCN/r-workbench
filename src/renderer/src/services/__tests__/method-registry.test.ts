@@ -44,6 +44,9 @@ const REQUIRED_METHOD_IDS = [
   // 关系分析
   'correlation',
   'regression',
+  // v0.3.4 关系分析扩展
+  'hierarchical_regression',
+  'logistic_regression',
   // 问卷分析
   'reliability',
   'efa',
@@ -96,7 +99,7 @@ function supportedPlotTypes(): Set<string> {
 }
 
 describe('METHODS / METHOD_PLOT_MAP 一致性', () => {
-  it('declares exactly the 22 planned method ids, uniquely', () => {
+  it('declares exactly the 24 planned method ids, uniquely', () => {
     expect(declaredIds.length).toBeGreaterThan(0)
     expect(new Set(declaredIds).size).toBe(declaredIds.length)
     // 双向精确比对：
@@ -105,8 +108,9 @@ describe('METHODS / METHOD_PLOT_MAP 一致性', () => {
     expect([...declaredIds].sort(), '方法集合与规划不一致（删/增方法须同步 REQUIRED_METHOD_IDS）').toEqual(
       [...REQUIRED_METHOD_IDS].sort()
     )
-    // v0.3.0：14；v0.3.1：17（CFA / CVI / Harman）；v0.3.2：22（因果链五方法）
-    expect(REQUIRED_METHOD_IDS).toHaveLength(22)
+    // v0.3.0：14；v0.3.1：17（CFA / CVI / Harman）；v0.3.2：22（因果链五方法）；
+    // v0.3.4：24（层次回归 / Logistic 回归）
+    expect(REQUIRED_METHOD_IDS).toHaveLength(24)
   })
 
   it('extracted ids match the ids actually exported by methodRegistry', async () => {

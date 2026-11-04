@@ -732,6 +732,8 @@ export type StructuredResult =
   | ModeratedMediationResult
   | PathAnalysisResult
   | SemResult
+  | HierarchicalRegressionResult
+  | LogisticRegressionResult
 
 /** kind → 类型 的映射，供类型守卫与穷尽性检查使用 */
 export interface ResultKindMap {
@@ -757,6 +759,8 @@ export interface ResultKindMap {
   moderated_mediation: ModeratedMediationResult
   path_analysis: PathAnalysisResult
   sem: SemResult
+  hierarchical_regression: HierarchicalRegressionResult
+  logistic_regression: LogisticRegressionResult
 }
 
 export type ResultKind = keyof ResultKindMap
@@ -784,7 +788,9 @@ export const RESULT_KINDS = [
   'moderation',
   'moderated_mediation',
   'path_analysis',
-  'sem'
+  'sem',
+  'hierarchical_regression',
+  'logistic_regression'
 ] as const satisfies readonly ResultKind[]
 
 /** 协议版本；升级字段含义时递增，解析器据此走兼容分支 */
@@ -803,4 +809,95 @@ export function isStructuredResult(value: unknown): value is StructuredResult {
   if (typeof v.kind !== 'string') return false
   if (v.schema_version !== RESULT_SCHEMA_VERSION) return false
   return (RESULT_KINDS as readonly string[]).includes(v.kind)
+}
+
+// ── v0.3.4 新增：层次回归 ──
+
+/**
+ * 层次回归结果（T75）。
+ *
+ * 与普通线性回归的区别：变量按**区块**依次进入模型，
+ * 每块的 `deltaR2` / `deltaF` 表示「在已控制前面各块之后」的增量解释力。
+ */
+export interface HierarchicalRegressionResult extends ResultBase {
+  kind: 'hierarchical_regression'
+  /** 区块数 */
+  n_blocks: number
+  /** 自变量总数 */
+  n_predictors: number
+  /** 逐区块的模型比较 */
+  blocks: {
+    /** 1 基区块序号 */
+    block: number
+    /** 该区块（累计）包含的变量 */
+    variables: string[]
+    /** 累计 R² */
+    r2: number
+    /** 累计调整 R² */
+    adj_r2: number
+    /** 相对上一区块的 ΔR² */
+    delta_r2: number
+    /** ΔR² 的 F 检验统计量 */
+    delta_f: number
+    df1: number
+    df2: number
+    p: number
+  }[]
+  /** 各区块新增变量的系数 */
+  coefficients: {
+    block: number
+    variable: string
+    b: number
+    se: number
+    t: number
+    p: number
+  }[]
+}
+
+// ── v0.3.4 新增：Logistic 回归 ──
+
+/**
+ * Logistic 回归结果（T76）。
+ *
+ * `model_type` 为 'binary' 时因变量 2 类；'ordinal' 时 3–10 类有序，
+ * 采用比例优势模型（纯 base R 实现，不依赖 MASS）。有序模型不报告截距
+ * （截距与阈值不可同时识别）。
+ */
+export interface LogisticRegressionResult extends ResultBase {
+  kind: 'logistic_regression'
+  model_type: 'binary' | 'ordinal'
+  dv: string
+  /** 因变量类别数 */
+  n_levels: number
+  n: number
+  /** 因变量各水平频数 */
+  levels: { index: number; label: string; count: number }[]
+  fit: {
+    null_deviance: number
+    resid_deviance: number
+    aic: number
+    mcfadden_r2: number
+    cox_snell_r2: number
+    nagelkerke_r2: number
+  }
+  /** 整体似然比检验 */
+  lr_test: { chi2: number; df: number; p: number }
+  /** 系数与优势比。有序模型不含 Intercept */
+  coefficients: {
+    variable: string
+    b: number
+    se: number
+    z: number
+    p: number
+    /** OR = exp(b) */
+    odds_ratio: number
+    or_ci_lower: number
+    or_ci_upper: number
+  }[]
+  /** 类别阈值（仅有序模型） */
+  thresholds?: { index: number; estimate: number; se: number }[]
+  /** 比例优势假设的描述性检查（仅有序模型）：各阈值下的二元 logit 斜率 */
+  proportional_odds_check?: { variable: string; slopes: number[] }[]
+  /** 分类准确率与「全预测多数类」的基线 */
+  accuracy: { accuracy: number; baseline: number; n: number }
 }

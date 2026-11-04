@@ -45,7 +45,11 @@ const GENERATORS: Record<string, () => string> = {
   moderation: () => RService.moderationCode('x', 'w', 'y', 'data.csv'),
   moderated_mediation: () => RService.moderatedMediationCode('x', 'm', 'y', 'w', 'data.csv'),
   path_analysis: () => RService.pathAnalysisCode(['x', 'm', 'y'], 'x > m, m > y', 'data.csv'),
-  sem: () => RService.semCode({ F1: ['x1', 'x2'], F2: ['y1', 'y2'] }, 'F1 > F2', 'data.csv')
+  sem: () => RService.semCode({ F1: ['x1', 'x2'], F2: ['y1', 'y2'] }, 'F1 > F2', 'data.csv'),
+  // v0.3.4 新增两方法
+  hierarchical_regression: () =>
+    RService.hierarchicalRegressionCode('y', 'x1,x2 | x3', 'data.csv'),
+  logistic_regression: () => RService.logisticRegressionCode('y', ['x1', 'x2'], 'data.csv')
 }
 
 /**
@@ -454,7 +458,7 @@ describe('解析器分派契约', () => {
     }
     // correlation 与 correlation_spearman 映射到同一 type，故少 1
     // v0.3.0：14（EFA 加入后）；v0.3.1：17（CFA / CVI / Harman）；v0.3.2：22（因果链五方法）
-    expect(seen.size, '新增方法时必须同步更新 GENERATORS 与本处计数').toBe(22)
+    expect(seen.size, '新增方法时必须同步更新 GENERATORS 与本处计数').toBe(24)
   })
 
   it('分组统计行中的 " N=" 不会让 t 检验被误判为描述性统计', () => {
@@ -531,7 +535,7 @@ describe('向导方法注册表一致性', () => {
     // v0.3.2：17 → 22（新增 中介 / 调节 / 有调节的中介 / 路径分析 / SEM）
     // 这条断言只是"数量哨兵"。**新增方法时本文件的 GENERATORS 也必须同步加一行**，
     // 否则下面两条会以更难读懂的方式失败（"生成器不存在/有孤儿"）。
-    expect(METHODS.length, '新增方法时必须同步更新本文件与 GENERATORS').toBe(22)
+    expect(METHODS.length, '新增方法时必须同步更新本文件与 GENERATORS').toBe(24)
   })
 
   it('每个注册的方法 id 都有对应的 R 代码生成器（否则会执行空代码）', () => {

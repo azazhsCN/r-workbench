@@ -1,12 +1,12 @@
 # 统计验证结果（真实生成器 + 独立 oracle）
 
 R 版本：R version 4.6.0 (2026-04-24 ucrt)
-生成时间：2026-11-03 22:22:52
+生成时间：2026-11-04 17:12:42
 fixtures 目录：_hooked_demo
 被测代码：src/renderer/src/services/rService.ts（esbuild 打包后运行时调用，非手抄副本）
 
-方法覆盖：**22 / 22**
-断言总数：**1022**（PASS 1020 / FAIL 2）
+方法覆盖：**24 / 24**
+断言总数：**1081**（PASS 1079 / FAIL 2）
 
 | 方法 | 数据集 | 断言 | 参考(oracle) | 工作台 | 结果 |
 |---|---|---|---|---|---|
@@ -1031,6 +1031,65 @@ fixtures 目录：_hooked_demo
 | path_analysis | path_overid | overid.truth.m1>y |   0.585 |   0.585 | PASS |
 | path_analysis | path_overid | overid.truth.m2>y | 0.413636 | 0.413636 | PASS |
 | path_analysis | path_overid | overid.truth.x>y |  0.1625 |  0.1625 | PASS |
-| __coverage__ | - | methods_covered |      22 |      22 | PASS |
+| hierarchical_regression | hier | r_syntax_parse | parse() ok | ok | PASS |
+| hierarchical_regression | hier | sprintf_format_args | no mismatch | ok | PASS |
+| hierarchical_regression | hier | no_r_error | no error | ok | PASS |
+| hierarchical_regression | hier | banner | === 层次回归分析 === | === 层次回归分析 === | PASS |
+| hierarchical_regression | hier | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| hierarchical_regression | hier | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
+| hierarchical_regression | hier | HIER_SPEC.n_blocks |       3 |       3 | PASS |
+| hierarchical_regression | hier | HIER_SPEC.n_vars |       4 |       4 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.block1.r2 | 0.404981 |   0.405 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.block1.delta_r2 | 0.404981 |   0.405 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.block2.r2 | 0.455528 |  0.4555 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.block2.delta_r2 | 0.0505467 |  0.0505 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.block2.delta_f | 36.7631 | 36.7631 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.block2.df1 |       1 |       1 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.block3.r2 | 0.456327 |  0.4563 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.block3.delta_r2 | 0.000798622 |  0.0008 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.block3.delta_f | 0.58023 |  0.5802 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.block3.df1 |       1 |       1 | PASS |
+| hierarchical_regression | hier | HIER_MODEL.final_r2_equals_full | 0.456327 |  0.4563 | PASS |
+| hierarchical_regression | hier | HIER.discriminant.last_block_nonsignificant | p > .05（真值贡献 0.02） | p = 0.4467 | PASS |
+| logistic_regression | logit_binary | r_syntax_parse | parse() ok | ok | PASS |
+| logistic_regression | logit_binary | sprintf_format_args | no mismatch | ok | PASS |
+| logistic_regression | logit_binary | no_r_error | no error | ok | PASS |
+| logistic_regression | logit_binary | banner | === Logistic 回归分析 === | === Logistic 回归分析 === | PASS |
+| logistic_regression | logit_binary | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| logistic_regression | logit_binary | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
+| logistic_regression | logit_binary | LOGIT_SPEC.model_type | binary | binary | PASS |
+| logistic_regression | logit_binary | LOGIT_SPEC.n_levels |       2 |       2 | PASS |
+| logistic_regression | logit_binary | LOGIT_SPEC.n |     600 |     600 | PASS |
+| logistic_regression | logit_binary | LOGIT_INVARIANT.or_equals_exp_b | OR = exp(b) | ok | PASS |
+| logistic_regression | logit_binary | LOGIT_INVARIANT.lr_equals_deviance_diff | 173.746 | 173.746 | PASS |
+| logistic_regression | logit_binary | LOGIT_INVARIANT.mcfadden | 0.218579 |  0.2186 | PASS |
+| logistic_regression | logit_binary | LOGIT_ACC.baseline_reported | baseline present | 0.6233 | PASS |
+| logistic_regression | logit_binary | LOGIT_ACC.baseline_correct | 0.623333 |  0.6233 | PASS |
+| logistic_regression | logit_binary | LOGIT.oracle_irls.intercept | -0.643219 | -0.6432 | PASS |
+| logistic_regression | logit_binary | LOGIT.oracle_irls.b_x1 |  1.1628 |  1.1628 | PASS |
+| logistic_regression | logit_binary | LOGIT.oracle_irls.b_x2 | -0.803226 | -0.8032 | PASS |
+| logistic_regression | logit_binary | LOGIT.truth.intercept |    -0.5 | -0.6432 | PASS |
+| logistic_regression | logit_binary | LOGIT.truth.b_x1 |     1.2 |  1.1628 | PASS |
+| logistic_regression | logit_binary | LOGIT.truth.b_x2 |    -0.8 | -0.8032 | PASS |
+| logistic_regression | logit_ordinal | r_syntax_parse | parse() ok | ok | PASS |
+| logistic_regression | logit_ordinal | sprintf_format_args | no mismatch | ok | PASS |
+| logistic_regression | logit_ordinal | no_r_error | no error | ok | PASS |
+| logistic_regression | logit_ordinal | banner | === Logistic 回归分析 === | === Logistic 回归分析 === | PASS |
+| logistic_regression | logit_ordinal | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| logistic_regression | logit_ordinal | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
+| logistic_regression | logit_ordinal | LOGIT_SPEC.model_type | ordinal | ordinal | PASS |
+| logistic_regression | logit_ordinal | LOGIT_SPEC.n_levels |       3 |       3 | PASS |
+| logistic_regression | logit_ordinal | LOGIT_SPEC.n |     600 |     600 | PASS |
+| logistic_regression | logit_ordinal | LOGIT_INVARIANT.or_equals_exp_b | OR = exp(b) | ok | PASS |
+| logistic_regression | logit_ordinal | LOGIT_INVARIANT.lr_equals_deviance_diff | 333.634 | 333.634 | PASS |
+| logistic_regression | logit_ordinal | LOGIT_INVARIANT.mcfadden | 0.266231 |  0.2662 | PASS |
+| logistic_regression | logit_ordinal | LOGIT_ACC.baseline_reported | baseline present | 0.4900 | PASS |
+| logistic_regression | logit_ordinal | LOGIT_ACC.baseline_correct |    0.49 |    0.49 | PASS |
+| logistic_regression | logit_ordinal | LOGIT.oracle_polr.b_x1 | 1.54587 |  1.5459 | PASS |
+| logistic_regression | logit_ordinal | LOGIT.oracle_polr.b_x2 | -0.935629 | -0.9356 | PASS |
+| logistic_regression | logit_ordinal | LOGIT.ordinal.no_intercept_identifiability | 无 Intercept（截距被吸收进阈值） | ok | PASS |
+| logistic_regression | logit_ordinal | LOGIT.ordinal.proportional_odds_checked | 有 PO 检查表 | ok | PASS |
+| logistic_regression | logit_ordinal | LOGIT.ordinal.thresholds_increasing | 阈值严格递增 | -1.5714 < 1.7222 | PASS |
+| __coverage__ | - | methods_covered |      24 |      24 | PASS |
 
-**汇总：PASS 1020 / 1022**
+**汇总：PASS 1079 / 1081**

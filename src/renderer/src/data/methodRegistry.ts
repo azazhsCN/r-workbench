@@ -546,5 +546,44 @@ export const METHODS: AnalysisMethod[] = [
         placeholder: 'F1 > F2'
       }
     ]
+  },
+  // ── v0.3.4 新增 ──
+  {
+    id: 'hierarchical_regression',
+    name: '层次回归',
+    nameKey: 'wizard.method.hierarchical_regression',
+    icon: '🪜',
+    description: '自变量按理论顺序分区块进入，输出每块的增量解释力 ΔR² 与 ΔF',
+    descKey: 'wizard.method.hierarchical_regression.desc',
+    category: '关系分析',
+    categoryKey: 'wizard.category.relation',
+    needsGroup: false,
+    minVars: 2,
+    maxVars: 20,
+    varType: 'numeric',
+    textInputs: [
+      {
+        id: 'blockSpec',
+        labelKey: 'wizard.textInput.blockSpec',
+        label: '区块划分（用 | 分隔各块）',
+        descKey: 'wizard.textInput.blockSpec.desc',
+        desc: '每个区块内的变量用逗号分隔，区块之间用 | 分隔；顺序即进入模型的顺序（先控制变量、后核心变量）',
+        placeholder: 'age,gender | x1,x2 | x3'
+      }
+    ]
+  },
+  {
+    id: 'logistic_regression',
+    name: 'Logistic 回归',
+    nameKey: 'wizard.method.logistic_regression',
+    icon: '🎯',
+    description: '因变量为二分类或有序分类时的回归：优势比 OR、模型拟合与分类准确率',
+    descKey: 'wizard.method.logistic_regression.desc',
+    category: '关系分析',
+    categoryKey: 'wizard.category.relation',
+    needsGroup: false,
+    minVars: 2,
+    maxVars: 10,
+    varType: 'numeric'
   }
 ]

@@ -245,7 +245,11 @@ export default function WizardPage() {
       moderation: () => RService.moderationCode(roleValue('x'), roleValue('w'), roleValue('y'), dataFile),
       moderated_mediation: () => RService.moderatedMediationCode(roleValue('x'), roleValue('m'), roleValue('y'), roleValue('w'), dataFile),
       path_analysis: () => RService.pathAnalysisCode(depVars, textValues['pathSpec'] ?? '', dataFile),
-      sem: () => RService.semCode(parseItemsByFactor(textValues['itemsByFactor'] ?? ''), textValues['structure'] ?? '', dataFile)
+      sem: () => RService.semCode(parseItemsByFactor(textValues['itemsByFactor'] ?? ''), textValues['structure'] ?? '', dataFile),
+      // v0.3.4：层次回归用 textValues['blockSpec'] 传区块规格（形如 "x1,x2 | x3,x4"）
+      hierarchical_regression: () => RService.hierarchicalRegressionCode(depVars[0], textValues['blockSpec'] ?? '', dataFile),
+      // v0.3.4：Logistic 回归，depVars[0] 为因变量，其余为自变量
+      logistic_regression: () => RService.logisticRegressionCode(depVars[0], depVars.slice(1), dataFile)
     }
     const generate = generators[method]
     code = generate ? generate() : ''

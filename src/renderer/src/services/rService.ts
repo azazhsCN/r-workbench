@@ -23,6 +23,9 @@ import { moderationCode } from './rGenerators/moderation'
 import { moderatedMediationCode } from './rGenerators/moderatedMediation'
 import { pathAnalysisCode } from './rGenerators/pathAnalysis'
 import { semCode } from './rGenerators/sem'
+// v0.3.4 新增方法
+import { hierarchicalRegressionCode } from './rGenerators/hierarchicalRegression'
+import { logisticRegressionCode } from './rGenerators/logisticRegression'
 
 /** 分析结果 */
 export interface AnalysisResult {
@@ -492,6 +495,86 @@ try({
 }, silent = TRUE)
 if (!is.na(ci_lo) && !is.na(ci_hi)) {
   cat(sprintf("ALPHA_CI|%s|%s\\n", num(ci_lo, 4), num(ci_hi, 4)))
+}
+# ─────────────────────────────────────────────────────────────
+# 折半信度（v0.3.4 / T74）
+#
+# 为什么不能只报"前后分半"：
+# 折半信度的结果**强烈依赖怎么分半**。实测一份 6 题 2 因子量表，
+# 10 种可能的分半方式给出的 Spearman-Brown 从 0.1665 到 0.7554——
+# 相差 4 倍，而"前后分半"恰好落在最差的那一端。
+#
+# 只报一种分半方式等于给用户一个随机数。因此这里：
+#   1. 报告**标准的前后分半**（最常用、可复现）与 Guttman 分半系数
+#   2. 额外报告**全部分半方式的分布**（min / 中位数 / max / 均值）
+#   3. 两者差距大时明确警告"结果依赖分半方式"
+#
+# k 为偶数时枚举 C(k, k/2)/2 种；k 为奇数时无法均分，跳过枚举
+# （此时 Spearman-Brown 只能按最接近的切分，统计性质不成立）。
+# 为避免组合爆炸，k > 12 时只报告前后分半 + 随机抽样若干种。
+rq_sb <- function(r) {
+  if (!is.finite(r) || r <= -1) {
+    return(NA_real_)
+  }
+  2 * r / (1 + r)
+}
+
+# 1) 标准的前后分半
+n_half <- k %/% 2
+first_idx <- seq_len(n_half)
+rest_idx <- setdiff(seq_len(k), first_idx)
+h1 <- rowSums(item_data[, first_idx, drop = FALSE])
+h2 <- rowSums(item_data[, rest_idx, drop = FALSE])
+r_first <- suppressWarnings(cor(h1, h2))
+sb_first <- rq_sb(r_first)
+guttman <- if (is.finite(r_first)) 2 * (1 - (var(h1) + var(h2)) / var(rowSums(item_data))) else NA_real_
+if (is.finite(sb_first)) {
+  cat(sprintf("SPLIT_HALF|%s|%s|%s\\n", num(r_first, 4), num(sb_first, 4), num(guttman, 4)))
+}
+
+# 2) 全部分半方式的分布（仅 k 为偶数且 k <= 12 时穷举；否则抽样）
+sb_all <- numeric(0)
+if (k %% 2 == 0 && k >= 4) {
+  if (k <= 12) {
+    combos <- combn(k, n_half, simplify = FALSE)
+  } else {
+    # 组合数过大时随机抽 200 种（固定种子，可复现）
+    set.seed(20260101)
+    combos <- replicate(200, sort(sample.int(k, n_half)), simplify = FALSE)
+  }
+  seen <- character(0)
+  for (idx in combos) {
+    key1 <- paste(sort(idx), collapse = ",")
+    key2 <- paste(sort(setdiff(seq_len(k), idx)), collapse = ",")
+    pair_key <- paste(sort(c(key1, key2)), collapse = "|")
+    if (pair_key %in% seen) {
+      next
+    }
+    seen <- c(seen, pair_key)
+    a <- rowSums(item_data[, idx, drop = FALSE])
+    b <- rowSums(item_data[, setdiff(seq_len(k), idx), drop = FALSE])
+    rr <- suppressWarnings(cor(a, b))
+    sb <- rq_sb(rr)
+    if (is.finite(sb)) {
+      sb_all <- c(sb_all, sb)
+    }
+  }
+}
+if (length(sb_all) >= 2) {
+  cat(sprintf("SPLIT_HALF_ALL|%d|%s|%s|%s|%s\\n", length(sb_all),
+    num(min(sb_all), 4), num(stats::median(sb_all), 4),
+    num(max(sb_all), 4), num(mean(sb_all), 4)))
+  # 分布跨度大 -> 明确警告，避免用户把某一个值当成定论
+  spread <- max(sb_all) - min(sb_all)
+  if (is.finite(spread) && spread > 0.15) {
+    cat(sprintf("RELIABILITY_WARN|折半信度强烈依赖分半方式：%d 种分半给出 %.4f 到 %.4f（跨度 %.4f），前后分半 = %.4f。请不要把其中任何一个数值当作定论；报告时建议说明分半方法，或改用不受分半方式影响的 Cronbach alpha（本表已同时给出）\\n",
+      length(sb_all), min(sb_all), max(sb_all), spread, sb_first))
+  }
+  cat(sprintf("RELIABILITY_NOTE|折半信度说明：本表报告了标准的前后分半（最常用且可复现），并额外给出全部 %d 种分半方式的分布范围。折半信度对分半方式敏感，这与 Cronbach alpha 不同（后者等价于所有可能分半的平均，因此 alpha 通常低于最优分半、高于最差分半）\\n",
+    length(sb_all)))
+} else if (is.finite(sb_first)) {
+  cat(sprintf("RELIABILITY_NOTE|题目数为奇数（k = %d），无法均分为两半，因此只报告前后分半（第 1 到第 %d 题 vs 其余）作为参考；该情形下折半信度的统计性质不严格成立，建议以 Cronbach alpha 为准\\n",
+    k, n_half))
 }
 # 逐项统计分析
 # v0.3.3 / D05：CITC（校正题总相关）为负时的诊断。
@@ -1564,5 +1647,25 @@ if (p_b < 0.05 && kmo_overall >= 0.6) {
     dataFile = 'data.csv'
   ): string {
     return semCode(itemsByFactor, structure, dataFile)
+  }
+
+  /**
+   * 层次回归（v0.3.4 / T75）。`blockSpec` 形如 `"x1,x2 | x3,x4"`（用 | 分隔区块）。
+   * 输出每块的 ΔR²/ΔF 及新增变量系数。见 `rGenerators/hierarchicalRegression.ts` 的契约说明。
+   */
+  static hierarchicalRegressionCode(
+    dv: string,
+    blockSpec: string,
+    dataFile = 'data.csv'
+  ): string {
+    return hierarchicalRegressionCode(dv, blockSpec, dataFile)
+  }
+
+  /**
+   * Logistic 回归（v0.3.4 / T76）。因变量 2 类走二元，3-10 类走有序（比例优势模型）。
+   * 有序模型用纯 base R 极大似然实现，未依赖 MASS。见 `rGenerators/logisticRegression.ts`。
+   */
+  static logisticRegressionCode(dv: string, ivs: string[], dataFile = 'data.csv'): string {
+    return logisticRegressionCode(dv, ivs, dataFile)
   }
 }

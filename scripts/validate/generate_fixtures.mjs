@@ -20,6 +20,15 @@ import { build } from 'esbuild'
 import { mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { dirname, resolve, join, basename } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+// v0.3.4 新增两方法的 fixture 数据（单独文件，避免本文件继续膨胀）
+import {
+  hierCols,
+  hierRows,
+  logitBinCols,
+  logitBinRows,
+  logitOrdCols,
+  logitOrdRows
+} from './fixtures_v034.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = resolve(here, '..', '..')
@@ -1291,6 +1300,36 @@ const scenarios = [
         'x > m1, x > m2, m1 > y, m2 > y, x > y',
         csv
       )
+  },
+  // ── v0.3.4 新增两方法 ──────────────────────────────────────────────
+  {
+    method: 'hierarchical_regression',
+    dataset: 'hier',
+    // 3 个区块，真实贡献递减：x1,x2 大；x3 中；x4 几乎为 0。
+    // 关键是 x4 那块**应当不显著**——反例比正例更能证明 ΔF 实现正确。
+    cols: hierCols,
+    rows: hierRows,
+    desc: '层次回归（3 区块：x1,x2 | x3 | x4，真值贡献 0.6/0.5、0.3、0.02；x4 块应不显著）',
+    code: (R, csv) =>
+      R.hierarchicalRegressionCode('y', 'x1,x2 | x3 | x4', csv)
+  },
+  {
+    method: 'logistic_regression',
+    dataset: 'logit_binary',
+    // 真实系数：截距 -0.5、b(x1) = 1.2、b(x2) = -0.8
+    cols: logitBinCols,
+    rows: logitBinRows,
+    desc: '二元 Logistic（真值 截距=-0.5、b(x1)=1.2、b(x2)=-0.8、n=600）',
+    code: (R, csv) => R.logisticRegressionCode('y', ['x1', 'x2'], csv)
+  },
+  {
+    method: 'logistic_regression',
+    dataset: 'logit_ordinal',
+    // 3 类有序，真实斜率 0.9 / -0.6，阈值 -0.8 / 0.9（含噪声，避免完全分离）
+    cols: logitOrdCols,
+    rows: logitOrdRows,
+    desc: '有序 Logistic（3 类，真实斜率 0.9 / -0.6，阈值 -0.8 / 0.9，n=600）',
+    code: (R, csv) => R.logisticRegressionCode('y', ['x1', 'x2'], csv)
   }
 ]
 

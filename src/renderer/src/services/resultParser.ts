@@ -176,6 +176,11 @@ export function detectAnalysisType(output: string): string {
     if (core === '有调节的中介分析') return 'moderated_mediation'
     if (core === '路径分析') return 'path_analysis'
     if (core === '结构方程模型') return 'sem'
+    // v0.3.4 新增两方法。同样用**全等**匹配而非前缀：
+    // `层次回归分析` 与 `线性回归分析` 只差前两个字，是不同方法、不同行格式；
+    // `Logistic 回归分析` 与 `线性回归分析` 同理。用 startsWith 会被后者吞掉。
+    if (core === '层次回归分析') return 'hierarchical_regression'
+    if (core === 'Logistic 回归分析') return 'logistic_regression'
 
     if (name.startsWith('描述性统计')) return 'descriptive'
     if (name.startsWith('独立样本 t 检验')) return 'ttest_independent'
@@ -367,6 +372,12 @@ export function parseROutput(output: string): ParsedAnalysis {
       break
     case 'sem':
       parseSem(output, tables, keyValues)
+      break
+    case 'hierarchical_regression':
+      parseHierarchicalRegression(output, tables, keyValues)
+      break
+    case 'logistic_regression':
+      parseLogisticRegression(output, tables, keyValues)
       break
     default:
       break
@@ -2834,6 +2845,310 @@ function parseSem(output: string, tables: TableData[], kv: Record<string, string
 
   const notes = textLines(output, 'SEM_NOTE')
   if (notes.length > 0) kv['提示'] = notes.join('；')
+
+  const concl = conclusionOf(output)
+  if (concl) kv['结论'] = concl
+}
+
+/**
+ * 层次回归解析（v0.3.4 / T75）
+ *
+ * 输出契约：
+ *   HIER_SPEC|<区块数>|<总变量数>|<每块大小逗号分隔>
+ *   HIER_MODEL|<块号>|<变量列表>|<R²>|<adjR²>|<ΔR²>|<ΔF>|<df1>|<df2>|<p>|<p_raw>
+ *   HIER_COEF|<块号>|<变量>|<b>|<se>|<t>|<p>|<p_raw>
+ *   HIER_NOTE|...
+ */
+function parseHierarchicalRegression(
+  output: string,
+  tables: TableData[],
+  kv: Record<string, string | number>
+) {
+  const spec = firstTagged(output, 'HIER_SPEC')
+  const nBlocks = spec ? toNum(fields(spec)[1]) : null
+  const nVars = spec ? toNum(fields(spec)[2]) : null
+  if (nBlocks !== null) kv['区块数'] = nBlocks
+  if (nVars !== null) kv['自变量数'] = nVars
+
+  // ── 表1：逐区块模型比较 ──
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'HIER_MODEL')) {
+      const f = fields(line)
+      const idx = toNum(f[1])
+      const vars = (f[2] ?? '').trim()
+      const r2 = toNum(f[3])
+      const adj = toNum(f[4])
+      const dr2 = toNum(f[5])
+      const dfVal = toNum(f[6])
+      const df1 = toNum(f[7])
+      const df2 = toNum(f[8])
+      const p = pPair(f[9], f[10])
+      rows.push([
+        `第 ${idx ?? '?'} 块`,
+        vars,
+        r2 ?? '—',
+        adj ?? '—',
+        dr2 ?? '—',
+        dfVal ?? '—',
+        df1 !== null && df2 !== null ? `(${df1}, ${df2})` : '—',
+        pText(p)
+      ])
+      if (idx !== null) {
+        if (r2 !== null) kv[`block${idx}_r2`] = r2
+        if (dr2 !== null) kv[`block${idx}_delta_r2`] = dr2
+        if (dfVal !== null) kv[`block${idx}_delta_f`] = dfVal
+        if (p.value !== null) kv[`block${idx}_p`] = p.value
+      }
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  层次回归：逐区块模型比较`,
+        headers: ['区块', '进入的变量', 'R²', '调整 R²', 'ΔR²', 'ΔF', 'Δdf', 'p'],
+        rows,
+        note:
+          '注：ΔR² 是该区块相对「上一区块模型」的增量解释力，ΔF 检验其显著性。' +
+          '所有区块在同一批样本上拟合，ΣΔR² 与最终模型 R² 相等（R 端有自检）。' +
+          '区块的进入顺序由用户指定，不同顺序会改变各块的 ΔR²，这是层次回归的定义使然，不是错误。'
+      })
+    }
+  }
+
+  // ── 表2：新增变量的系数 ──
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'HIER_COEF')) {
+      const f = fields(line)
+      const block = toNum(f[1])
+      const v = (f[2] ?? '').trim()
+      const b = toNum(f[3])
+      const se = toNum(f[4])
+      const t = toNum(f[5])
+      const p = pPair(f[6], f[7])
+      rows.push([`第 ${block ?? '?'} 块`, v, b ?? '—', se ?? '—', t ?? '—', pText(p)])
+      if (v) {
+        if (b !== null) kv[`coef_${v}`] = b
+        if (p.value !== null) kv[`p_${v}`] = p.value
+      }
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  各区块新增变量的回归系数`,
+        headers: ['所属区块', '变量', 'b', 'SE', 't', 'p'],
+        rows,
+        note:
+          '注：系数取自「该变量首次进入模型」的那一步，与最终模型的系数相同' +
+          '（回归系数不随后续变量加入而改变其点估计的含义，但 SE 会变）。'
+      })
+    }
+  }
+
+  const notes = textLines(output, 'HIER_NOTE')
+  if (notes.length > 0) kv['提示'] = notes.join('；')
+  const warns = textLines(output, 'HIER_WARN')
+  if (warns.length > 0) kv['警告'] = warns.join('；')
+
+  const concl = conclusionOf(output)
+  if (concl) kv['结论'] = concl
+}
+
+/**
+ * Logistic 回归解析（v0.3.4 / T76）
+ *
+ * 输出契约：
+ *   LOGIT_SPEC|<binary|ordinal>|<dv>|<K>|<N>
+ *   LOGIT_LEVEL|<序号>|<水平名>|<计数>
+ *   LOGIT_FIT|<N>|<null_dev>|<resid_dev>|<AIC>|<McFadden>|<CoxSnell>|<Nagelkerke>
+ *   LOGIT_LR|<chi2>|<df>|<p>|<p_raw>
+ *   LOGIT_COEF|<变量>|<b>|<se>|<z>|<p>|<p_raw>|<OR>|<OR_lo>|<OR_hi>
+ *   LOGIT_THRESH|<序号>|<阈值>|<se>
+ *   LOGIT_PO_CHECK|<变量>|<斜率1>|<斜率2>|...
+ *   LOGIT_ACC|<acc>|<base_acc>|<N>
+ */
+function parseLogisticRegression(
+  output: string,
+  tables: TableData[],
+  kv: Record<string, string | number>
+) {
+  const spec = firstTagged(output, 'LOGIT_SPEC')
+  if (spec) {
+    const f = fields(spec)
+    kv['模型类型'] = f[1] === 'ordinal' ? '有序 Logistic（比例优势模型）' : '二元 Logistic'
+    kv['因变量'] = (f[2] ?? '').trim()
+    const k = toNum(f[3])
+    if (k !== null) kv['类别数'] = k
+    const n = toNum(f[4])
+    if (n !== null) kv['n'] = n
+  }
+
+  // ── 表1：样本分布 ──
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'LOGIT_LEVEL')) {
+      const f = fields(line)
+      const idx = toNum(f[1])
+      const lvl = (f[2] ?? '').trim()
+      const cnt = toNum(f[3])
+      rows.push([idx ?? '—', lvl, cnt ?? '—'])
+      if (lvl && cnt !== null) kv[`level_${lvl}_n`] = cnt
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  因变量各水平分布`,
+        headers: ['序号', '类别', '频数'],
+        rows,
+        note:
+          '注：最小类别观测数少于 5 时，Logistic 回归的估计极不稳定（标准误很大），' +
+          '结果不宜作为结论依据。'
+      })
+    }
+  }
+
+  // ── 表2：模型拟合与检验 ──
+  {
+    const fit = firstTagged(output, 'LOGIT_FIT')
+    const lr = firstTagged(output, 'LOGIT_LR')
+    const rows: (string | number)[][] = []
+    if (fit) {
+      const f = fields(fit)
+      const aic = toNum(f[4])
+      const mcf = toNum(f[5])
+      const cs = toNum(f[6])
+      const ng = toNum(f[7])
+      if (aic !== null) kv['AIC'] = aic
+      if (mcf !== null) kv['McFadden R2'] = mcf
+      if (cs !== null) kv['Cox-Snell R2'] = cs
+      if (ng !== null) kv['Nagelkerke R2'] = ng
+      rows.push(['AIC', aic ?? '—'], ['McFadden 伪 R²', mcf ?? '—'])
+      rows.push(['Cox-Snell 伪 R²', cs ?? '—'], ['Nagelkerke 伪 R²', ng ?? '—'])
+    }
+    if (lr) {
+      const f = fields(lr)
+      const chi2 = toNum(f[1])
+      const df = toNum(f[2])
+      const p = pPair(f[3], f[4])
+      if (chi2 !== null) kv['LR chi2'] = chi2
+      if (p.value !== null) kv['LR p'] = p.value
+      if (p.display) kv['LR pDisplay'] = p.display
+      rows.push(['似然比检验 χ²', chi2 ?? '—'], ['自由度', df ?? '—'])
+      rows.push(['似然比检验 p', pText(p)])
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  模型拟合与整体检验`,
+        headers: ['指标', '值'],
+        rows,
+        note:
+          '注：Logistic 回归的伪 R²（McFadden / Cox-Snell / Nagelkerke）不能像线性回归的 R² 那样' +
+          '解释为「解释了多少比例的方差」，只用于模型间相对比较。'
+      })
+    }
+  }
+
+  // ── 表3：系数与优势比 ──
+  {
+    const rows: (string | number)[][] = []
+    const isOrdinal = (kv['模型类型'] as string || '').includes('有序')
+    for (const line of tagged(output, 'LOGIT_COEF')) {
+      const f = fields(line)
+      const v = (f[1] ?? '').trim()
+      const b = toNum(f[2])
+      const se = toNum(f[3])
+      const z = toNum(f[4])
+      const p = pPair(f[5], f[6])
+      const OR = toNum(f[7])
+      const lo = toNum(f[8])
+      const hi = toNum(f[9])
+      rows.push([
+        v,
+        b ?? '—',
+        se ?? '—',
+        z ?? '—',
+        pText(p),
+        OR ?? '—',
+        lo !== null && hi !== null ? `[${lo}, ${hi}]` : '—'
+      ])
+      if (v) {
+        if (b !== null) kv[`coef_${v}`] = b
+        if (OR !== null) kv[`OR_${v}`] = OR
+        if (p.value !== null) kv[`p_${v}`] = p.value
+        if (p.display) kv[`p_${v}_display`] = p.display
+      }
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  回归系数与优势比`,
+        headers: ['变量', 'b', 'SE', 'z', 'p', 'OR = exp(b)', 'OR 95% CI'],
+        rows,
+        note: isOrdinal
+          ? '注：有序 Logistic 采用比例优势模型（假定各阈值下自变量斜率相同），' +
+            '因此不报告截距（截距被吸收进阈值，与阈值不可同时识别）。' +
+            'b > 0 表示该变量越大越倾向更高的类别。OR 为累积优势比。'
+          : '注：OR > 1 表示该变量增加时事件发生优势上升；OR 的 95% CI 跨 1 等价于 p > .05。'
+      })
+    }
+  }
+
+  // ── 表4：阈值（仅有序） ──
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'LOGIT_THRESH')) {
+      const f = fields(line)
+      const idx = toNum(f[1])
+      const th = toNum(f[2])
+      const se = toNum(f[3])
+      rows.push([`阈值 ${idx ?? '?'}`, th ?? '—', se ?? '—'])
+    }
+    if (rows.length > 0) {
+      tables.push({
+        title: `表${tables.length + 1}  类别阈值估计`,
+        headers: ['阈值', '估计值', 'SE'],
+        rows,
+        note: '注：阈值为累计 logit 尺度上的切点，用于把连续潜变量切成有序类别；通常不直接解释其数值大小。'
+      })
+    }
+  }
+
+  // ── 表5：比例优势假设检查（仅有序） ──
+  {
+    const rows: (string | number)[][] = []
+    for (const line of tagged(output, 'LOGIT_PO_CHECK')) {
+      const f = fields(line)
+      const v = (f[1] ?? '').trim()
+      const slopes = (f[2] ?? '').split('|').map((s) => s.trim())
+      rows.push([v, ...slopes])
+    }
+    if (rows.length > 0) {
+      const maxSlope = Math.max(...rows.map((r) => r.length))
+      const headers = ['变量']
+      for (let i = 1; i < maxSlope; i++) headers.push(`阈值 ${i} 的斜率`)
+      tables.push({
+        title: `表${tables.length + 1}  比例优势假设检查`,
+        headers,
+        rows,
+        note:
+          '注：比例优势模型假定「各阈值下自变量的斜率相同」。本表把每个阈值拆成二元 logit 分别估计，' +
+          '若同一变量在不同阈值下的斜率差异较大，说明该假设可能不成立，此时模型的结论不可靠，' +
+          '建议改用多项 Logistic 或把因变量合并为二分类。这是描述性检查，不是正式的统计检验。'
+      })
+    }
+  }
+
+  // ── 分类准确率 ──
+  const acc = firstTagged(output, 'LOGIT_ACC')
+  if (acc) {
+    const f = fields(acc)
+    const a = toNum(f[1])
+    const base = toNum(f[2])
+    if (a !== null) kv['分类准确率'] = a
+    if (base !== null) kv['基线准确率'] = base
+    if (a !== null && base !== null) kv['相对基线提升'] = Number((a - base).toFixed(4))
+  }
+
+  const notes = textLines(output, 'LOGIT_NOTE')
+  if (notes.length > 0) kv['提示'] = notes.join('；')
+  const warns = textLines(output, 'LOGIT_WARN')
+  if (warns.length > 0) kv['警告'] = warns.join('；')
 
   const concl = conclusionOf(output)
   if (concl) kv['结论'] = concl
