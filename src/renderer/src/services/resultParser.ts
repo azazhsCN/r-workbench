@@ -297,7 +297,77 @@ function collectDiagnostics(output: string): Diagnostic[] {
   for (const line of tagged(output, 'HARMAN_NOTE')) {
     out.push({ kind: 'note', label: 'Harman 检验提示', value: fields(line).slice(1).join('|') })
   }
+  appendGenericWarnings(output, out)
   return out
+}
+
+/**
+ * 显式注册过的警告/备注标签 —— 这些已由上面的专用分支格式化，**不得**重复收进通用收集器。
+ *
+ * ⚠️ 这份名单只用于**去重**，不是"允许列表"：新标签不需要加进这里，
+ * 通用收集器会自动接管。这正是它与旧写法（手写白名单逐个补）的本质区别。
+ */
+const EXPLICIT_WARN_LABELS: readonly string[] = [
+  'DQ_WARN', // 数据质量严重级：有逐列格式化（变量名 + 类型标签 + 计数 + 详情）
+  'CFA_NOTE',
+  'CVI_NOTE',
+  'HARMAN_NOTE',
+  'NOTE_DROPPED', // 缺失值处理：沿用旧文案以保持既有测试与 UI 稳定
+  'WARN_EXPECTED' // 卡方适用性：同上
+]
+
+/**
+ * 通用 WARN/NOTE 收集器（v0.3.5 修复 I-9）。
+ *
+ * ── 为什么必须是通用规则，而不是逐个补标签 ──
+ *
+ * 修复前，`collectDiagnostics()` 只认 6 个写死的标签。而 R 端实际会输出 15 个
+ * WARN/NOTE 标签，未注册的 9 个（`LOGIT_WARN` / `HIER_NOTE` / `MED_NOTE` /
+ * `MM_NOTE` / `MOD_NOTE` / `PATH_NOTE` / `SEM_NOTE` / `RELIABILITY_NOTE` /
+ * `RELIABILITY_WARN`，以及 v0.3.3 的 `DQ_NOTE`）在解析层被**静默丢弃**。
+ *
+ * 后果不是"少一行字"：v0.3.3/v0.3.4 最值钱的东西恰恰是这批自我限制声明——
+ * D04 的"结局方程未纳入 W"、D05 的反向计分披露、SEM 的多起点一致性说明。
+ * 它们从 R 打出来后在这一层掉了，界面诊断区看不到、AI 解读的 `{diagnostics}`
+ * 渲染成「（无）」，但表格里仍带着可能错误的数值。用户拿到的是
+ * **一个自信的错结论**，而不是"有保留的结论"。
+ *
+ * 逐个补 9 个标签能修今天，但下次新增方法还会漏——本项目的
+ * `detectAnalysisType` 与 `methodLabel` 都已经因为同样的理由从手写白名单
+ * 改成自动派生（源码注释原话：「名单与真实返回值漂移正是本类缺陷的根源」）。
+ * 这里是同一原则的延续：**规则化，而不是枚举**。
+ *
+ * ── 规则 ──
+ * 凡形如 `TAG|内容` 且 TAG 匹配 `^[A-Z][A-Z0-9_]*_(WARN|NOTE)$` 的行：
+ *   - `_WARN` → `kind: 'warning'`
+ *   - `_NOTE` → `kind: 'note'`
+ * 标签本身作为 label（保留信息，便于用户与 AI 对照 R 源码排查），
+ * 整行 `|` 之后的内容作为 value（**不按 `|` 再切分**：NOTE 自由文本里可能含 `|`）。
+ *
+ * 已由显式分支处理的标签跳过，避免同一条警告出现两次。
+ */
+function appendGenericWarnings(output: string, out: Diagnostic[]): void {
+  const explicit = new Set(EXPLICIT_WARN_LABELS)
+  // 只匹配行首的 `TAG|`，且 TAG 全大写、以下划线分词、以 _WARN/_NOTE 结尾。
+  // 这样 `NOTE_DROPPED`、`WARN_EXPECTED` 这类"以 NOTE/WARN 开头"的旧标签
+  // 不会被误当成通用标签——它们的结尾不是 _WARN/_NOTE。
+  const RE = /^([A-Z][A-Z0-9_]*_(?:WARN|NOTE))\|(.*)$/
+  for (const raw of output.split('\n')) {
+    const line = raw.trim()
+    const m = RE.exec(line)
+    if (!m) continue
+    const tag = m[1]
+    if (explicit.has(tag)) continue
+    const text = m[2].trim()
+    if (text === '') continue
+    out.push({
+      kind: tag.endsWith('_WARN') ? 'warning' : 'note',
+      // 用标签本身做 label：用户/开发者能直接回源码搜这个标签，
+      // 比再维护一张"标签 → 中文名"的映射表更可靠（那正是漂移的来源）。
+      label: tag,
+      value: text
+    })
+  }
 }
 
 /** 解析 R 输出 */

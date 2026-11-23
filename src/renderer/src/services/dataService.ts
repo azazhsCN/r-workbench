@@ -3,6 +3,7 @@ import type { ColumnInfo, DatasetInfo } from '@shared/types'
 import { decodeBytes, stripBom, type DecodeResult, type SupportedEncoding } from './decode'
 // inferLikertMax 由 checkDataQuality 内部自动调用，这里不需要单独导入
 import { checkDataQuality, type QualityIssue } from './dataQuality'
+import { profileDataset, type DatasetProfile } from './columnProfile'
 
 /** 解析结果 */
 export interface ParseResult {
@@ -32,6 +33,15 @@ export interface ParseResult {
    * 干净数据上是空数组（不是 undefined），便于消费方少写判空。
    */
   qualityIssues?: QualityIssue[]
+  /**
+   * 列画像（v0.3.5 / T70）。
+   *
+   * 在这里一次性算好而不是每次推荐时重算：
+   * 画像是**纯函数、逐列扫描全部行**，对 100 列 × 数千行的问卷数据是 O(n·p)，
+   * 而智能推荐、AI 上下文、数据页摘要都要用它。导入时算一次，
+   * import 是唯一会产生新数据的时刻，缓存永不失效。
+   */
+  profile?: DatasetProfile
 }
 
 /** 缺失值哨兵命中记录 */
@@ -350,6 +360,17 @@ function buildResult(
     // 万一某列数据形状异常（如嵌套对象）导致抛错，宁可少一条提示也不能让导入失败。
     qualityIssues = []
   }
+
+  // ── 列画像（v0.3.5 / T70）──
+  // 同样放在这个统一的构造点：CSV / Excel / .sav 三条导入路径一次接线全部覆盖。
+  // 与 qualityIssues 一样，画像失败也不该阻断导入——推荐功能降级即可用。
+  let profile: DatasetProfile | undefined
+  try {
+    profile = profileDataset(headers, rows, columnInfo)
+  } catch {
+    profile = undefined
+  }
+
   return {
     headers,
     rows,
@@ -362,6 +383,7 @@ function buildResult(
     warnings: capWarnings(warnings),
     sentinels: [...sentinels],
     qualityIssues,
+    profile,
     ...extra
   }
 }

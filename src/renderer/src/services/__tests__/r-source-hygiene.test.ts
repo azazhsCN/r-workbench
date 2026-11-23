@@ -19,7 +19,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'fs'
+import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { RService } from '../rService'
 import { mediationCode } from '../rGenerators/mediation'
@@ -296,15 +296,57 @@ describe('配置与语言包文件不得含 UTF-8 BOM', () => {
  */
 describe('R 源码卫生：生成器必须走统一读表入口 rwb_read', () => {
   const SERVICES_DIR = join(__dirname, '..')
+  const GENERATORS_DIR = join(SERVICES_DIR, 'rGenerators')
   // 注意：rCommon.ts 是 rwb_read 的定义处，那里的 read.csv 是唯一合法位置，必须排除
+  //
+  // ⚠️ v0.3.5 修复 I-4：这里原来是**硬编码 6 项**的清单。
+  // 实际后果（第三方报告实测）：磁盘上 rGenerators/ 已有 7 个文件，
+  // 而清单只列了 5 个生成器，**漏掉 hierarchicalRegression.ts 与
+  // logisticRegression.ts**。把 logistic 改回裸 read.csv 后，
+  // 本文件的 48 个测试**依然全部通过** —— 扫描器对被漏掉的文件完全失明。
+  //
+  // 这类"清单与磁盘漂移"是测试基础设施最常见的失效模式：
+  // 新增文件时没人记得同步清单，门禁就出现了静默的盲区。
+  // 因此改为**动态枚举** rGenerators/ 下全部 .ts 文件，并加一条
+  // 一致性断言，确保"磁盘上的每个生成器都被扫描"。
   const GENERATOR_FILES = [
     'rService.ts',
-    join('rGenerators', 'mediation.ts'),
-    join('rGenerators', 'moderation.ts'),
-    join('rGenerators', 'moderatedMediation.ts'),
-    join('rGenerators', 'pathAnalysis.ts'),
-    join('rGenerators', 'sem.ts')
+    ...readdirSync(GENERATORS_DIR)
+      .filter((f) => f.endsWith('.ts'))
+      .sort()
+      .map((f) => join('rGenerators', f))
   ]
+
+  // 一致性断言（防将来再漂移）：扫描清单里的生成器数量必须等于磁盘上的 .ts 数量。
+  // 动态枚举本身已经保证这一点，但显式断言能在"有人又把 GENERATOR_FILES 改回硬编码"
+  // 时立刻变红——这是对**未来修改者**的守卫，不是对当前代码的重复检查。
+  it('扫描清单必须覆盖 rGenerators/ 下全部 .ts 文件（防清单漂移）', () => {
+    const onDisk = readdirSync(GENERATORS_DIR)
+      .filter((f) => f.endsWith('.ts'))
+      .sort()
+    const scanned = GENERATOR_FILES.filter((p) => p.startsWith('rGenerators'))
+      .map((p) => p.replace(/^rGenerators[\\/]/, ''))
+      .sort()
+    expect(
+      scanned,
+      'GENERATOR_FILES 与磁盘文件不一致。若你新增了生成器，请确认它是通过 ' +
+        'readdirSync 动态枚举的（而不是被硬编码清单漏掉）'
+    ).toEqual(onDisk)
+    // 至少要有 7 个生成器（v0.3.4 起：mediation/moderation/moderatedMediation/
+    // pathAnalysis/sem/hierarchicalRegression/logisticRegression）。
+    // 这条"下限"断言防止有人把 readdirSync 误删成空数组。
+    expect(scanned.length, '生成器数量不应少于 7').toBeGreaterThanOrEqual(7)
+  })
+
+  // 每个生成器都必须真的被判为"不得直接 read.csv"，逐一列出以防漏扫
+  it('每个 rGenerators/*.ts 都必须在扫描清单中', () => {
+    const onDisk = readdirSync(GENERATORS_DIR)
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => join('rGenerators', f))
+    for (const rel of onDisk) {
+      expect(GENERATOR_FILES, `${rel} 未被扫描`).toContain(rel)
+    }
+  })
 
   for (const rel of GENERATOR_FILES) {
     it(`${rel} 不得直接调用 read.csv()（必须用 READ_CSV 常量）`, () => {

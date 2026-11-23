@@ -307,6 +307,74 @@ const orthonormalize = (vecs) => {
 }
 
 /**
+ * 折半信度「偶数题」fixture（v0.3.5 I-5）：6 题 -> 穷举 C(6,3)/2 = 10 种分半。
+ *
+ * 存在意义 —— 对应第三方报告的 I-5：
+ * 既有 reliability fixture 是 5 题（奇数），实现走的是
+ * "题目数无法均分 -> 只报前后分半"的分支。而 SPLIT_HALF_ALL（全部分半分布）
+ * 那条分支要求 k 为偶数且 k >= 4，在 36 个 fixture 里一次都没执行过。
+ * 报告手工测过该分支行为正确，但零覆盖 —— 意味着它随时可能被改坏而无人察觉。
+ *
+ * 本 fixture 构造 6 题李克特量表，题项间中等相关，使 10 种分半方式的
+ * SB 值有明显离散度（实现会在跨度 > 0.15 时额外告警）。
+ * 确定性构造：固定种子 LCG + Box-Muller + Gram-Schmidt，保证逐位可复现。
+ */
+const relEven6Data = (() => {
+  const n = 200
+  const items = Array.from({ length: 6 }, (_, j) => 'e' + (j + 1))
+  const seed = 20260601
+  const raw = [
+    normalSeq(n, seed),
+    ...Array.from({ length: 6 }, (_, j) => normalSeq(n, seed + 911 * (j + 1)))
+  ]
+  const orth = orthonormalize(raw).map(standardize)
+  const trait = orth[0]
+  const noise = orth.slice(1)
+  const loads = [0.7, 0.68, 0.66, 0.72, 0.64, 0.62]
+  const rows = Array.from({ length: n }, (_, i) =>
+    items.map((_, j) => {
+      const lam = loads[j]
+      const v = lam * trait[i] + Math.sqrt(1 - lam * lam) * noise[j][i]
+      const lv = v < -1.2 ? 1 : v < -0.4 ? 2 : v < 0.4 ? 3 : v < 1.2 ? 4 : 5
+      return String(lv)
+    })
+  )
+  return { cols: items, rows }
+})()
+
+/**
+ * 折半信度「宽表」fixture（v0.3.5 I-5）：14 题（> 12）-> 抽 200 种、去重后约 188。
+ *
+ * 为什么需要它：实现的枚举分支在 k > 12 时不再穷举
+ * （C(14,7)/2 = 1716 种太多），改为固定种子抽 200 种 + pair_key 去重。
+ * 这条"抽样 + 去重"路径与穷举完全是两套代码，同属 I-5 指出的零覆盖分支。
+ * 题项数 14 同时验证宽表不被上限保护截断。
+ */
+const relWide14Data = (() => {
+  const n = 200
+  const items = Array.from({ length: 14 }, (_, j) => 'w' + (j + 1))
+  const seed = 20260701
+  const raw = [
+    normalSeq(n, seed),
+    ...Array.from({ length: 14 }, (_, j) => normalSeq(n, seed + 733 * (j + 1)))
+  ]
+  const orth = orthonormalize(raw).map(standardize)
+  const trait = orth[0]
+  const noise = orth.slice(1)
+  const loads = Array.from({ length: 14 }, (_, j) => 0.55 + 0.01 * j)
+  const rows = Array.from({ length: n }, (_, i) =>
+    items.map((_, j) => {
+      const lam = loads[j]
+      const v = lam * trait[i] + Math.sqrt(1 - lam * lam) * noise[j][i]
+      const lv = v < -1.2 ? 1 : v < -0.4 ? 2 : v < 0.4 ? 3 : v < 1.2 ? 4 : 5
+      return String(lv)
+    })
+  )
+  return { cols: items, rows }
+})()
+
+
+/**
  * 生成「精确已知真值」的因果链数据（中介 / 调节 / 路径分析共用）。
  *
  * 关键设计：直接构造**标准化形态** z_x, z_m, z_y，再乘回目标尺度。
@@ -1101,6 +1169,22 @@ const scenarios = [
     rows: relRows,
     desc: "Cronbach's α（5 个项目，含 1 个缺失值）",
     code: (R, csv) => R.reliabilityCode(['q1', 'q2', 'q3', 'q4', 'q5'], csv)
+  },
+  {
+    method: 'reliability',
+    dataset: 'reliability_even6',
+    cols: relEven6Data.cols,
+    rows: relEven6Data.rows,
+    desc: '折半信度偶数题（6 题 -> 穷举 10 种分半，SPLIT_HALF_ALL|10|...）',
+    code: (R, csv) => R.reliabilityCode(relEven6Data.cols, csv)
+  },
+  {
+    method: 'reliability',
+    dataset: 'reliability_wide14',
+    cols: relWide14Data.cols,
+    rows: relWide14Data.rows,
+    desc: '折半信度宽表（14 题 -> 抽 200 种去重，SPLIT_HALF_ALL|188|...）',
+    code: (R, csv) => R.reliabilityCode(relWide14Data.cols, csv)
   },
   {
     method: 'efa',

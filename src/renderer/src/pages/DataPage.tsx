@@ -10,6 +10,7 @@ import {
 } from '../services/dataService'
 import { toUint8Array, SUPPORTED_ENCODINGS, type SupportedEncoding } from '../services/decode'
 import { useData } from '../contexts/DataContext'
+import MethodRecommend from '../components/MethodRecommend'
 import type { ColumnInfo } from '@shared/types'
 
 /** 已本地化的警告代码（其余代码回退显示 papaparse 的原始英文消息） */
@@ -46,9 +47,53 @@ function errorText(err: unknown, fallback: string): string {
   return message ? `${fallback} (${message})` : fallback
 }
 
-export default function DataPage() {
+/**
+ * 页面标识（与 App.tsx 的 PageType 同构）。
+ * 刻意不 import App.tsx 的 PageType —— 那会形成"App 导入 DataPage、DataPage 再导入 App"的循环依赖。
+ * 这里用字面量联合保持类型安全，且将来 App 加新页面时只会在这里报编译错，不会静默失效。
+ */
+type PageId = 'welcome' | 'chat' | 'wizard' | 'data' | 'settings'
+
+export interface DataPageProps {
+  /** 供智能推荐跳转用：选中推荐方法后切到向导页（v0.3.5 T73） */
+  onNavigate?: (page: PageId) => void
+}
+
+export default function DataPage({ onNavigate }: DataPageProps = {}) {
   const { t } = useTranslation()
-  const { dataset: sharedDataset, setDataset: setSharedDataset } = useData()
+  const {
+    dataset: sharedDataset,
+    setDataset: setSharedDataset,
+    profile,
+    requestSelection
+  } = useData()
+
+  /**
+   * 智能推荐的应用回调（v0.3.5 T73）。
+   * 与向导页走**同一条** DataContext 单向通道：
+   * 写入 pendingSelection → 切到向导页 → WizardPage 消费并预选方法与变量。
+   * 之所以不直接操作向导页 state：两页是常驻挂载的兄弟组件，
+   * DataPage 拿不到 WizardPage 的实例，也不能靠重新挂载读 initial state。
+   */
+  const handleApplyRecommendation = useCallback(
+    (selection: {
+      methodId: string
+      variables: string[]
+      roles?: Record<string, string>
+      texts?: Record<string, string>
+      groupVar?: string
+    }) => {
+      requestSelection({
+        methodId: selection.methodId,
+        variables: selection.variables,
+        roles: selection.roles,
+        texts: selection.texts,
+        groupVar: selection.groupVar
+      })
+      onNavigate?.('wizard')
+    },
+    [requestSelection, onNavigate]
+  )
   const [parseResult, setParseResult] = useState<ParseResult | null>(sharedDataset)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string>('')
@@ -572,6 +617,17 @@ export default function DataPage() {
           style={{ display: 'none' }}
           onChange={handleLocalFile}
         />
+
+        {/* 智能推荐入口（v0.3.5 T73）。
+            只在数据已导入、画像已算好时显示；无 AI 配置时组件内部自动降级到规则层。 */}
+        {parseResult && profile && (
+          <div style={{ marginBottom: 16 }}>
+            <MethodRecommend
+              onApply={handleApplyRecommendation}
+              variant="card"
+            />
+          </div>
+        )}
 
         {/* 数据预览 */}
         {parseResult && (

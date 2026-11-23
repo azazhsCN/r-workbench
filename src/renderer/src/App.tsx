@@ -52,7 +52,7 @@ export default function App() {
                 <WizardPage />
               </div>
               <div style={pageStyle('data')}>
-                <DataPage />
+                <DataPage onNavigate={setCurrentPage} />
               </div>
               <div style={pageStyle('settings')}>
                 <SettingsPage />

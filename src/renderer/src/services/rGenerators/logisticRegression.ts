@@ -105,9 +105,31 @@ colnames(X) <- xn
 if (K == 2) {
   # ─────────────── 二元 Logistic ───────────────
   ynum <- as.integer(sub$.__y) - 1L
+  # ⚠️ v0.3.5 修复 I-2：这里必须**保留** convergence 信息。
+  # 原实现用 suppressWarnings() 把 glm 的
+  #   "algorithm did not converge"
+  #   "fitted probabilities numerically 0 or 1 occurred"
+  # 两条唯一线索吞掉了，完全分离时会静默输出无意义的系数表
+  # （实测 b=1483.6、SE=100498、p=0.988、OR 下界印成 0.0000，而 rc=0 无任何提示）。
+  # 现在改为：仍用 suppressWarnings（避免 warning 刷屏），但**事后检查 converged**。
   fit <- suppressWarnings(glm(ynum ~ X[, -1, drop = FALSE], family = binomial()))
+  # 有序分支早就有这段检查（见下方 op$convergence），二元分支此前漏了。
+  # 判据取两者之一：glm 自报未收敛，或系数/标准误大到不可能（准分离时
+  # glm 可能仍报 converged=TRUE 但系数巨大）。
+  sep_suspect <- FALSE
+  if (!isTRUE(fit$converged)) {
+    sep_suspect <- TRUE
+  }
   co <- summary(fit)$coefficients
   b <- co[, 1]; se <- co[, 2]; z <- co[, 3]; p <- co[, 4]
+  if (any(is.finite(b)) && max(abs(b[is.finite(b)])) > 20) sep_suspect <- TRUE
+  if (any(is.finite(se)) && max(se[is.finite(se)]) > 50) sep_suspect <- TRUE
+  if (sep_suspect) {
+    cat(sprintf("LOGIT_WARN|模型未收敛或存在完全/准分离：系数或标准误异常大（最大 |b| = %s，最大 SE = %s，converged = %s）。此时系数与 p 值不可解释，OR 也不可信。常见原因：某个自变量能完全区分两类，或某类别观测太少。建议改用精确条件 Logistic 或 Firth 惩罚似然，或删除该自变量\\n",
+      num(max(abs(b[is.finite(b)]), na.rm = TRUE), 4),
+      num(max(se[is.finite(se)], na.rm = TRUE), 4),
+      as.character(isTRUE(fit$converged))))
+  }
   # 若 glm 没给出截距名（用矩阵列名时会不同），统一命名
   if (length(b) != length(xn)) {
     # 后备：直接用数值优化（与 glm 等价，但保证输出对齐）
@@ -285,6 +307,19 @@ for (i in seq_along(b)) {
   or_val <- exp(b[i])
   or_lo <- exp(b[i] - 1.96 * se[i])
   or_hi <- exp(b[i] + 1.96 * se[i])
+  # ⚠️ v0.3.5 修复 I-2（第 3 点）：OR 的 CI 若上溢为 Inf / 下溢为 0，
+  # 原实现会把下界印成 "0.0000"——那看起来像"效应为零"，与事实（效应极大到发散）
+  # 恰好相反。这里明确输出 NA，让读者知道"这个区间算不出来"而不是"等于 0"。
+  #
+  # 注意：不能用 is.finite() 判定下溢——exp(-114000) 返回的是**真零**（不是 Inf/NaN），
+  # is.finite(0) 为 TRUE，检查会被绕过。实测踩过一次。
+  # 正确判据是把 exp 的**指数**本身拿去比：|指数| 过大就说明区间已失去意义。
+  eta_lo <- b[i] - 1.96 * se[i]
+  eta_hi <- b[i] + 1.96 * se[i]
+  if (!is.finite(or_lo) || or_lo <= 0 || abs(eta_lo) > 709) or_lo <- NA_real_
+  if (!is.finite(or_hi) || or_hi <= 0 || abs(eta_hi) > 709) or_hi <- NA_real_
+  # exp 的上溢阈值约 709.78；超过它就是 Inf 或 0，区间没有可读含义
+  if (!is.finite(or_val) || or_val <= 0 || abs(b[i]) > 709) or_val <- NA_real_
   cat(sprintf("LOGIT_COEF|%s|%s|%s|%s|%s|%s|%s|%s|%s\\n", names(b)[i],
     num(b[i], 4), num(se[i], 4), num(z[i], 4), fmt_p(p[i]), num_p(p[i]),
     num(or_val, 4), num(or_lo, 4), num(or_hi, 4)))
@@ -292,12 +327,25 @@ for (i in seq_along(b)) {
 
 # 分类准确率 —— 必须同时报告基线，否则准确率没有意义
 # （类别不平衡时"全预测多数类"就能拿到很高准确率）
-if (K == 2) {
-  pred <- ifelse(fitted_p > 0.5, 2L, 1L)
+#
+# ⚠️ v0.3.5 修复 I-1：**两个分支的下标基准必须一致**。
+#
+# 原实现：二元分支 ynum 减 1 后是 **0/1**，
+# 但预测写的是 ifelse(fitted_p > 0.5, 2L, 1L)，是 **1/2**，
+# 于是 pred == ynum 恒不成立（只在 p<=0.5 且 y==1 时偶然相等）。
+# 实测 fixture：输出 0.1617，正确值 0.7400，而基线 0.6233 ——
+# 不仅数值错，还会触发下面那条"没有预测价值"的警告，
+# **主动否定一个 LR chi2=173.7、Nagelkerke=0.34 的有效模型**。
+#
+# 修法：统一在 **1 基** 空间比较（与有序分支的 which.max 口径一致）。
+pred <- if (K == 2) {
+  ifelse(fitted_p > 0.5, 2L, 1L)
 } else {
-  pred <- apply(prm, 1, which.max)
+  apply(prm, 1, which.max)
 }
-acc <- mean(pred == ynum)
+# 二元分支的 ynum 是 0/1，加 1 对齐到 1/2；有序分支的 ynum 本来就是 1..K
+y_1based <- if (K == 2) ynum + 1L else ynum
+acc <- mean(pred == y_1based)
 base_acc <- max(as.integer(tb)) / n
 cat(sprintf("LOGIT_ACC|%s|%s|%d\\n", num(acc, 4), num(base_acc, 4), n))
 if (acc <= base_acc + 1e-8) {

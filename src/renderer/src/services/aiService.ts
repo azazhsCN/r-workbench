@@ -5,6 +5,21 @@
  */
 
 import i18n from '../i18n'
+import { METHODS } from '../data/methodRegistry'
+
+/**
+ * 从方法注册表自动生成"支持的分析方法"清单（v0.3.5 / I-7）。
+ *
+ * 为什么运行时生成而不是写死在 locale：
+ * ai.systemPrompt 曾硬编码 8 个方法的清单，而注册表已有 24 个。
+ * 用户问"帮我做中介分析"时，模型看不到该能力存在，就会即兴手写 R 代码——
+ * 绕开经过验证的生成器、解析契约与 1081 条断言守护的公式。
+ *
+ * 单一真相：方法增减自动反映，无需再同步维护第二份名单。
+ */
+export function buildMethodListPrompt(): string {
+  return METHODS.map((m) => `- ${m.name}：${m.description}`).join('\n')
+}
 
 /** AI 配置 */
 interface AIConfig {
@@ -43,7 +58,17 @@ function tr(key: string, options?: Record<string, unknown>): string {
  * 模型仍被指令用中文回答。现在按当前界面语言取提示词。
  */
 function systemPrompt(): string {
-  return tr('ai.systemPrompt')
+  // 替换 {METHOD_LIST} 占位符。
+  // ⚠️ 必须校验替换结果：若 locale 里忘了放占位符、或将来加了新的花括号占位符，
+  // 让 AI 收到字面 "{...}" 比没有清单更糟——这里做兜底检测。
+  const template = tr('ai.systemPrompt')
+  if (!template.includes('{METHOD_LIST}')) {
+    // 兼容旧文案（未含占位符）：直接把清单追加到末尾，保证 AI 始终看得到方法列表
+    return `${template}\n\n## 支持的分析方法\n\n${buildMethodListPrompt()}\n`
+  }
+  const filled = template.replace('{METHOD_LIST}', buildMethodListPrompt())
+  // 防御：替换后不应残留任何 {XXX} 形式的占位符
+  return /\{[A-Z_]+\}/.test(filled) ? filled.replace(/\{[A-Z_]+\}/g, '') : filled
 }
 
 function dataContextMessage(dataContext: string): string {

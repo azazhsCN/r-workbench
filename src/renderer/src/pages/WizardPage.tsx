@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useData } from '../contexts/DataContext'
 import { useAI } from '../contexts/AIContext'
@@ -9,6 +9,8 @@ import { generateInterpretation } from '../services/interpretService'
 import ThreeLineTable from '../components/ThreeLineTable'
 import { threeLineTableToHTML } from '../components/threeLineTableUtils'
 import PlotViewer from '../components/PlotViewer'
+import MethodRecommend from '../components/MethodRecommend'
+import { applySelectionToWizard, describeWarning, type SelectionWarning } from '../services/selectionApply'
 import { METHODS, type AnalysisMethod } from '../data/methodRegistry'
 
 /** 向导步骤 */
@@ -95,7 +97,16 @@ function parseItemsByFactor(input: string): Record<string, string[]> {
 
 export default function WizardPage() {
   const { t } = useTranslation()
-  const { dataset, hasData, getNumericColumns, getStringColumns, getAllColumns } = useData()
+  const {
+    dataset,
+    hasData,
+    getNumericColumns,
+    getStringColumns,
+    getAllColumns,
+    pendingSelection,
+    requestSelection,
+    consumeSelection
+  } = useData()
   const { isConfigured } = useAI()
 
   const [step, setStep] = useState<WizardStep>('select')
@@ -122,6 +133,8 @@ export default function WizardPage() {
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [interpretation, setInterpretation] = useState<string>('')
   const [interpretLoading, setInterpretLoading] = useState(false)
+  /** 应用推荐预选时的问题提示（列不存在 / 角色缺失等），由用户手动关闭 */
+  const [selectionWarnings, setSelectionWarnings] = useState<SelectionWarning[]>([])
 
   const resetWizard = useCallback(() => {
     setStep('select')
@@ -140,7 +153,65 @@ export default function WizardPage() {
     setGroupVar('')
     setRoleVars({})
     setTextValues({})
+    setSelectionWarnings([])
     setStep('configure')
+  }
+
+  /**
+   * 消费「推荐 → 向导」的预选请求（v0.3.5 / T73）。
+   *
+   * ── 为什么用 useEffect 而不是直接把 selection 当初始 state ──
+   * 向导页是**常驻挂载**的（App 用 display 切换页面，不卸载），所以它在
+   * 数据页点推荐时根本不会重新挂载，读不到新的 initial state。
+   * 必须监听 `pendingSelection` 的变化并主动应用。
+   *
+   * ── 为什么消费完立刻清空 ──
+   * 不清空的话，用户手动改了变量之后，任何一次 re-render（或切页回来）
+   * 都会重新套用那份建议，把用户的手动修改冲掉——表现为"改了又变回去"。
+   *
+   * 真正的状态换算全部交给 `applySelectionToWizard()`（纯函数、可单测），
+   * 这里只做 state 赋值，不写任何判断逻辑。
+   */
+  useEffect(() => {
+    if (!pendingSelection) return
+    const available = dataset?.headers ?? []
+    const patch = applySelectionToWizard(pendingSelection, available)
+    if (patch.method) {
+      setSelectedMethod(patch.method)
+      setDepVars(patch.depVars)
+      setRoleVars(patch.roleVars)
+      setTextValues(patch.textValues)
+      setGroupVar(patch.groupVar)
+      setResult(null)
+      setInterpretation('')
+      setStep(patch.step)
+    }
+    setSelectionWarnings(patch.warnings)
+    consumeSelection()
+  }, [pendingSelection, dataset, consumeSelection])
+
+  /**
+   * 推荐面板点「用这个方法分析」→ 写入 DataContext 通道。
+   *
+   * 向导页自己发起的推荐不需要切页（已经在这一页），写入后上面的 effect
+   * 会在下一轮渲染消费它，因此走的是**和从数据页跳转完全同一条路径**。
+   * 这一点很重要：如果这里改成直接 setState，就会存在两套应用逻辑，
+   * 而其中一套（从数据页来的那条）恰恰是不常被走到的、最容易腐坏的那条。
+   */
+  const handleApplyRecommendation = (selection: {
+    methodId: string
+    variables: string[]
+    roles?: Record<string, string>
+    texts?: Record<string, string>
+    groupVar?: string
+  }) => {
+    requestSelection({
+      methodId: selection.methodId,
+      variables: selection.variables,
+      roles: selection.roles,
+      texts: selection.texts,
+      groupVar: selection.groupVar
+    })
   }
 
   const toggleVar = (varName: string) => {
@@ -366,6 +437,43 @@ export default function WizardPage() {
       </div>
 
       <div className="page-body">
+        {/* v0.3.5 / T73：智能推荐入口。
+            放在 select 步骤顶部——这正是用户"不知道选哪个方法"的时刻。
+            onApply 走 DataContext 通道，与从数据页跳转完全同一条路径。 */}
+        {step === 'select' && hasData && (
+          <MethodRecommend onApply={handleApplyRecommendation} variant="card" />
+        )}
+
+        {/* 预选警告（列不存在 / 角色缺失等）：绝不静默，必须让用户看到 */}
+        {selectionWarnings.length > 0 && step === 'configure' && (
+          <div
+            style={{
+              background: 'var(--warning-bg)',
+              border: '1px solid var(--warning)',
+              borderRadius: 'var(--radius-md)',
+              padding: 12,
+              marginBottom: 16,
+              fontSize: 13
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+              <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8 }}>
+                {selectionWarnings.map((w, i) => {
+                  const d = describeWarning(w)
+                  return <li key={`${w.kind}-${i}`}>{t(d.key, d.params)}</li>
+                })}
+              </ul>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setSelectionWarnings([])}
+                style={{ flexShrink: 0 }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 步骤 1：选择分析方法 */}
         {step === 'select' && (
           <div className="animate-fade-in">

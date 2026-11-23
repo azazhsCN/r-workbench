@@ -537,7 +537,15 @@ alpha_cov <- function(m) {
   (k / (k - 1)) * (1 - sum(diag(S)) / sum(S))
 }
 oracle_reliability <- function(method, dataset, kv, out, data) {
-  items <- c("q1", "q2", "q3", "q4", "q5")
+  # v0.3.5 I-5：题项数按场景取。既有 reliability 是 5 题（奇数，走"只报前后分半"分支），
+  # 新增 reliability_even6（6 题，偶数穷举）与 reliability_wide14（14 题，抽样）。
+  items <- if (dataset == "reliability_even6") {
+    paste0("e", 1:6)
+  } else if (dataset == "reliability_wide14") {
+    paste0("w", 1:14)
+  } else {
+    c("q1", "q2", "q3", "q4", "q5")
+  }
   m0 <- as.data.frame(lapply(data[, items, drop = FALSE], as_num))
   n_before <- nrow(m0)
   m <- m0[complete.cases(m0), , drop = FALSE]
@@ -575,6 +583,126 @@ oracle_reliability <- function(method, dataset, kv, out, data) {
           if (nd_expected) "present" else "absent",
           if (nd_present) "present" else "absent",
           nd_present == nd_expected)
+
+  # ── v0.3.5 I-3：折半信度的独立 oracle ──────────────────────────────────
+  #
+  # 背景：`grep -c "SPLIT_HALF" run_validation.R` 曾经是 **0** ——
+  # 折半信度（v0.3.4 新增）完全没有任何 oracle，公式写错了也全绿。
+  #
+  # 三个量全部独立复算，全部走与实现**不同的代码路径**：
+  #   r            ：前后分半两半总分的 Pearson r（实现用 cor()，这里手算闭式解）
+  #   spearman_brown：2r/(1+r)（Stepped-up 公式；实现里叫 rq_sb）
+  #   guttman      ：2(1 − (s²_A + s²_B)/s²_X)（Guttman 分半系数，不需要 r）
+  # 注意 guttman 与 SB 在**两半方差相等**时相等，但一般情形不等，因此两条都要断言。
+  n_half <- k %/% 2
+  if (n_half >= 1L) {
+    first_idx <- seq_len(n_half)
+    rest_idx <- setdiff(seq_len(k), first_idx)
+    h1 <- rowSums(m[, first_idx, drop = FALSE])
+    h2 <- rowSums(m[, rest_idx, drop = FALSE])
+    ## 手算 Pearson r（不复用 cor，避免"同一个函数跑两遍"）
+    m1 <- mean(h1); m2 <- mean(h2)
+    cov12 <- sum((h1 - m1) * (h2 - m2))
+    ss1 <- sum((h1 - m1)^2); ss2 <- sum((h2 - m2)^2)
+    r_ref <- if (ss1 > 0 && ss2 > 0) cov12 / sqrt(ss1 * ss2) else NA_real_
+    sb_ref <- if (is.finite(r_ref) && r_ref > -1) 2 * r_ref / (1 + r_ref) else NA_real_
+    sx2 <- var(rowSums(m))
+    gut_ref <- if (sx2 > 0) 2 * (1 - (var(h1) + var(h2)) / sx2) else NA_real_
+
+    sh <- kv[["SPLIT_HALF"]]
+    if (is.null(sh) || length(sh) < 1) {
+      add_row(method, dataset, "SPLIT_HALF.present", "present", "MISSING", FALSE)
+    } else {
+      f <- sh[[1]]
+      chk_num(method, dataset, "SPLIT_HALF.r", r_ref,
+              suppressWarnings(as.numeric(f[1])), 1e-4)
+      chk_num(method, dataset, "SPLIT_HALF.spearman_brown", sb_ref,
+              suppressWarnings(as.numeric(f[2])), 1e-4)
+      chk_num(method, dataset, "SPLIT_HALF.guttman", gut_ref,
+              suppressWarnings(as.numeric(f[3])), 1e-4)
+      ## 判别力：SB 必须**真的**是 2r/(1+r)，而不是漏乘 2 的 r/(1+r)。
+      ## 两者只在 r 极小时接近；fixture 的 r 足够大，必须能区分。
+      sb_wrong <- if (is.finite(r_ref) && r_ref > -1) r_ref / (1 + r_ref) else NA_real_
+      add_row(method, dataset, "SPLIT_HALF.oracle_distinguishes_missing_factor_2",
+              "SB 与漏乘2版之差 > 1e-3（否则 fixture 对该缺陷无判别力）",
+              sprintf("正确=%.4f 漏乘2=%.4f", sb_ref, sb_wrong),
+              is.finite(sb_ref) && is.finite(sb_wrong) && abs(sb_ref - sb_wrong) > 1e-3)
+    }
+
+    # ── SPLIT_HALF_ALL：全部分半方式的分布（v0.3.5 I-5 的核心覆盖点）──
+    # 实现的枚举规则：
+    #   k 为偶数且 k >= 4 时：k <= 12 穷举 C(k, k/2)/2 种；k > 12 随机抽 200 种（去重）
+    #   k 为奇数：跳过，只报前后分半
+    # 既有 reliability 是 k=5（奇数）→ 该分支**一次都没执行过**（I-5）。
+    sha <- kv[["SPLIT_HALF_ALL"]]
+    if (k %% 2 == 1L) {
+      # 奇数题：按契约不应输出 SPLIT_HALF_ALL（无法均分）
+      add_row(method, dataset, "SPLIT_HALF_ALL.absent_for_odd_k", "absent",
+              if (is.null(sha)) "absent" else "PRESENT", is.null(sha))
+    } else if (k >= 4L) {
+      if (is.null(sha) || length(sha) < 1) {
+        add_row(method, dataset, "SPLIT_HALF_ALL.present", "present", "MISSING", FALSE)
+      } else {
+        f <- sha[[1]]
+        n_ways_got <- suppressWarnings(as.integer(f[1]))
+        ## 期望的方式数：k<=12 时穷举 C(k,k/2)/2；k>12 时抽 200 种（去重后 <= 200）
+        if (k <= 12L) {
+          n_ways_ref <- choose(k, n_half) / 2
+          add_row(method, dataset, "SPLIT_HALF_ALL.n_ways_exhaustive",
+                  sprintf("C(%d,%d)/2 = %d", k, n_half, as.integer(n_ways_ref)),
+                  sprintf("%d", n_ways_got),
+                  is.finite(n_ways_got) && n_ways_got == as.integer(n_ways_ref))
+        } else {
+          add_row(method, dataset, "SPLIT_HALF_ALL.n_ways_sampled",
+                  "去重后介于 1 与 200 之间（抽 200 种）",
+                  sprintf("%d", n_ways_got),
+                  is.finite(n_ways_got) && n_ways_got >= 1L && n_ways_got <= 200L)
+        }
+        ## 单调性 + 取值范围：min <= median <= max，且全部落在 [-1, 1]
+        mn <- suppressWarnings(as.numeric(f[2]))
+        md <- suppressWarnings(as.numeric(f[3]))
+        mx <- suppressWarnings(as.numeric(f[4]))
+        av <- suppressWarnings(as.numeric(f[5]))
+        add_row(method, dataset, "SPLIT_HALF_ALL.ordering",
+                "min <= median <= max 且 mean 在 [min,max] 内",
+                sprintf("%.4f <= %.4f <= %.4f (mean=%.4f)", mn, md, mx, av),
+                is.finite(mn) && is.finite(md) && is.finite(mx) && is.finite(av) &&
+                  mn <= md && md <= mx && av >= mn - 1e-9 && av <= mx + 1e-9)
+        add_row(method, dataset, "SPLIT_HALF_ALL.in_valid_range",
+                "全部在 [-1, 1] 内（SB 的可行域）",
+                sprintf("[%.4f, %.4f]", mn, mx),
+                is.finite(mn) && is.finite(mx) && mn >= -1 && mx <= 1)
+        ## 独立复算最值：穷举 k<=12 时可以把**全部分半**都算出来，
+        ## 与实现报的 min/median/max/mean 逐项比对（这是本断言最硬的部分）。
+        if (k <= 12L) {
+          combos <- combn(k, n_half, simplify = FALSE)
+          sb_vals <- numeric(0)
+          seen <- character(0)
+          for (idx in combos) {
+            key1 <- paste(sort(idx), collapse = ",")
+            key2 <- paste(sort(setdiff(seq_len(k), idx)), collapse = ",")
+            pair_key <- paste(sort(c(key1, key2)), collapse = "|")
+            if (pair_key %in% seen) next
+            seen <- c(seen, pair_key)
+            a <- rowSums(m[, idx, drop = FALSE])
+            b <- rowSums(m[, setdiff(seq_len(k), idx), drop = FALSE])
+            ## 手算 r（不用 cor）
+            ma <- mean(a); mb <- mean(b)
+            ssa <- sum((a - ma)^2); ssb <- sum((b - mb)^2)
+            rr <- if (ssa > 0 && ssb > 0) sum((a - ma) * (b - mb)) / sqrt(ssa * ssb) else NA_real_
+            if (is.finite(rr) && rr > -1) sb_vals <- c(sb_vals, 2 * rr / (1 + rr))
+          }
+          if (length(sb_vals) >= 2) {
+            chk_num(method, dataset, "SPLIT_HALF_ALL.oracle_min", min(sb_vals), mn, 1e-3)
+            chk_num(method, dataset, "SPLIT_HALF_ALL.oracle_max", max(sb_vals), mx, 1e-3)
+            chk_num(method, dataset, "SPLIT_HALF_ALL.oracle_mean", mean(sb_vals), av, 1e-3)
+            chk_eq(method, dataset, "SPLIT_HALF_ALL.oracle_n_ways",
+                   length(sb_vals), n_ways_got)
+          }
+        }
+      }
+    }
+  }
 
   # 第二个独立实现（可选）：psych::alpha
   if (requireNamespace("psych", quietly = TRUE)) {
@@ -2551,6 +2679,69 @@ oracle_logistic_regression <- function(method, dataset, kv, out, data) {
     add_row(method, dataset, "LOGIT_ACC.baseline_reported", "baseline present", "MISSING", FALSE)
   }
 
+  # ── v0.3.5 I-3：**准确率数值本身**的独立 oracle ──────────────────────
+  #
+  # 为什么必须独立复算、且**刻意走不同路径**：
+  #   I-1 的 bug 是「预测在 1/2 空间、真值在 0/1 空间」，两者恒不相等，
+  #   准确率恒错（实测 0.1617，正确 0.7400）。而当时 1081 条断言全绿，
+  #   因为 oracle 只钉住了"有没有报基线"，**没钉住准确率算得对不对**。
+  #
+  # 因此本 oracle **在原始标签空间（0/1）里比较**，完全不碰 1/2 下标：
+  #   1. 用独立 IRLS 自己拟合出 beta（不复用被测的 fit 对象）
+  #   2. 自己算线性预测子 eta 与概率 p = 1/(1+exp(-eta))
+  #   3. 预测标签 = ifelse(p > 0.5, 1, 0) —— 与数据里 y 的**原始编码**同空间
+  #   4. acc = mean(pred == y_raw)
+  # 这样即使被测实现把 0/1 与 1/2 搞混，oracle 也给出正确的 0.7400，断言变红。
+  if (!is_ordinal) {
+    ## 独立 IRLS（与下面系数 oracle 的迭代同款，但这里只需要预测值）
+    X_acc <- cbind(1, d$x1, d$x2)
+    y_raw <- as.numeric(d$y)
+    ## 只接受严格的 0/1 编码；若数据是别的二值编码，先归一化（保持"原始标签空间"语义）
+    lv <- sort(unique(y_raw))
+    if (length(lv) == 2L) {
+      y01 <- ifelse(y_raw == lv[2], 1, 0)
+    } else {
+      y01 <- y_raw
+    }
+    beta_acc <- c(0, 0, 0)
+    for (iter in seq_len(100)) {
+      eta_a <- as.numeric(X_acc %*% beta_acc)
+      p_a <- 1 / (1 + exp(-eta_a))
+      W_a <- pmax(p_a * (1 - p_a), 1e-10)
+      z_a <- eta_a + (y01 - p_a) / W_a
+      XtW_a <- t(X_acc) %*% (X_acc * W_a)
+      beta_new_a <- tryCatch(solve(XtW_a, t(X_acc) %*% (W_a * z_a)),
+                             error = function(e) beta_acc)
+      if (max(abs(beta_new_a - beta_acc)) < 1e-12) {
+        beta_acc <- beta_new_a
+        break
+      }
+      beta_acc <- beta_new_a
+    }
+    eta_hat <- as.numeric(X_acc %*% beta_acc)
+    p_hat <- 1 / (1 + exp(-eta_hat))
+    ## 预测在 **0/1 空间**（原始标签空间），不是 1/2
+    pred01 <- ifelse(p_hat > 0.5, 1, 0)
+    acc_ref <- mean(pred01 == y01)
+    acc_got <- suppressWarnings(as.numeric(acc_list[[1]][1]))
+    # 准确率是计数值/样本量，两套实现必须**完全一致**；容差 1e-4 只为吸收 4 位小数舍入
+    chk_num(method, dataset, "LOGIT_ACC.accuracy_correct", acc_ref, acc_got, 1e-4)
+    # 判别力：准确率必须与 1/2 空间错位的结果**不同**，否则这条断言抓不到 I-1。
+    # 若两者恰好相同（理论上可能），说明该 fixture 对 I-1 无判别力，显式报出来。
+    acc_misaligned <- mean(pred01 == (y01 + 1L))
+    add_row(method, dataset, "LOGIT_ACC.oracle_distinguishes_index_space",
+            "准确率 != 下标错位版准确率（否则 fixture 对 I-1 无判别力）",
+            sprintf("正确=%.4f 错位=%.4f", acc_ref, acc_misaligned),
+            is.finite(acc_ref) && is.finite(acc_misaligned) &&
+              abs(acc_ref - acc_misaligned) > 1e-6)
+    ## 准确率必须落在 [基线, 1] 内（模型不该比全预测多数类更差，除非严重过拟合）
+    base_got <- suppressWarnings(as.numeric(acc_list[[1]][2]))
+    add_row(method, dataset, "LOGIT_ACC.accuracy_beats_baseline",
+            "acc > 基线（该 fixture 的 LR 显著，模型应有预测价值）",
+            sprintf("acc=%.4f base=%.4f", acc_got, base_got),
+            is.finite(acc_got) && is.finite(base_got) && acc_got > base_got)
+  }
+
   if (!is_ordinal) {
     # ── 二元：oracle 用独立 IRLS 复算系数 ──
     X <- cbind(1, d$x1, d$x2)
@@ -2838,6 +3029,8 @@ oracle_map <- list(  descriptive = oracle_descriptive,
   correlation_spearman = oracle_correlation_spearman,
   regression = oracle_regression,
   reliability = oracle_reliability,
+  reliability_even6 = oracle_reliability,
+  reliability_wide14 = oracle_reliability,
   normality = oracle_normality,
   nonparametric = oracle_nonparametric,
   frequency = oracle_frequency,
@@ -2881,6 +3074,8 @@ banner_map <- c(
   correlation_spearman = "=== 相关分析 (spearman) ===",
   regression = "=== 线性回归分析 ===",
   reliability = "=== 信度分析 (Cronbach's α) ===",
+  reliability_even6 = "=== 信度分析 (Cronbach's α) ===",
+  reliability_wide14 = "=== 信度分析 (Cronbach's α) ===",
   normality = "=== 正态性检验 (Shapiro-Wilk) ===",
   nonparametric = "=== 非参数检验 (Mann-Whitney U) ===",
   frequency = "=== 频数统计 ===",

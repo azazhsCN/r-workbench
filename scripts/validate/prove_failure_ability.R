@@ -158,6 +158,28 @@ src <- inject(src, "      gap <- abs(exp(b) - orv)",
               "      gap <- abs(exp(b / 2) - orv)  # INJECTED: oracle 侧口径错误",
               "logit_or_invariant")
 
+# (13) v0.3.5 I-3：分类准确率差 1（模拟 I-1 的 0/1 vs 1/2 下标错位）
+#
+#      背景：I-1 的真实 bug 是"预测在 1/2 空间、真值在 0/1 空间"，
+#      两者恒不相等，准确率恒错（实测 0.1617，正确 0.7400）。
+#      当时 1081 条断言全绿，因为 oracle 只钉住"有没有报基线"，
+#      没钉住"准确率算得对不对"。
+#
+#      注入方式：在 oracle 侧把参照准确率的比较对象整体 +1（等价于下标空间错位），
+#      让 oracle 自己算出错误期望值 -> LOGIT_ACC.accuracy_correct 必须变红。
+src <- inject(src, "    acc_ref <- mean(pred01 == y01)",
+              "    acc_ref <- mean(pred01 == (y01 + 1L))  # INJECTED: 下标空间错位",
+              "logit_accuracy_offbyone")
+
+# (14) v0.3.5 I-3：Spearman-Brown 漏乘 2（写成 r/(1+r) 而非 2r/(1+r)）
+#
+#      折半信度此前 grep 计数为 0，完全没有 oracle。
+#      注入方式：把 oracle 的 sb_ref 公式漏掉因子 2，
+#      使期望值恰好是正确值的一半 -> SPLIT_HALF.spearman_brown 必须变红。
+src <- inject(src, "    sb_ref <- if (is.finite(r_ref) && r_ref > -1) 2 * r_ref / (1 + r_ref) else NA_real_",
+              "    sb_ref <- if (is.finite(r_ref) && r_ref > -1) r_ref / (1 + r_ref) else NA_real_  # INJECTED: 漏乘 2",
+              "split_half_spearman_brown")
+
 # (10) v0.3.3 补强 / 第三方 issue「data_quality.hooked 恒为真」：
 #      模拟"生成器绕过统一读表入口"。
 #
@@ -284,7 +306,11 @@ probe <- c(
   # v0.3.4：层次回归 ΔF 自由度写错 → ΔF 与 anova 复算不一致
   HierDeltaF     = any(grepl("HIER_MODEL\\.block[0-9]+\\.delta_f", run$fails)),
   # v0.3.4：Logistic 的 OR 口径错 → OR = exp(b) 不变式变红
-  LogitOR        = any(grepl("LOGIT_INVARIANT\\.or_equals_exp_b", run$fails))
+  LogitOR        = any(grepl("LOGIT_INVARIANT\\.or_equals_exp_b", run$fails)),
+  # v0.3.5 I-3：准确率下标空间错位 → LOGIT_ACC.accuracy_correct 必须变红
+  LogitAccuracy  = any(grepl("LOGIT_ACC\\.accuracy_correct", run$fails)),
+  # v0.3.5 I-3：折半信度 SB 漏乘 2 → SPLIT_HALF.spearman_brown 必须变红
+  SplitHalfSB    = any(grepl("SPLIT_HALF\\.spearman_brown", run$fails))
 )
 cat("\n== 每个注入点的判别力 ==\n")
 for (nm in names(probe)) {

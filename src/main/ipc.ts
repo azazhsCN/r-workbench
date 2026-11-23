@@ -535,9 +535,97 @@ export function registerIpcHandlers(): void {
         }
 
         // 统一包装：主进程负责错误捕获和结果输出
+        //
+        // v0.3.5 / I-6：AI 对话通道此前**整条绕过**数据质量防线。
+        // 向导式的所有生成器都通过 rwb_read() 做离群值/值域/高缺失/常量列体检，
+        // 但 `r:execute` 的包装模板不含 R_COMMON，AI 自己写 read.csv 时零警告。
+        // 目标用户（统计初学者）更可能从对话框开始，因此这里补一段**只读**体检：
+        //   - 在 AI 代码执行前跑一次全表体检，把 DQ_WARN/DQ_NOTE 拼进 stdout
+        //   - 复用 resultParser 已有的 DQ_* 解析链路，界面诊断区自动可见
+        //   - 绝不修改数据文件（只读体检），且 data.csv 不存在时静默跳过
+        //   - 刻意不 import 渲染进程的 rCommon.ts（跨进程依赖风险大），
+        //     这里用精简的独立实现，判据与 rCommon 的 r_quality_check_all 保持一致
+        const dataQualityPrelude = `
+# ── 数据体检（AI 通道，只读）──────────────────────────────
+tryCatch({
+  if (file.exists("data.csv")) {
+    .dq <- read.csv("data.csv", stringsAsFactors = FALSE, check.names = FALSE,
+                    fileEncoding = "UTF-8-BOM",
+                    na.strings = c("NA", "N/A", "#N/A", "NULL", "NaN", ".", "-999", "-99"))
+    .num <- names(.dq)[vapply(.dq, is.numeric, logical(1))]
+    for (.nm in .num) {
+      .x <- .dq[[.nm]]
+      .n <- sum(!is.na(.x))
+      if (.n >= 4) {
+        .v <- .x[!is.na(.x)]
+        .s <- stats::sd(.v)
+        if (is.finite(.s) && .s > 0) {
+          .z <- abs((.v - mean(.v)) / .s)
+          .q1 <- as.numeric(stats::quantile(.v, 0.25, names = FALSE, na.rm = TRUE))
+          .q3 <- as.numeric(stats::quantile(.v, 0.75, names = FALSE, na.rm = TRUE))
+          .iqr <- .q3 - .q1
+          .sev <- if (is.finite(.iqr) && .iqr > 0) {
+            (.z > 4) | (.v < .q1 - 3 * .iqr) | (.v > .q3 + 3 * .iqr)
+          } else { .z > 4 }
+          .note <- if (is.finite(.iqr) && .iqr > 0) {
+            (.z > 3) | (.v < .q1 - 1.5 * .iqr) | (.v > .q3 + 1.5 * .iqr)
+          } else { .z > 3 }
+          .nsev <- sum(.sev)
+          .nnote <- sum(.note & !.sev)
+          if (.nsev > 0) {
+            cat(sprintf("DQ_WARN|%s|outlier|%d|detected %d extreme value(s) beyond |z|>4 or 3x IQR fence, likely to change conclusions\\n", .nm, .nsev, .nsev))
+          }
+          if (.nnote > 0 && .n >= 20 && length(unique(.v)) <= 10) {
+            cat(sprintf("DQ_NOTE|%s|outlier|%d|detected %d mild outlier(s), worth a glance\\n", .nm, .nnote, .nnote))
+          }
+        }
+      }
+      # 值域越界：简化版上限推断（与 rCommon 的 rq_infer_likert_max 同思路）
+      # 若该列全为整数、最小 >= 0、唯一值 2..10，视为定序量表候选；
+      # 全表候选中 ≥60% 共享同一最大值且 <=10 时认定该上限，超出/小于 1 即越界。
+      .cap <- NA_real_
+      if (.n > 0 && all(abs(.v - round(.v)) < 1e-8) && min(.v) >= 0 &&
+          length(unique(.v)) >= 2 && length(unique(.v)) <= 10) {
+        .maxv <- max(.v)
+        if (.maxv <= 10) .cap <- .maxv
+      }
+      if (is.na(.cap)) {
+        # 该列自身含越界值（如 1e6）时 max 会污染推断，改用其他列的众数上限
+        .cands <- integer(0)
+        for (.nm2 in .num) {
+          .v2 <- .dq[[.nm2]][!is.na(.dq[[.nm2]])]
+          if (length(.v2) > 0 && all(abs(.v2 - round(.v2)) < 1e-8) &&
+              min(.v2) >= 0 && length(unique(.v2)) >= 2 && length(unique(.v2)) <= 10 &&
+              max(.v2) <= 10) .cands <- c(.cands, max(.v2))
+        }
+        if (length(.cands) >= 2) {
+          .tb <- table(.cands)
+          .best <- as.integer(names(.tb)[which.max(.tb)])
+          if (max(.tb) / length(.cands) >= 0.6) .cap <- .best
+        }
+      }
+      if (!is.na(.cap) && any(.v < 1 | .v > .cap)) {
+        .nbad <- sum(.v < 1 | .v > .cap)
+        cat(sprintf("DQ_WARN|%s|out_of_range|%d|%d value(s) outside 1..%s, cannot be a valid response on this scale\\n",
+                    .nm, .nbad, .nbad, as.integer(.cap)))
+      }
+      .miss <- sum(is.na(.x))
+      if (length(.x) > 0 && .miss / length(.x) > 0.3) {
+        cat(sprintf("DQ_WARN|%s|high_missing|%d|%.1f%% missing, listwise deletion will shrink sample\\n",
+                    .nm, .miss, 100 * .miss / length(.x)))
+      }
+      if (.n > 0 && length(unique(.x[!is.na(.x)])) == 1) {
+        cat(sprintf("DQ_WARN|%s|constant|%d|only one distinct value, provides no variance\\n", .nm, .n))
+      }
+    }
+  }
+}, error = function(e) NULL)
+# ── 体检结束（错误被吞掉：体检失败不应阻断 AI 分析）────────
+`
         const scriptContent = `options(warn = 1)
 options(digits = 6)
 setwd("${workDir.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")
+${dataQualityPrelude}
 tryCatch({
 ${safeCode}
 }, error = function(e) {

@@ -1,12 +1,12 @@
 # 统计验证结果（真实生成器 + 独立 oracle）
 
 R 版本：R version 4.6.0 (2026-04-24 ucrt)
-生成时间：2026-11-04 17:12:42
+生成时间：2026-11-23 16:06:53
 fixtures 目录：_hooked_demo
 被测代码：src/renderer/src/services/rService.ts（esbuild 打包后运行时调用，非手抄副本）
 
 方法覆盖：**24 / 24**
-断言总数：**1081**（PASS 1079 / FAIL 2）
+断言总数：**1215**（PASS 1213 / FAIL 2）
 
 | 方法 | 数据集 | 断言 | 参考(oracle) | 工作台 | 结果 |
 |---|---|---|---|---|---|
@@ -233,7 +233,138 @@ fixtures 目录：_hooked_demo
 | reliability | reliability | ITEM.q5.a_drop | 0.886179 |  0.8862 | PASS |
 | reliability | reliability | ALPHA_CI.ordering | lo<=alpha<=hi |  0.8239<= 0.9263<= 0.9774 | PASS |
 | reliability | reliability | NOTE_DROPPED.consistency | present | present | PASS |
+| reliability | reliability | SPLIT_HALF.r | 0.816568 |  0.8166 | PASS |
+| reliability | reliability | SPLIT_HALF.spearman_brown | 0.899023 |   0.899 | PASS |
+| reliability | reliability | SPLIT_HALF.guttman | 0.858223 |  0.8582 | PASS |
+| reliability | reliability | SPLIT_HALF.oracle_distinguishes_missing_factor_2 | SB 与漏乘2版之差 > 1e-3（否则 fixture 对该缺陷无判别力） | 正确=0.8990 漏乘2=0.4495 | PASS |
+| reliability | reliability | SPLIT_HALF_ALL.absent_for_odd_k | absent | absent | PASS |
 | reliability | reliability | ALPHA.psych_raw | 0.926276 |  0.9263 | PASS |
+| reliability | reliability_even6 | r_syntax_parse | parse() ok | ok | PASS |
+| reliability | reliability_even6 | sprintf_format_args | no mismatch | ok | PASS |
+| reliability | reliability_even6 | no_r_error | no error | ok | PASS |
+| reliability | reliability_even6 | banner | === 信度分析 (Cronbach's α) === | === 信度分析 (Cronbach's α) === | PASS |
+| reliability | reliability_even6 | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| reliability | reliability_even6 | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
+| reliability | reliability_even6 | ITEMS.k |       6 |       6 | PASS |
+| reliability | reliability_even6 | ITEMS.n |     200 |     200 | PASS |
+| reliability | reliability_even6 | ALPHA.raw_vc | 0.811133 |  0.8111 | PASS |
+| reliability | reliability_even6 | ALPHA.raw_cov | 0.811133 |  0.8111 | PASS |
+| reliability | reliability_even6 | ALPHA.std | 0.811395 |  0.8114 | PASS |
+| reliability | reliability_even6 | ITEM.e1.mean |    3.06 |    3.06 | PASS |
+| reliability | reliability_even6 | ITEM.e1.sd | 1.16757 |  1.1676 | PASS |
+| reliability | reliability_even6 | ITEM.e1.r_it | 0.60706 |  0.6071 | PASS |
+| reliability | reliability_even6 | ITEM.e1.a_drop | 0.773761 |  0.7738 | PASS |
+| reliability | reliability_even6 | ITEM.e2.mean |   3.005 |   3.005 | PASS |
+| reliability | reliability_even6 | ITEM.e2.sd | 1.19251 |  1.1925 | PASS |
+| reliability | reliability_even6 | ITEM.e2.r_it | 0.562193 |  0.5622 | PASS |
+| reliability | reliability_even6 | ITEM.e2.a_drop | 0.783566 |  0.7836 | PASS |
+| reliability | reliability_even6 | ITEM.e3.mean |    3.03 |    3.03 | PASS |
+| reliability | reliability_even6 | ITEM.e3.sd | 1.18156 |  1.1816 | PASS |
+| reliability | reliability_even6 | ITEM.e3.r_it | 0.558717 |  0.5587 | PASS |
+| reliability | reliability_even6 | ITEM.e3.a_drop | 0.784314 |  0.7843 | PASS |
+| reliability | reliability_even6 | ITEM.e4.mean |    2.97 |    2.97 | PASS |
+| reliability | reliability_even6 | ITEM.e4.sd | 1.19425 |  1.1942 | PASS |
+| reliability | reliability_even6 | ITEM.e4.r_it | 0.595095 |  0.5951 | PASS |
+| reliability | reliability_even6 | ITEM.e4.a_drop | 0.776231 |  0.7762 | PASS |
+| reliability | reliability_even6 | ITEM.e5.mean |    3.01 |    3.01 | PASS |
+| reliability | reliability_even6 | ITEM.e5.sd | 1.18614 |  1.1861 | PASS |
+| reliability | reliability_even6 | ITEM.e5.r_it | 0.563755 |  0.5638 | PASS |
+| reliability | reliability_even6 | ITEM.e5.a_drop | 0.783213 |  0.7832 | PASS |
+| reliability | reliability_even6 | ITEM.e6.mean |    3.04 |    3.04 | PASS |
+| reliability | reliability_even6 | ITEM.e6.sd | 1.22716 |  1.2272 | PASS |
+| reliability | reliability_even6 | ITEM.e6.r_it | 0.541572 |  0.5416 | PASS |
+| reliability | reliability_even6 | ITEM.e6.a_drop | 0.788379 |  0.7884 | PASS |
+| reliability | reliability_even6 | ALPHA_CI.ordering | lo<=alpha<=hi |  0.7675<= 0.8111<=  0.849 | PASS |
+| reliability | reliability_even6 | NOTE_DROPPED.consistency | absent | absent | PASS |
+| reliability | reliability_even6 | SPLIT_HALF.r | 0.697139 |  0.6971 | PASS |
+| reliability | reliability_even6 | SPLIT_HALF.spearman_brown | 0.821546 |  0.8215 | PASS |
+| reliability | reliability_even6 | SPLIT_HALF.guttman | 0.821519 |  0.8215 | PASS |
+| reliability | reliability_even6 | SPLIT_HALF.oracle_distinguishes_missing_factor_2 | SB 与漏乘2版之差 > 1e-3（否则 fixture 对该缺陷无判别力） | 正确=0.8215 漏乘2=0.4108 | PASS |
+| reliability | reliability_even6 | SPLIT_HALF_ALL.n_ways_exhaustive | C(6,3)/2 = 10 | 10 | PASS |
+| reliability | reliability_even6 | SPLIT_HALF_ALL.ordering | min <= median <= max 且 mean 在 [min,max] 内 | 0.8010 <= 0.8105 <= 0.8215 (mean=0.8112) | PASS |
+| reliability | reliability_even6 | SPLIT_HALF_ALL.in_valid_range | 全部在 [-1, 1] 内（SB 的可行域） | [0.8010, 0.8215] | PASS |
+| reliability | reliability_even6 | SPLIT_HALF_ALL.oracle_min | 0.80098 |   0.801 | PASS |
+| reliability | reliability_even6 | SPLIT_HALF_ALL.oracle_max | 0.821546 |  0.8215 | PASS |
+| reliability | reliability_even6 | SPLIT_HALF_ALL.oracle_mean | 0.811171 |  0.8112 | PASS |
+| reliability | reliability_even6 | SPLIT_HALF_ALL.oracle_n_ways |      10 |      10 | PASS |
+| reliability | reliability_even6 | ALPHA.psych_raw | 0.811133 |  0.8111 | PASS |
+| reliability | reliability_wide14 | r_syntax_parse | parse() ok | ok | PASS |
+| reliability | reliability_wide14 | sprintf_format_args | no mismatch | ok | PASS |
+| reliability | reliability_wide14 | no_r_error | no error | ok | PASS |
+| reliability | reliability_wide14 | banner | === 信度分析 (Cronbach's α) === | === 信度分析 (Cronbach's α) === | PASS |
+| reliability | reliability_wide14 | data_quality.hooked | code line: data <- rwb_read(dataFile) | ok | PASS |
+| reliability | reliability_wide14 | data_quality.no_bare_read | exactly 1 read.csv (inside rwb_read) |       1 | PASS |
+| reliability | reliability_wide14 | ITEMS.k |      14 |      14 | PASS |
+| reliability | reliability_wide14 | ITEMS.n |     200 |     200 | PASS |
+| reliability | reliability_wide14 | ALPHA.raw_vc | 0.882955 |   0.883 | PASS |
+| reliability | reliability_wide14 | ALPHA.raw_cov | 0.882955 |   0.883 | PASS |
+| reliability | reliability_wide14 | ALPHA.std | 0.882929 |  0.8829 | PASS |
+| reliability | reliability_wide14 | ITEM.w1.mean |    2.98 |    2.98 | PASS |
+| reliability | reliability_wide14 | ITEM.w1.sd | 1.19866 |  1.1987 | PASS |
+| reliability | reliability_wide14 | ITEM.w1.r_it | 0.483846 |  0.4838 | PASS |
+| reliability | reliability_wide14 | ITEM.w1.a_drop | 0.878401 |  0.8784 | PASS |
+| reliability | reliability_wide14 | ITEM.w2.mean |    2.97 |    2.97 | PASS |
+| reliability | reliability_wide14 | ITEM.w2.sd | 1.22335 |  1.2233 | PASS |
+| reliability | reliability_wide14 | ITEM.w2.r_it | 0.512089 |  0.5121 | PASS |
+| reliability | reliability_wide14 | ITEM.w2.a_drop | 0.877117 |  0.8771 | PASS |
+| reliability | reliability_wide14 | ITEM.w3.mean |    2.99 |    2.99 | PASS |
+| reliability | reliability_wide14 | ITEM.w3.sd | 1.15611 |  1.1561 | PASS |
+| reliability | reliability_wide14 | ITEM.w3.r_it | 0.496765 |  0.4968 | PASS |
+| reliability | reliability_wide14 | ITEM.w3.a_drop | 0.877699 |  0.8777 | PASS |
+| reliability | reliability_wide14 | ITEM.w4.mean |   3.025 |   3.025 | PASS |
+| reliability | reliability_wide14 | ITEM.w4.sd | 1.14496 |   1.145 | PASS |
+| reliability | reliability_wide14 | ITEM.w4.r_it | 0.541356 |  0.5414 | PASS |
+| reliability | reliability_wide14 | ITEM.w4.a_drop | 0.875651 |  0.8757 | PASS |
+| reliability | reliability_wide14 | ITEM.w5.mean |    2.97 |    2.97 | PASS |
+| reliability | reliability_wide14 | ITEM.w5.sd |  1.1601 |  1.1601 | PASS |
+| reliability | reliability_wide14 | ITEM.w5.r_it | 0.557552 |  0.5576 | PASS |
+| reliability | reliability_wide14 | ITEM.w5.a_drop | 0.874896 |  0.8749 | PASS |
+| reliability | reliability_wide14 | ITEM.w6.mean |   2.985 |   2.985 | PASS |
+| reliability | reliability_wide14 | ITEM.w6.sd | 1.15822 |  1.1582 | PASS |
+| reliability | reliability_wide14 | ITEM.w6.r_it | 0.541932 |  0.5419 | PASS |
+| reliability | reliability_wide14 | ITEM.w6.a_drop | 0.875622 |  0.8756 | PASS |
+| reliability | reliability_wide14 | ITEM.w7.mean |    2.99 |    2.99 | PASS |
+| reliability | reliability_wide14 | ITEM.w7.sd | 1.19878 |  1.1988 | PASS |
+| reliability | reliability_wide14 | ITEM.w7.r_it | 0.549107 |  0.5491 | PASS |
+| reliability | reliability_wide14 | ITEM.w7.a_drop | 0.875292 |  0.8753 | PASS |
+| reliability | reliability_wide14 | ITEM.w8.mean |   3.035 |   3.035 | PASS |
+| reliability | reliability_wide14 | ITEM.w8.sd | 1.20875 |  1.2088 | PASS |
+| reliability | reliability_wide14 | ITEM.w8.r_it | 0.554732 |  0.5547 | PASS |
+| reliability | reliability_wide14 | ITEM.w8.a_drop | 0.875025 |   0.875 | PASS |
+| reliability | reliability_wide14 | ITEM.w9.mean |    2.99 |    2.99 | PASS |
+| reliability | reliability_wide14 | ITEM.w9.sd | 1.16907 |  1.1691 | PASS |
+| reliability | reliability_wide14 | ITEM.w9.r_it | 0.536069 |  0.5361 | PASS |
+| reliability | reliability_wide14 | ITEM.w9.a_drop | 0.875896 |  0.8759 | PASS |
+| reliability | reliability_wide14 | ITEM.w10.mean |    2.96 |    2.96 | PASS |
+| reliability | reliability_wide14 | ITEM.w10.sd |  1.1511 |  1.1511 | PASS |
+| reliability | reliability_wide14 | ITEM.w10.r_it | 0.561349 |  0.5613 | PASS |
+| reliability | reliability_wide14 | ITEM.w10.a_drop | 0.874728 |  0.8747 | PASS |
+| reliability | reliability_wide14 | ITEM.w11.mean |       3 |       3 | PASS |
+| reliability | reliability_wide14 | ITEM.w11.sd | 1.21134 |  1.2113 | PASS |
+| reliability | reliability_wide14 | ITEM.w11.r_it | 0.615668 |  0.6157 | PASS |
+| reliability | reliability_wide14 | ITEM.w11.a_drop | 0.872046 |   0.872 | PASS |
+| reliability | reliability_wide14 | ITEM.w12.mean |   2.995 |   2.995 | PASS |
+| reliability | reliability_wide14 | ITEM.w12.sd | 1.17554 |  1.1755 | PASS |
+| reliability | reliability_wide14 | ITEM.w12.r_it | 0.583346 |  0.5833 | PASS |
+| reliability | reliability_wide14 | ITEM.w12.a_drop | 0.873668 |  0.8737 | PASS |
+| reliability | reliability_wide14 | ITEM.w13.mean |    2.98 |    2.98 | PASS |
+| reliability | reliability_wide14 | ITEM.w13.sd | 1.22765 |  1.2277 | PASS |
+| reliability | reliability_wide14 | ITEM.w13.r_it | 0.606564 |  0.6066 | PASS |
+| reliability | reliability_wide14 | ITEM.w13.a_drop | 0.872472 |  0.8725 | PASS |
+| reliability | reliability_wide14 | ITEM.w14.mean |   3.035 |   3.035 | PASS |
+| reliability | reliability_wide14 | ITEM.w14.sd | 1.18778 |  1.1878 | PASS |
+| reliability | reliability_wide14 | ITEM.w14.r_it | 0.61162 |  0.6116 | PASS |
+| reliability | reliability_wide14 | ITEM.w14.a_drop | 0.872294 |  0.8723 | PASS |
+| reliability | reliability_wide14 | ALPHA_CI.ordering | lo<=alpha<=hi |  0.8577<=  0.883<= 0.9055 | PASS |
+| reliability | reliability_wide14 | NOTE_DROPPED.consistency | absent | absent | PASS |
+| reliability | reliability_wide14 | SPLIT_HALF.r | 0.783988 |   0.784 | PASS |
+| reliability | reliability_wide14 | SPLIT_HALF.spearman_brown | 0.878916 |  0.8789 | PASS |
+| reliability | reliability_wide14 | SPLIT_HALF.guttman | 0.877345 |  0.8773 | PASS |
+| reliability | reliability_wide14 | SPLIT_HALF.oracle_distinguishes_missing_factor_2 | SB 与漏乘2版之差 > 1e-3（否则 fixture 对该缺陷无判别力） | 正确=0.8789 漏乘2=0.4395 | PASS |
+| reliability | reliability_wide14 | SPLIT_HALF_ALL.n_ways_sampled | 去重后介于 1 与 200 之间（抽 200 种） | 188 | PASS |
+| reliability | reliability_wide14 | SPLIT_HALF_ALL.ordering | min <= median <= max 且 mean 在 [min,max] 内 | 0.8650 <= 0.8829 <= 0.8988 (mean=0.8825) | PASS |
+| reliability | reliability_wide14 | SPLIT_HALF_ALL.in_valid_range | 全部在 [-1, 1] 内（SB 的可行域） | [0.8650, 0.8988] | PASS |
+| reliability | reliability_wide14 | ALPHA.psych_raw | 0.882955 |   0.883 | PASS |
 | efa | efa | r_syntax_parse | parse() ok | ok | PASS |
 | efa | efa | sprintf_format_args | no mismatch | ok | PASS |
 | efa | efa | no_r_error | no error | ok | PASS |
@@ -281,7 +412,7 @@ fixtures 目录：_hooked_demo
 | normality | normality | NORM.norm.decision | 未拒绝正态性假设 | 未拒绝正态性假设 | PASS |
 | normality | normality | NORM.skewed.n |      20 |      20 | PASS |
 | normality | normality | NORM.skewed.W | 0.808301 |  0.8063 | PASS |
-| normality | normality | NORM.skewed.p |  0.0015 | 0.00107507 | PASS |
+| normality | normality | NORM.skewed.p |  0.0035 | 0.00107507 | PASS |
 | normality | normality | NORM.skewed.skew | 1.25631 |   1.256 | PASS |
 | normality | normality | NORM.skewed.kurt | 0.441085 |   0.441 | PASS |
 | normality | normality | NORM.skewed.decision | 拒绝正态性假设 | 拒绝正态性假设 | PASS |
@@ -1065,6 +1196,9 @@ fixtures 目录：_hooked_demo
 | logistic_regression | logit_binary | LOGIT_INVARIANT.mcfadden | 0.218579 |  0.2186 | PASS |
 | logistic_regression | logit_binary | LOGIT_ACC.baseline_reported | baseline present | 0.6233 | PASS |
 | logistic_regression | logit_binary | LOGIT_ACC.baseline_correct | 0.623333 |  0.6233 | PASS |
+| logistic_regression | logit_binary | LOGIT_ACC.accuracy_correct |    0.74 |    0.74 | PASS |
+| logistic_regression | logit_binary | LOGIT_ACC.oracle_distinguishes_index_space | 准确率 != 下标错位版准确率（否则 fixture 对 I-1 无判别力） | 正确=0.7400 错位=0.0983 | PASS |
+| logistic_regression | logit_binary | LOGIT_ACC.accuracy_beats_baseline | acc > 基线（该 fixture 的 LR 显著，模型应有预测价值） | acc=0.7400 base=0.6233 | PASS |
 | logistic_regression | logit_binary | LOGIT.oracle_irls.intercept | -0.643219 | -0.6432 | PASS |
 | logistic_regression | logit_binary | LOGIT.oracle_irls.b_x1 |  1.1628 |  1.1628 | PASS |
 | logistic_regression | logit_binary | LOGIT.oracle_irls.b_x2 | -0.803226 | -0.8032 | PASS |
@@ -1092,4 +1226,4 @@ fixtures 目录：_hooked_demo
 | logistic_regression | logit_ordinal | LOGIT.ordinal.thresholds_increasing | 阈值严格递增 | -1.5714 < 1.7222 | PASS |
 | __coverage__ | - | methods_covered |      24 |      24 | PASS |
 
-**汇总：PASS 1079 / 1081**
+**汇总：PASS 1213 / 1215**
