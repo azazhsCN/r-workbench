@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
-[![Version](https://img.shields.io/badge/version-v0.3.4-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-v0.3.5-blue.svg)]()
 [![Languages](https://img.shields.io/badge/languages-中文%20%7C%20English-brightgreen.svg)]()
 
 **中文** | [English](README.en.md)
@@ -74,7 +74,7 @@ R Workbench 是一款面向统计学初学者与研究者的 **AI 驱动数据�
 
 - 统计量（t 值、p 值、回归系数、置信区间……）全部由本地 R 计算得出
 - AI 只读取计算结果，负责撰写符合学术规范的文字解读
-- 内置 **1081 项统计正确性断言**，用独立 oracle（手算闭式解、精确置换分布、第二 R 包）交叉复算，可随时自行运行验证
+- 内置 **1215 项统计正确性断言**，用独立 oracle（手算闭式解、精确置换分布、第二 R 包）交叉复算，可随时自行运行验证
 
 ### 🛡️ 脏数据不会悄悄毁掉你的结论
 
@@ -278,7 +278,7 @@ r-workbench/
 R Workbench 内置一组可复现的统计正确性验证脚本。脚本会先用 esbuild 加载**真实的
 `rService.ts`**，把 22 个方法生成器实际产出的 R 代码写入 fixtures，再交给 R 执行，
 并用**独立 oracle**（手算闭式解、精确置换分布、矩阵代数、第二 R 包）复算关键统计量，
-逐项比对。共 **1081 项断言**，覆盖 **24/24 个方法**。
+逐项比对。共 **1215 项断言**，覆盖 **24/24 个方法**。
 
 ```bash
 # 运行验证（需 R >= 4.2；base R 即可，装有 psych 时会额外用 psych::alpha 交叉验证）
