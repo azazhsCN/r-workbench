@@ -24,13 +24,25 @@
  * 后者在只收集 1/7 条时也是绿的，正是本缺陷当初存活的原因。
  */
 
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll } from 'vitest'
+import i18n from '../../i18n'
 import { parseROutput, type Diagnostic } from '../resultParser'
 import {
   extractWarningLines,
   truncateRawOutput,
   buildInterpretPrompt
 } from '../interpretService'
+
+/**
+ * CI 的 runner 默认语言是英文（本地开发是中文），而下方若干断言用中文标签切分
+ * prompt（`假设检验诊断：` / `原始 R 输出：`）。若不显式固定语言，
+ * 同一份测试本地全绿、CI 上 4 条失败——这正是 2026-11-23 两次 CI 红灯的根因。
+ *
+ * 测试必须与环境语言无关：显式切到 zh-CN。
+ */
+beforeAll(async () => {
+  await i18n.changeLanguage('zh-CN')
+})
 
 /** R 端 `*_WARN` / `*_NOTE` 行的条数（含未被解析器显式注册的） */
 function countWarnNoteLines(output: string): number {
