@@ -47,7 +47,7 @@
     "ai.apiKey.placeholder": "请输入你的 API Key",
     "ai.apiKey.localOnly": "仅存储在本地，不会上传到任何服务器",
     "ai.model": "模型名称",
-    "ai.model.placeholder": "例如 deepseek-flash / gpt-5.4",
+    "ai.model.placeholder": "例如 deepseek-flash / gpt-6-astra",
     "ai.model.desc": "填写你要使用的模型 ID",
     "ai.model.customUrl": "输入你的 API 兼容接口地址",
     "ai.model.providerDefault": "接口地址（通常无需修改）",

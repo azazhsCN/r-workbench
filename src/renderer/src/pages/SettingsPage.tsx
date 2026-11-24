@@ -18,13 +18,16 @@ interface AppSettings {
  *
  * v0.3.1：模型名示例全部更新为当前在售模型。此前写的是 `gpt-4o` / `deepseek-chat`
  * 这类名字，而 DeepSeek 已明确 `deepseek-chat` / `deepseek-reasoner` 于 2026-07-24
- * 弃用（现应使用 `deepseek-flash` / `deepseek-v4-pro`）；OpenAI 侧现役为 GPT-5.4 系列。
+ * 弃用（现应使用 `deepseek-flash` / `deepseek-v4-pro`）；OpenAI 侧现役为 GPT-6 世代
+ * （`gpt-6-astra` / `gpt-6.1-sol` / `gpt-6-luna`）。
  * **提示过时会直接误导用户填错模型名，导致"连接失败/模型不存在"**。
  *
- * v0.3.5 修正（UI 走查发现）：OpenAI 一栏曾写成 `gpt-6-luna` / `gpt-6.1-sol` /
- * `gpt-6-astra`——这三个模型**根本不存在**，是凭空编造的名字。用户点了「常用模型」
- * 快捷按钮就会填入一个必定 404 的模型名。现已更正为真实可用的 GPT-5.4 系列。
- * 教训：**模型名这类外部事实，写入前必须核实官方来源，不能靠"看起来像"来编**。
+ * ⚠️ v0.3.5 走查时曾把 OpenAI 一栏「更正」为 `gpt-5.4` 系列——**那是错误的回退**。
+ * 当时仅凭二手搜索结果（多个聚合站点仍停留在 GPT-5 世代）就判定原模型名是编造的，
+ * 未核对 OpenAI 官方文档。经用户指出并以官方文档核实：GPT-6 Astra / Sol / Luna
+ * 均为真实在售模型，原写法本来就正确。已回滚。
+ * 教训：**外部事实必须以一手官方来源为准；二手聚合站点的信息可能严重滞后。**
+ * 同时也提醒——"看起来不合理"不等于"是错的"，改之前先查一手来源。
  *
  * 注意：这里只是**输入框占位提示**，不做白名单校验——用户仍可填任意模型名，
  * 因为各家模型迭代快，硬编码枚举反而会挡住新模型。
@@ -35,8 +38,8 @@ const PROVIDERS = [
     id: 'openai',
     name: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
-    placeholder: 'gpt-5.4 / gpt-5.4-mini / gpt-5.4-nano ...',
-    models: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano']
+    placeholder: 'gpt-6-astra / gpt-6.1-sol / gpt-6-luna ...',
+    models: ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna']
   },
   {
     id: 'deepseek',
