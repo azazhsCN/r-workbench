@@ -47,7 +47,7 @@
     "ai.apiKey.placeholder": "请输入你的 API Key",
     "ai.apiKey.localOnly": "仅存储在本地，不会上传到任何服务器",
     "ai.model": "模型名称",
-    "ai.model.placeholder": "例如 deepseek-flash / gpt-6-luna",
+    "ai.model.placeholder": "例如 deepseek-flash / gpt-5.4",
     "ai.model.desc": "填写你要使用的模型 ID",
     "ai.model.customUrl": "输入你的 API 兼容接口地址",
     "ai.model.providerDefault": "接口地址（通常无需修改）",
@@ -188,7 +188,7 @@
     "analyzing": "正在分析数据结构...",
     "empty": "这份数据还没有可以做统计分析的变量，请先检查数据是否导入正确。",
     "noCandidates": "根据数据结构没有匹配到明确的推荐方法。可先看看「描述性统计」了解数据分布。",
-    "degraded.noAi": "未配置 AI，以下按数据结构的**可行性**列出（未按研究问题排序）。配置 AI 后可得到按匹配度排序的推荐与理由。",
+    "degraded.noAi": "未配置 AI，以下按数据结构的可行性列出（未按研究问题排序）。配置 AI 后可得到按匹配度排序的推荐与理由。",
     "degraded.aiError": "AI 暂时不可用，以下为按数据结构判定的可行方法。",
     "degraded.aiInvalid": "AI 返回的内容无法解析，已回退为按数据结构判定的可行方法。",
     "aiIntro": "AI 根据数据结构和常见研究问题，推荐如下（按适合度排序）：",
@@ -383,7 +383,7 @@
     "option.cfaFactors.n4": "4 个因子"
   },
   "chat": {
-    "welcome": "你好！我是 R Workbench 的 AI 数据分析助手。🎯\n\n**我能帮你完成：**\n• 描述性统计 — 均值、标准差、频数分布\n• t 检验 — 独立样本 / 配对样本\n• 方差分析 — 单因素 ANOVA\n• 卡方检验 — 独立性 / 拟合度检验\n• 相关分析 — Pearson / Spearman\n• 线性回归 — 简单 / 多元回归\n• 信效度分析 — Cronbach's α\n\n**如何开始：**\n1. 先在「数据管理」页面导入数据\n2. 然后用自然语言描述你的分析需求\n\n试试说：**帮我做一个描述性统计分析**",
+    "welcome": "你好！我是 R Workbench 的 AI 数据分析助手。🎯\n\n**我能帮你完成（共 {COUNT} 种方法）：**\n{METHOD_LIST}\n\n**如何开始：**\n1. 先在「数据管理」页面导入数据\n2. 然后用自然语言描述你的分析需求\n\n试试说：**帮我做一个描述性统计分析**",
     "needConfig": "⚠️ 请先在「设置」页面配置 AI API Key 后再使用对话功能。",
     "needData": "请先在「数据管理」页面导入数据",
     "error": "抱歉，发生了错误。请检查网络连接和 API 配置。",

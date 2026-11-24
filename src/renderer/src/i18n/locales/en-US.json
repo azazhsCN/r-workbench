@@ -47,7 +47,7 @@
     "ai.apiKey.placeholder": "Enter your API Key",
     "ai.apiKey.localOnly": "Stored locally only and never uploaded",
     "ai.model": "Model Name",
-    "ai.model.placeholder": "e.g. deepseek-flash / gpt-6-luna",
+    "ai.model.placeholder": "e.g. deepseek-flash / gpt-5.4",
     "ai.model.desc": "Enter the model ID you want to use",
     "ai.model.customUrl": "Enter your API-compatible endpoint",
     "ai.model.providerDefault": "endpoint (usually no change needed)",
@@ -188,7 +188,7 @@
     "analyzing": "Analysing data structure...",
     "empty": "This dataset has no variables that can be analysed statistically. Please check that it was imported correctly.",
     "noCandidates": "No method clearly matches this data structure. Try Descriptive Statistics first to see how the data is distributed.",
-    "degraded.noAi": "AI is not configured, so the methods below are listed by **feasibility only** (not ranked by research question). Configure AI to get ranked recommendations with reasons.",
+    "degraded.noAi": "AI is not configured, so the methods below are listed by feasibility only (not ranked by research question). Configure AI to get ranked recommendations with reasons.",
     "degraded.aiError": "AI is temporarily unavailable. The methods below are those deemed feasible for this data structure.",
     "degraded.aiInvalid": "The AI response could not be parsed, so the feasibility-based list below is shown instead.",
     "aiIntro": "Based on the data structure and common research questions, AI recommends (most suitable first):",
@@ -383,7 +383,7 @@
     "option.cfaFactors.n4": "4 factors"
   },
   "chat": {
-    "welcome": "Hi! I'm the R Workbench AI data analysis assistant. 🎯\n\n**I can help you with:**\n• Descriptive statistics — mean, SD, frequency\n• t-tests — independent / paired\n• ANOVA — one-way\n• Chi-square — independence / goodness-of-fit\n• Correlation — Pearson / Spearman\n• Linear regression — simple / multiple\n• Reliability & validity — Cronbach's α\n\n**How to start:**\n1. Import data in the Data Management page\n2. Then describe your analysis needs in natural language\n\nTry: **run a descriptive statistics analysis**",
+    "welcome": "Hi! I'm the AI data-analysis assistant of R Workbench. 🎯\n\n**What I can do ({COUNT} methods):**\n{METHOD_LIST}\n\n**Getting started:**\n1. Import your data on the Data page first\n2. Then describe your analysis needs in plain language\n\nTry: **Run a descriptive analysis for me**",
     "needConfig": "⚠️ Please configure your AI API Key in the Settings page to use the chat feature.",
     "needData": "Please import data in the Data Management page first",
     "error": "Sorry, something went wrong. Please check your network and API config.",

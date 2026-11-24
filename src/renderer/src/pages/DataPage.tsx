@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   parseCSV,
@@ -95,6 +95,25 @@ export default function DataPage({ onNavigate }: DataPageProps = {}) {
     [requestSelection, onNavigate]
   )
   const [parseResult, setParseResult] = useState<ParseResult | null>(sharedDataset)
+
+  /**
+   * 同步来自其他页面的数据集（v0.3.5 UI 走查发现）。
+   *
+   * 为什么需要这个 effect：本组件用 `useState(sharedDataset)` 初始化，
+   * 但初始值只在**首次挂载**时取一次。而 App 采用"页面保活"——所有页面常驻挂载，
+   * 所以从首页「示例数据」或 AI 通道写入 DataContext 时，DataPage 早已挂载，
+   * 它不会重新初始化，导致**数据页显示为空**（数据其实已经在 context 里）。
+   *
+   * 判据用引用相等：只有外部写入的新对象才同步；本页自己 updateData 时
+   * 两者本就是同一个引用，不会触发多余渲染。
+   */
+  useEffect(() => {
+    if (sharedDataset !== parseResult) {
+      setParseResult(sharedDataset)
+    }
+    // 故意只依赖 sharedDataset：parseResult 变化由本组件自己发起，不需要再回写
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedDataset])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string>('')
   const [manualInput, setManualInput] = useState(false)

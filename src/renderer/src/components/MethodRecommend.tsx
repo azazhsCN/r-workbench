@@ -315,9 +315,8 @@ function RecommendationItem({
   return (
     <li style={{ marginBottom: 14, lineHeight: 1.7 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-        <strong style={{ fontSize: 14 }}>
-          {index}. {rec.name}
-        </strong>
+        {/* 序号由外层 <ol> 生成，这里不再手写，否则会出现「1. 1. xxx」 */}
+        <strong style={{ fontSize: 14 }}>{rec.name}</strong>
         {index === 1 && <span style={{ fontSize: 12, color: 'var(--warning)' }}>⭐</span>}
         <span
           style={{

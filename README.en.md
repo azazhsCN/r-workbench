@@ -35,24 +35,20 @@ Supports a **bilingual interface (Chinese / English)**, detected from the system
 | Home / Quick start | AI chat analysis |
 |:---:|:---:|
 | ![Home](docs/screenshots/welcome.png) | ![AI chat](docs/screenshots/chat.png) |
-| Load a sample dataset in one click, or start from one of four entry points | Describe what you need in plain language; the AI writes and runs the R code |
+| Load a sample dataset in one click, or start from one of four entry points | Describe what you need in plain language; the AI writes and runs the R code. The welcome message lists all 24 methods |
 
 | Wizard-based analysis | Data management |
 |:---:|:---:|
 | ![Wizard](docs/screenshots/wizard.png) | ![Data management](docs/screenshots/data.png) |
 | Step-by-step guidance for 24 methods; just pick your variables | CSV / Excel / SPSS(.sav) import, with a data-quality check on import |
 
-> ⚠️ **Note on screenshot versions**
->
-> These screenshots were captured on **v0.2.x**. The layout is essentially unchanged,
-> but the feature set has grown considerably, so the method lists shown are out of date:
->
-> - The AI chat welcome message lists **7 methods**; there are now **24**
-> - The wizard page only shows the "Basic" and "Difference" groups; the current version also
->   includes **survey validity** (EFA / CFA / CVI / Harman) and **causal chain**
->   (mediation / moderation / moderated mediation / path analysis / SEM)
->
-> **The live interface is authoritative.** Screenshots will be refreshed before the next release.
+**Smart method recommendation** (new in v0.3.5): after importing data, one click suggests
+methods that fit the structure of your data. Choosing one jumps to the wizard with the method
+and variables pre-selected. Without an AI key it degrades to rule-based suggestions and still works.
+
+![Smart method recommendation](docs/screenshots/recommend.png)
+
+> These screenshots were captured on **v0.3.5** and match the current code.
 
 ### Target Users
 

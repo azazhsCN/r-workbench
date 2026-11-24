@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { METHODS } from '../data/methodRegistry'
 import { useAI } from '../contexts/AIContext'
 import { useData } from '../contexts/DataContext'
 import { useR } from '../contexts/RContext'
@@ -28,8 +29,22 @@ interface Message {
 
 export default function ChatPage() {
   const { t, i18n } = useTranslation()
+  /**
+   * 欢迎语里的方法清单**运行时从注册表派生**（v0.3.5 UI 走查发现）。
+   *
+   * 旧实现把 7 个方法写死在 `chat.welcome` 文案里，而注册表已有 24 个——
+   * 用户第一眼看到的能力清单就是过时的。这与 I-7 修的 `ai.systemPrompt`
+   * 是同一类缺陷的另一个副本（文案硬编码 vs 单一真相）。
+   */
+  const buildWelcome = useCallback((): string => {
+    const list = METHODS.map((m) => `• ${m.name} — ${m.description}`).join('\n')
+    return t('chat.welcome')
+      .replace('{COUNT}', String(METHODS.length))
+      .replace('{METHOD_LIST}', list)
+  }, [t])
+
   const [messages, setMessages] = useState<Message[]>(() => [
-    { id: 'welcome', role: 'assistant', content: t('chat.welcome'), timestamp: Date.now() }
+    { id: 'welcome', role: 'assistant', content: buildWelcome(), timestamp: Date.now() }
   ])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -66,9 +81,9 @@ export default function ChatPage() {
   // 欢迎语不能冻结在 useState 初值里：切换语言后必须重新翻译
   useEffect(() => {
     setMessages((prev) =>
-      prev.map((m) => (m.id === 'welcome' ? { ...m, content: t('chat.welcome') } : m))
+      prev.map((m) => (m.id === 'welcome' ? { ...m, content: buildWelcome() } : m))
     )
-  }, [i18n.language, t])
+  }, [i18n.language, buildWelcome])
 
   // 自动滚动到底部
   useEffect(() => {

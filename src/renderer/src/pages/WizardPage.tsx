@@ -519,7 +519,8 @@ export default function WizardPage() {
         {step === 'configure' && selectedMethod && (
           <div className="animate-slide-up">
             <button className="btn btn-ghost btn-sm" onClick={resetWizard} style={{ marginBottom: 16 }}>
-              ← {t('wizard.backToSelect')}
+              {/* 箭头由 i18n 文案自带（"← 返回选择"），不要在代码里重复硬编码 */}
+              {t('wizard.backToSelect')}
             </button>
 
             {/* v0.3.2：声明了 roles 的方法按**角色**渲染，每个角色独立一块选择区。
